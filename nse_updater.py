@@ -149,7 +149,7 @@ def build_scans(df):
 
     def rows(x, cols, n=25):
         x = x[list(cols.keys())].rename(columns=cols).head(n).round(2)
-        return x.where(x.notna(), None).to_dict("records")
+        return x.astype(object).where(pd.notna(x), None).to_dict("records")
 
     base = {"SYMBOL": "symbol", "CLOSE_PRICE": "price", "chg": "change_pct", "volx": "volume_x_avg"}
     scans = {
