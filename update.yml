@@ -1,21 +1,29 @@
 name: Update data and publish site
-on:
+
+"on":
   schedule:
-    - cron: "15 15 * * 1-5"   # 8:45 PM India time, Monday to Friday
-  workflow_dispatch: {}        # lets you run it by hand from the Actions tab
+    - cron: "15 15 * * 1-5"
+  workflow_dispatch: {}
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     environment: github-pages
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
+
       - run: pip install pandas requests
+
       - name: Restore saved data
         uses: actions/cache@v4
         with:
@@ -24,18 +32,24 @@ jobs:
             out
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
-             - run: python nse_updater.py
-      - name: "Update fundamentals"
+
+      - run: python nse_updater.py
+
+      - name: Update fundamentals
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python fundamentals_updater.py
+
       - name: Build site folder
         run: |
           mkdir _site
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
+
       - uses: actions/upload-pages-artifact@v3
-        with: { path: _site }
+        with:
+          path: _site
+
       - uses: actions/deploy-pages@v4
