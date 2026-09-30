@@ -85,10 +85,12 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 <div class="c"><h3>Fundamental</h3><ul><li>PE, market cap, dividend yield</li><li>ROE, ROCE, debt to equity</li><li>Sales and profit growth</li><li>Promoter holding, quarterly results</li></ul></div>
 <div class="c"><h3>Sectors</h3><ul><li>Sector gainers and losers</li><li>Sector strength this week and month</li><li>Stocks above 50 DMA per sector</li></ul></div>
 </div>
-<h3 style="margin-top:1.4em">Fundamental screen (sample)</h3>
+<h3 style="margin-top:1.4em">Fundamental screen</h3>
+<p id="fstat" class="note" style="padding-left:0">Loading fundamentals…</p>
 <p style="margin:.3em 0 .6em;color:var(--mute)">Show me stocks with ROE above: <select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select></p>
-<div class="panel scroll"><table><thead><tr><th>Symbol</th><th>PE</th><th>ROE %</th><th>Debt/Equity</th><th>Profit growth %</th></tr></thead><tbody id="fund"></tbody></table>
-<p class="note">Sample numbers only. Company financials need a separate data source, which adds roughly ₹1–3k per month (estimate).</p></div>
+<div class="panel scroll"><table id="ftable"><thead><tr>
+<th><button class="lk" data-k="symbol">Stock</button></th><th><button class="lk" data-k="company_name">Company</button></th><th><button class="lk" data-k="sector">Sector</button></th><th><button class="lk" data-k="pe">P/E</button></th><th><button class="lk" data-k="pb">P/B</button></th><th><button class="lk" data-k="roe">ROE %</button></th><th><button class="lk" data-k="roce">ROCE %</button></th><th><button class="lk" data-k="roa">ROA %</button></th><th><button class="lk" data-k="ev_ebitda">EV/EBITDA</button></th></tr></thead><tbody id="fund"></tbody></table>
+<p class="note">Real company data from Upstox. A dash (-) means Upstox did not provide that value.</p></div>
 
 <h2 id="more">More market data</h2>
 <p class="lead">Six extra views swing traders check every evening. Each has a one-line explanation so beginners can follow.</p>
@@ -186,10 +188,21 @@ show("Breakout");
 
 const T=[["Above 20 DMA",58],["Above 50 DMA",46],["Above 200 DMA",52],["New 52-week highs",41,1],["New 52-week lows",17,1],["Up 4%+ today",63,1],["Down 4%+ today",38,1],["Advance/decline ratio",1.6,1]];
 document.getElementById("tiles").innerHTML=T.map(t=>`<div class="tile"><b>${t[0].includes("ratio")?t[1].toFixed(1):t[1]+(t[2]?"":"%")}</b><span>${t[0]}</span>${t[2]?"":`<div class="meter"><i style="width:${t[1]}%"></i></div>`}</div>`).join("");
-const F=[["SAMPLE FMCG",52,28,0.1,14],["DEMO PHARMA",31,21,0.3,22],["TEST BANK",14,16,0.0,18],["ABC AUTO",24,19,0.4,30],["XYZ IT",27,32,0.0,12],["LMN STEEL",9,11,0.9,8]];
+let FD=[],fsort={k:"roe",dir:-1};
+const fesc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ffmt=v=>v==null?"-":v.toLocaleString("en-IN",{maximumFractionDigits:2});
 function fund(){const m=+document.getElementById("roe").value,b=document.getElementById("fund");
-const r=F.filter(x=>x[2]>=m);b.innerHTML=r.length?r.map(x=>`<tr><td>${x[0]}<span class="tag">SAMPLE</span></td><td class="n">${x[1]}</td><td class="n">${x[2]}</td><td class="n">${x[3].toFixed(1)}</td><td class="n up">▲ ${x[4]}</td></tr>`).join(""):'<tr><td colspan="5">No stocks match. Lower the ROE.</td></tr>'}
-document.getElementById("roe").onchange=fund;fund();
+const r=FD.filter(x=>m===0||(x.roe!=null&&x.roe>=m));
+r.sort((a,c)=>{const A=a[fsort.k],B=c[fsort.k];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;return typeof A==="string"?A.localeCompare(B)*fsort.dir:(A-B)*fsort.dir});
+b.innerHTML=r.length?r.map(x=>`<tr><td>${fesc(x.symbol)}</td><td>${x.company_name?fesc(x.company_name):"-"}</td><td>${x.sector?fesc(x.sector):"-"}</td><td class="n">${ffmt(x.pe)}</td><td class="n">${ffmt(x.pb)}</td><td class="n">${ffmt(x.roe)}</td><td class="n">${ffmt(x.roce)}</td><td class="n">${ffmt(x.roa)}</td><td class="n">${ffmt(x.ev_ebitda)}</td></tr>`).join(""):'<tr><td colspan="9">No stocks match. Lower the ROE.</td></tr>'}
+document.getElementById("roe").onchange=fund;
+document.querySelectorAll("#ftable [data-k]").forEach(b=>b.onclick=()=>{const k=b.dataset.k;fsort=fsort.k===k?{k,dir:-fsort.dir}:{k,dir:typeof (FD[0]||{})[k]==="string"?1:-1};fund()});
+(async()=>{const st=document.getElementById("fstat");
+try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const j=await r.json();
+if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.stocks;
+st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
+catch(e){st.textContent="Fundamentals not loaded yet.";document.getElementById("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';return}
+fund()})();
 
 const N=[
 ["Orders","SAMPLE ENGINEERING","Wins a ₹850 crore order from a state power company.","Work to be finished in 24 months.","Order book filing","28 Sep, 6:40 pm"],
@@ -288,8 +301,9 @@ if(F){const by={};F.forEach(x=>{const d=x.date;by[d]=by[d]||{};const v=parseFloa
 X["FII / DII"].r=Object.entries(by).slice(-8).reverse().map(([d,v])=>[d,sg(v.f,0,""),sg(v.d,0,""),sg((v.f||0)+(v.d||0),0,"")])}
 else X["FII / DII"].d+=" (Sample data. Not loaded yet.)";
 const cur=[...tt.children].find(x=>x.getAttribute("aria-selected")==="true");tshow(cur?cur.textContent:"Relative strength");
-st.textContent="Live NSE end-of-day data as of "+S.as_of+". News, filings and fundamentals are still sample.";
+st.textContent="Live NSE end-of-day data as of "+S.as_of+". News and filings are still sample.";
 document.getElementById("dnote").textContent="End-of-day data, calculated from NSE daily files and updated each evening.";
 document.getElementById("xnote").textContent="From NSE's daily end-of-day files. Check the exchange's terms before showing them on a paid site.";
 })();
 </script></body></html>
+
