@@ -24,12 +24,14 @@ jobs:
             out
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
-      - run: python nse_updater.py
-      - name: Update fundamentals (Upstox)
+        - run: python nse_updater.py
+        - name: "Update fundamentals"
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python fundamentals_updater.py
+
+      - name: Build site folder
       - name: Build site folder
         run: |
           mkdir _site
