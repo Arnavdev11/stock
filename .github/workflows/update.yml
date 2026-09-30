@@ -1,5 +1,5 @@
 name: Update data and publish site
-on:
+"on":
   schedule:
     - cron: "15 15 * * 1-5"   # 8:45 PM India time, Monday to Friday
   workflow_dispatch: {}        # lets you run it by hand from the Actions tab
