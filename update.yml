@@ -25,7 +25,7 @@ jobs:
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
       - run: python nse_updater.py
-            - name: Update fundamentals (Upstox)
+      - name: Update fundamentals (Upstox)
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
