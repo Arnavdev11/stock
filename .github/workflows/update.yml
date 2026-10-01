@@ -7,12 +7,10 @@ name: Update data and publish site
 
 permissions:
   contents: read
-  
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
 
     steps:
       - uses: actions/checkout@v4
@@ -56,12 +54,11 @@ jobs:
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
-       - name: Save Phase 1 test output
+
+      - name: Save Phase 1 test output
         uses: actions/upload-artifact@v4
         with:
           name: phase1-test-output
           path: |
             out/
             _site/
-
-     
