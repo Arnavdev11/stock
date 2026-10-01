@@ -41,6 +41,16 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python fundamentals_updater.py
 
+      - name: Update financial statements (Upstox)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python financials_updater.py
+
+      - name: Validate outputs
+        continue-on-error: true
+        run: python validate_outputs.py
+
       - name: Build site folder
         run: |
           mkdir _site
