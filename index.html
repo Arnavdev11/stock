@@ -117,6 +117,19 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 <p class="note" style="padding-left:0">Sample data. In the real product each line links to the original exchange filing.</p>
 </div>
 
+<section aria-labelledby="financial-health-title">
+<h3 id="financial-health-title" style="margin-top:1.4em">Financial Health</h3>
+<p id="finstat" class="note" style="padding-left:0">Loading financial data…</p>
+<div class="panel scroll"><table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody id="financial-health"><tr><td colspan="2">Financial data not loaded yet.</td></tr></tbody></table>
+<p class="note">Financial data: Upstox. A dash (-) means Upstox did not provide that value.</p></div>
+</section>
+
+<section aria-labelledby="cash-flow-title">
+<h3 id="cash-flow-title" style="margin-top:1.4em">Cash Flow</h3>
+<div class="panel scroll"><table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody id="cash-flow"><tr><td colspan="2">Financial data not loaded yet.</td></tr></tbody></table>
+<p class="note">Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.</p></div>
+</section>
+
 <h2 id="tools">Strength, delivery, big deals and FII/DII</h2>
 <p class="lead">Six more tools swing traders use every evening. Choose a tab.</p>
 <div class="panel"><div class="tabs" role="tablist" id="ttabs"></div>
@@ -230,21 +243,44 @@ const P={
 const sp=document.getElementById("sp"),sn=document.getElementById("snap"),sf=document.getElementById("sf"),tl=document.getElementById("tl");let sc="All",cs="GLENMARK";
 Object.keys(P).forEach(k=>{const o=document.createElement("option");o.textContent=k;sp.appendChild(o)});
 ["All","Orders","Fundraising","Mergers","Ratings","Management","Capex"].forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{sc=t;drawS()};sf.appendChild(b)});
-function drawS(){const d=P[cs];sp.value=cs in P?cs:"";[...sf.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===sc));
+function drawS(){const d=P[cs];sp.value=cs;[...sf.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===sc));
 if(!d){sn.innerHTML="";tl.innerHTML=`<p>No filings found for ${cs} in this sample. Real data would show the last 90 days.</p>`;return}
 sn.innerHTML=[["Price",d.s[0]],["Today",d.s[1]],["Sector",d.s[2]],["Filings (90 days)",d.f.length]].map(x=>`<div class="tile"><b style="font-size:1.1rem">${x[1]}</b><span>${x[0]}</span></div>`).join("");
 const r=d.f.filter(f=>sc==="All"||f[1]===sc);
 tl.innerHTML=r.length?r.map(f=>`<div><span class="k">${f[1]}</span><b>${f[0]}</b><div style="margin:4px 0 0;position:static">${f[2]}</div><span style="color:var(--mute);font-size:.8rem">${f[3]}</span></div>`).join(""):"<p>No filings of this type for this stock.</p>"}
-sp.onchange=()=>{cs=sp.value;sc="All";drawS()};
-function pick(k){cs=k;sc="All";drawS();document.getElementById("stock").scrollIntoView({behavior:"smooth"})}
+sp.onchange=()=>{cs=sp.value;sc="All";drawS();drawFinancials()};
+function pick(k){cs=k;sc="All";drawS();drawFinancials();document.getElementById("stock").scrollIntoView({behavior:"smooth"})}
 drawS();
+
+let financialStocks=[],valuationStocks=[];
+const money=v=>ffmt(v),percent=v=>v==null?"-":ffmt(v)+"%";
+function financialRow(label,value){return `<tr><td>${label}</td><td class="n">${value}</td></tr>`}
+function drawFinancials(){const health=document.getElementById("financial-health"),cash=document.getElementById("cash-flow");
+const financial=financialStocks.find(x=>x.symbol===cs),valuation=valuationStocks.find(x=>x.symbol===cs);
+if(!financial){health.innerHTML='<tr><td colspan="2">Financial data is not available for this stock.</td></tr>';cash.innerHTML='<tr><td colspan="2">Financial data is not available for this stock.</td></tr>';return}
+const income=financial.income||{},balance=financial.balance_sheet||{},flow=financial.cash_flow||{};
+health.innerHTML=[
+["Revenue",money(income.revenue)],["Total Revenue",money(income.total_revenue)],["Profit Before Tax",money(income.profit_before_tax)],["Profit After Tax",money(income.profit_after_tax)],["EPS Basic",ffmt(income.eps_basic)],["EPS Diluted",ffmt(income.eps_diluted)],
+["ROE",percent(valuation&&valuation.roe)],["ROCE",percent(valuation&&valuation.roce)],["ROA",percent(valuation&&valuation.roa)],["P/E",ffmt(valuation&&valuation.pe)],["P/B",ffmt(valuation&&valuation.pb)],["EV/EBITDA",ffmt(valuation&&valuation.ev_ebitda)],["Liabilities / Equity",ffmt(balance.liabilities_to_equity)]
+].map(x=>financialRow(x[0],x[1])).join("");
+cash.innerHTML=[
+["Operating Cash Flow",money(flow.operating)],["Investing Cash Flow",money(flow.investing)],["Financing Cash Flow",money(flow.financing)],["Free Cash Flow",money(flow.free_cash_flow)]
+].map(x=>financialRow(x[0],x[1])).join("")}
+(async()=>{const status=document.getElementById("finstat");
+try{const r=await fetch("out/financials.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const data=await r.json();
+if(!data||!Array.isArray(data.stocks)||!data.stocks.length)throw new Error("empty");financialStocks=data.stocks;
+financialStocks.forEach(x=>{if(x&&x.symbol&&![...sp.children].some(o=>o.textContent===x.symbol)){const o=document.createElement("option");o.textContent=x.symbol;sp.appendChild(o)}});
+status.textContent="Financial data: "+(data.source||"Upstox")+(data.as_of?" · Updated: "+data.as_of:"");drawFinancials()}
+catch(e){status.textContent="Financial data not loaded yet.";drawFinancials()}})();
+(async()=>{try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const data=await r.json();
+valuationStocks=Array.isArray(data&&data.stocks)?data.stocks:[];drawFinancials()}catch(e){drawFinancials()}})();
 
 const M={
 "Relative strength":{x:"Shows which stocks are beating the market. Rating runs 1 to 99; 99 is strongest.",h:["Symbol","RS rating","1-month return %","Vs Nifty %","Verdict"],r:[["GLENMARK","92","+12.4","+8.1","Leader"],["MANKIND","88","+9.7","+5.4","Leader"],["SONACOMS","81","+7.2","+2.9","Strong"],["DEMO BANK","47","+0.8","-3.5","Average"],["LMN STEEL","22","-6.3","-10.6","Weak"]]},
 "Delivery":{x:"Delivery % is the share of traded shares actually taken home, not squared off the same day. High delivery with a rising price often means real buying.",h:["Symbol","Delivery %","20-day avg %","Volume vs avg","Change %"],r:[["SAMPLE FMCG","74","51","2.1×","+2.3"],["DEMO PHARMA","68","49","1.8×","+1.6"],["TEST BANK","61","55","1.1×","+0.4"],["ABC AUTO","33","52","2.6×","-2.8"]]},
 "FII / DII":{x:"Net money put in (+) or taken out (-) by foreign (FII) and domestic (DII) institutions, in ₹ crore.",h:["Date","FII net (₹ cr)","DII net (₹ cr)","Nifty change %"],r:[["28 Sep","-2,140","+3,020","-0.42"],["27 Sep","+860","+1,410","+0.65"],["26 Sep","-1,320","+2,270","-0.18"],["25 Sep","-3,480","+4,100","-0.90"],["24 Sep","+1,050","+780","+0.71"]]},
 "50 & 200 DMA":{x:"DMA is the average price of the last 50 or 200 days. Golden cross: the 50 rises above the 200 (bullish sign). Death cross is the opposite.",h:["Symbol","Price","50 DMA","200 DMA","Status"],r:[["GLENMARK","2,441","2,280","2,050","Above both"],["SONACOMS","816","779","781","Golden cross today"],["TORNTPHARM","4,894","4,700","4,410","Above both"],["XYZ IT","1,204","1,240","1,255","Death cross today"],["LMN STEEL","145","158","171","Below both"]]},
-"Volume gainers":{x:"Stocks trading far more shares than usual and rising in price.",h:["Symbol","Volume (lakh)","20-day avg (lakh)","Volume vs avg","Change %"],r:[["XYZ INDS","48.2","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","7.2","3.1×","+2.2"],["DEMO STEEL","18.9","10.7","1.7×","+3.4"]]},
+"Volume gainers":{x:"Stocks trading far more shares than usual and rising in price.",h:["Symbol","Volume (lakh)","20-day avg (lakh)","Volume vs avg","Change %"],r:[["XYZ INDS","48.2","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","1.8","2.2"],["DEMO STEEL","145.5","3.4","1.7"]]},
 "Big deals":{x:"Bulk and block deals are very large trades that the exchange must publish with the buyer or seller's name.",h:["Date","Symbol","Investor","Buy / Sell","Qty (lakh)","Price ₹","Type"],r:[["28 Sep","SAMPLE ENGINEERING","SAMPLE MUTUAL FUND","Buy","12.5","1,340","Block"],["28 Sep","DEMO INFRA","DEMO CAPITAL","Sell","8.0","412","Bulk"],["27 Sep","TEST FINANCE","EXAMPLE INSURANCE CO","Buy","20.0","688","Block"],["27 Sep","ABC PHARMA","SAMPLE FOREIGN FUND","Sell","6.4","1,015","Bulk"]]}};
 const mt=document.getElementById("mt");
 function cell(v){const c=/^[+-][\d.,]+$/.test(v)?(v[0]==="+"?"n up":"n dn"):v==="Buy"?"up":v==="Sell"?"dn":/\d/.test(v)&&!/[A-Za-z]/.test(v)?"n":"";return `<td class="${c}">${v}</td>`}
@@ -306,4 +342,3 @@ document.getElementById("dnote").textContent="End-of-day data, calculated from N
 document.getElementById("xnote").textContent="From NSE's daily end-of-day files. Check the exchange's terms before showing them on a paid site.";
 })();
 </script></body></html>
-
