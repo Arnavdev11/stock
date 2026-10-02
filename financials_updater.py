@@ -33,9 +33,10 @@ NOTES = {
     "growth": "Upstox's own period-over-period % change. It is stored only when the summary value equals the matching detail line for the same year (see checks); otherwise it is empty.",
     "net_profit": "Upstox's summary 'net_profit' category value and change for the same year (kept for the existing page). profit_after_tax is the detail line; checks.summary_net_profit_equals_pat shows whether they agree.",
     "total_equity": "Calculated: total assets minus total liabilities (both from Upstox). checks.equity_capital_equals_derived_equity compares it with Upstox's 'Equity Capital' line, which may include non-controlling interests.",
-    "liabilities_to_equity": "Calculated: total liabilities divided by total equity. Not Debt/Equity. For banks and financial companies, liabilities are mostly customer deposits, so this ratio is not comparable with other companies. Empty if equity is not positive.",
-    "debt": "Total debt and Debt/Equity are not provided by the Upstox balance sheet API and are never derived, so they are empty. debt_lines_found lists any balance-sheet line whose name mentions borrowings or debt (for review only).",
-    "free_cash_flow": "Operating cash flow minus capex, only when the cash-flow statement has exactly one clearly named TOTAL capex line for the same year. Part-lines (property/plant/equipment only, intangibles, capital work in progress) are never used. Otherwise empty.",
+    "liabilities_to_equity": "Total liabilities divided by total equity (assets minus liabilities). This is NOT Debt/Equity. For banks and financial companies, liabilities are mostly customer deposits, so the ratio is not comparable with other companies. Empty if equity is not positive.",
+    "debt": "Debt/Equity and total debt are unavailable: Upstox returned no clearly identifiable debt or borrowings line for these 10 stocks (debt_lines_found is empty). They are never derived from total liabilities, so total_debt and debt_to_equity are empty.",
+    "diagnostics": "checks, capex_status, capex_candidates, line_items and debt_lines_found are diagnostics that record what Upstox returned. They are not financial metrics.",
+    "free_cash_flow": "Free cash flow is unavailable: the Upstox cash-flow response for these 10 stocks contains only aggregate lines and no unambiguous capital-expenditure line, so free_cash_flow is empty. It is never estimated, never operating cash flow minus investing cash flow, and part-lines (property/plant/equipment only, intangibles, capital work in progress) are never used. capex_status and line_items show what Upstox returned.",
 }
 
 INCOME_LINES = {"revenue": "revenue", "other income": "other_income", "total revenue": "total_revenue",
