@@ -55,13 +55,16 @@ jobs:
           mkdir _site/out
           cp out/*.json _site/out/
 
-        - name: Upload Pages artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-     deploy:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
