@@ -47,7 +47,7 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python financials_updater.py
 
-      - name: Validate outputs
+       - name: Validate outputs
         continue-on-error: true
         run: python validate_outputs.py
 
@@ -71,4 +71,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 
+        uses: actions/deploy-pages@v4  
