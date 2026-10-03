@@ -2,18 +2,16 @@ name: Update data and publish site
 
 on:
   schedule:
-    - cron: "15 15 * * 1-5"   # 8:45 PM India time, Monday to Friday
-  workflow_dispatch: {}       # lets you run it by hand from the Actions tab
+    - cron: "15 15 * * 1-5"
+  workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment: github-pages
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,13 +34,13 @@ jobs:
       - name: Update NSE technical data
         run: python nse_updater.py
 
-      - name: Update fundamentals (Upstox)
+      - name: Update fundamentals
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python fundamentals_updater.py
 
-      - name: Update financial statements (Upstox)
+      - name: Update financial statements
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -67,9 +65,15 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
