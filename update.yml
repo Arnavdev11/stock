@@ -51,14 +51,15 @@ jobs:
         continue-on-error: true
         run: python validate_outputs.py
 
-      - name: Build site folder
+       - name: Build site folder
         run: |
           mkdir _site
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
@@ -71,4 +72,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4  
+        uses: actions/deploy-pages@v4
