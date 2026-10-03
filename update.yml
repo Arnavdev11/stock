@@ -1,9 +1,9 @@
 name: Update data and publish site
 
-"on":
+on:
   schedule:
-    - cron: "15 15 * * 1-5"
-  workflow_dispatch: {}
+    - cron: "15 15 * * 1-5"   # 8:45 PM India time, Monday to Friday
+  workflow_dispatch: {}       # lets you run it by hand from the Actions tab
 
 permissions:
   contents: read
@@ -14,7 +14,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     environment: github-pages
-
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +21,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install pandas requests
+      - name: Install dependencies
+        run: pip install pandas requests
 
       - name: Restore saved data
         uses: actions/cache@v4
@@ -33,9 +33,10 @@ jobs:
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
 
-      - run: python nse_updater.py
+      - name: Update NSE technical data
+        run: python nse_updater.py
 
-      - name: Update fundamentals
+      - name: Update fundamentals (Upstox)
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -47,11 +48,11 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python financials_updater.py
 
-       - name: Validate outputs
+      - name: Validate outputs
         continue-on-error: true
         run: python validate_outputs.py
 
-       - name: Build site folder
+      - name: Build site folder
         run: |
           mkdir _site
           cp index.html _site/
