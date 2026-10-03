@@ -1,0 +1,54 @@
+name: Update historical price data
+
+# Separate from "Update data and publish site" (which is not changed).
+# It restores the same saved-data cache, adds out/historical.json, and saves the cache again.
+# The next run of "Update data and publish site" then restores it and publishes the file with the site.
+# Run this first, wait for it to finish, then run "Update data and publish site".
+
+on:
+  push:
+    branches:
+      - phase1
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Optional comma list for a small first run, e.g. TCS. Empty = all 10 test stocks."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-historical
+  cancel-in-progress: false
+
+jobs:
+  historical:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Restore saved data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-hist-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Update historical prices
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          HISTORICAL_SYMBOLS: "${{ github.event_name == 'push' && 'TCS' || inputs.symbols }}"
+        run: python historical_updater.py

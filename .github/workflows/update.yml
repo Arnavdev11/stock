@@ -7,13 +7,10 @@ name: Update data and publish site
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment: github-pages
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +38,16 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python fundamentals_updater.py
 
+      - name: Update financial statements (Upstox)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python financials_updater.py
+
+      - name: Validate outputs
+        continue-on-error: true
+        run: python validate_outputs.py
+
       - name: Build site folder
         run: |
           mkdir _site
@@ -48,8 +55,20 @@ jobs:
           mkdir _site/out
           cp out/*.json _site/out/
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-
-      - uses: actions/deploy-pages@v4
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
