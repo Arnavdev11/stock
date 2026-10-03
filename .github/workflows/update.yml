@@ -55,10 +55,17 @@ jobs:
           mkdir _site/out
           cp out/*.json _site/out/
 
-      - name: Save Phase 1 test output
-        uses: actions/upload-artifact@v4
+        - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: phase1-test-output
-          path: |
-            out/
-            _site/
+          path: _site
+     deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
