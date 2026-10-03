@@ -50,6 +50,10 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 .lk{background:none;border:0;padding:0;font:inherit;color:var(--ac);font-weight:600;cursor:pointer;text-decoration:underline}
 .tl{border-left:2px solid var(--line);margin:14px 0 0 6px;padding-left:16px}
 .tl>div{position:relative;margin-bottom:16px}.tl>div:before{content:"";position:absolute;left:-23px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--ac)}
+[hidden]{display:none!important}
+#ftable td:first-child,#t2a td:first-child,#t2b td:first-child,#t2 td:first-child,#t3a td:first-child,#t3b td:first-child{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
+td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
+#detail{display:none}.detail-mode .w>*:not(#detail){display:none!important}.detail-mode #detail{display:block}
 </style></head><body><div class="w">
 <nav aria-label="Main"><b>StockLens India</b><a href="#demo">Demo</a><a href="#all">All scans</a><a href="#more">More data</a><a href="#news">News &amp; filings</a><a href="#stock">Stock page</a><a href="#tools">More tools</a><a href="#road">Roadmap</a><a href="#cost">Costs</a><a href="#money">Earning</a><a href="#pc">Pros &amp; cons</a><a href="#law">SEBI rules</a></nav>
 
@@ -88,9 +92,18 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 <h3 style="margin-top:1.4em">Fundamental screen</h3>
 <p id="fstat" class="note" style="padding-left:0">Loading fundamentals…</p>
 <p style="margin:.3em 0 .6em;color:var(--mute)">Show me stocks with ROE above: <select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select></p>
-<div class="panel scroll"><table id="ftable"><thead><tr>
+<div class="tabs" role="tablist" id="ftabs" style="padding:0 0 10px;border:0"></div>
+<div id="ftab1"><div class="panel scroll"><table id="ftable"><thead><tr>
 <th><button class="lk" data-k="symbol">Stock</button></th><th><button class="lk" data-k="company_name">Company</button></th><th><button class="lk" data-k="sector">Sector</button></th><th><button class="lk" data-k="pe">P/E</button></th><th><button class="lk" data-k="pb">P/B</button></th><th><button class="lk" data-k="roe">ROE %</button></th><th><button class="lk" data-k="roce">ROCE %</button></th><th><button class="lk" data-k="roa">ROA %</button></th><th><button class="lk" data-k="ev_ebitda">EV/EBITDA</button></th></tr></thead><tbody id="fund"></tbody></table>
-<p class="note">Real company data from Upstox. A dash (-) means Upstox did not provide that value.</p></div>
+<p class="note">Real company data from Upstox. A dash (-) means Upstox did not provide that value.</p></div></div>
+<div id="ftab2" hidden><p class="note finstat" style="padding-left:0">Loading financial statements…</p>
+<h4 style="margin:.6em 0 .4em">Earnings (latest annual period)</h4><div class="panel scroll" id="t2a"></div>
+<h4 style="margin:1.2em 0 .4em">Returns and valuation</h4><div class="panel scroll" id="t2b"></div><p class="note" id="vstat" style="padding-left:0"></p>
+<h4 style="margin:1.2em 0 .4em">Balance sheet</h4><div class="panel scroll" id="t2"></div><p class="note" id="n2" style="padding-left:0"></p></div>
+<div id="ftab3" hidden><p class="note finstat" style="padding-left:0">Loading financial statements…</p>
+<h4 style="margin:.6em 0 .4em">Cash flow (latest annual period)</h4><div class="panel scroll" id="t3a"></div><p class="note" id="fcfnote" style="padding-left:0"></p>
+<h4 style="margin:1.2em 0 .4em">Growth (latest year, change vs previous year as reported by Upstox)</h4><div class="panel scroll" id="t3b"></div>
+<p class="note" id="n3" style="padding-left:0"></p></div>
 
 <h2 id="more">More market data</h2>
 <p class="lead">Six extra views swing traders check every evening. Each has a one-line explanation so beginners can follow.</p>
@@ -116,19 +129,6 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 <div class="tl" id="tl"></div>
 <p class="note" style="padding-left:0">Sample data. In the real product each line links to the original exchange filing.</p>
 </div>
-
-<section aria-labelledby="financial-health-title">
-<h3 id="financial-health-title" style="margin-top:1.4em">Financial Health</h3>
-<p id="finstat" class="note" style="padding-left:0">Loading financial data…</p>
-<div class="panel scroll"><table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody id="financial-health"><tr><td colspan="2">Financial data not loaded yet.</td></tr></tbody></table>
-<p class="note">Financial data: Upstox. A dash (-) means Upstox did not provide that value.</p></div>
-</section>
-
-<section aria-labelledby="cash-flow-title">
-<h3 id="cash-flow-title" style="margin-top:1.4em">Cash Flow</h3>
-<div class="panel scroll"><table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody id="cash-flow"><tr><td colspan="2">Financial data not loaded yet.</td></tr></tbody></table>
-<p class="note">Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.</p></div>
-</section>
 
 <h2 id="tools">Strength, delivery, big deals and FII/DII</h2>
 <p class="lead">Six more tools swing traders use every evening. Choose a tab.</p>
@@ -183,6 +183,7 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 <li>Check the current rules with a lawyer before launch; they change often.</li>
 </ul></div>
 
+<section id="detail" aria-live="polite"></section>
 <footer>Sample plan for learning purposes. Not financial or legal advice. Market figures on this page are dummy data.</footer>
 </div>
 <script>
@@ -195,7 +196,7 @@ const D={
 "Near Support":[["PQR PHARMA",455,-0.8,0.6],["LMN TECH",1320,-1.1,0.9],["DEMO BANK",640.2,-0.3,0.7]]};
 const tabs=document.getElementById("tabs"),rows=document.getElementById("rows");
 function show(k){[...tabs.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));
-rows.innerHTML=D[k].map(r=>`<tr><td><button class="lk" onclick="pick('${r[0]}')">${r[0]}</button>${LIVE?"":'<span class="tag">SAMPLE</span>'}</td><td class="n">${r[1].toFixed(2)}</td><td class="n ${r[2]>=0?"up":"dn"}">${r[2]>=0?"▲":"▼"} ${Math.abs(r[2]).toFixed(2)}</td><td class="n">${r[3].toFixed(1)}×</td></tr>`).join("")}
+rows.innerHTML=D[k].map(r=>`<tr><td><button class="lk" type="button">${r[0]}</button>${LIVE?"":'<span class="tag">SAMPLE</span>'}</td><td class="n">${r[1].toFixed(2)}</td><td class="n ${r[2]>=0?"up":"dn"}">${r[2]>=0?"▲":"▼"} ${Math.abs(r[2]).toFixed(2)}</td><td class="n">${r[3].toFixed(1)}×</td></tr>`).join("")}
 Object.keys(D).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>show(k);tabs.appendChild(b)});
 show("Breakout");
 
@@ -243,44 +244,21 @@ const P={
 const sp=document.getElementById("sp"),sn=document.getElementById("snap"),sf=document.getElementById("sf"),tl=document.getElementById("tl");let sc="All",cs="GLENMARK";
 Object.keys(P).forEach(k=>{const o=document.createElement("option");o.textContent=k;sp.appendChild(o)});
 ["All","Orders","Fundraising","Mergers","Ratings","Management","Capex"].forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{sc=t;drawS()};sf.appendChild(b)});
-function drawS(){const d=P[cs];sp.value=cs;[...sf.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===sc));
+function drawS(){const d=P[cs];sp.value=cs in P?cs:"";[...sf.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===sc));
 if(!d){sn.innerHTML="";tl.innerHTML=`<p>No filings found for ${cs} in this sample. Real data would show the last 90 days.</p>`;return}
 sn.innerHTML=[["Price",d.s[0]],["Today",d.s[1]],["Sector",d.s[2]],["Filings (90 days)",d.f.length]].map(x=>`<div class="tile"><b style="font-size:1.1rem">${x[1]}</b><span>${x[0]}</span></div>`).join("");
 const r=d.f.filter(f=>sc==="All"||f[1]===sc);
 tl.innerHTML=r.length?r.map(f=>`<div><span class="k">${f[1]}</span><b>${f[0]}</b><div style="margin:4px 0 0;position:static">${f[2]}</div><span style="color:var(--mute);font-size:.8rem">${f[3]}</span></div>`).join(""):"<p>No filings of this type for this stock.</p>"}
-sp.onchange=()=>{cs=sp.value;sc="All";drawS();drawFinancials()};
-function pick(k){cs=k;sc="All";drawS();drawFinancials();document.getElementById("stock").scrollIntoView({behavior:"smooth"})}
+sp.onchange=()=>{cs=sp.value;sc="All";drawS()};
+function pick(k){cs=k;sc="All";drawS();document.getElementById("stock").scrollIntoView({behavior:"smooth"})}
 drawS();
-
-let financialStocks=[],valuationStocks=[];
-const money=v=>ffmt(v),percent=v=>v==null?"-":ffmt(v)+"%";
-function financialRow(label,value){return `<tr><td>${label}</td><td class="n">${value}</td></tr>`}
-function drawFinancials(){const health=document.getElementById("financial-health"),cash=document.getElementById("cash-flow");
-const financial=financialStocks.find(x=>x.symbol===cs),valuation=valuationStocks.find(x=>x.symbol===cs);
-if(!financial){health.innerHTML='<tr><td colspan="2">Financial data is not available for this stock.</td></tr>';cash.innerHTML='<tr><td colspan="2">Financial data is not available for this stock.</td></tr>';return}
-const income=financial.income||{},balance=financial.balance_sheet||{},flow=financial.cash_flow||{};
-health.innerHTML=[
-["Revenue",money(income.revenue)],["Total Revenue",money(income.total_revenue)],["Profit Before Tax",money(income.profit_before_tax)],["Profit After Tax",money(income.profit_after_tax)],["EPS Basic",ffmt(income.eps_basic)],["EPS Diluted",ffmt(income.eps_diluted)],
-["ROE",percent(valuation&&valuation.roe)],["ROCE",percent(valuation&&valuation.roce)],["ROA",percent(valuation&&valuation.roa)],["P/E",ffmt(valuation&&valuation.pe)],["P/B",ffmt(valuation&&valuation.pb)],["EV/EBITDA",ffmt(valuation&&valuation.ev_ebitda)],["Liabilities / Equity",ffmt(balance.liabilities_to_equity)]
-].map(x=>financialRow(x[0],x[1])).join("");
-cash.innerHTML=[
-["Operating Cash Flow",money(flow.operating)],["Investing Cash Flow",money(flow.investing)],["Financing Cash Flow",money(flow.financing)],["Free Cash Flow",money(flow.free_cash_flow)]
-].map(x=>financialRow(x[0],x[1])).join("")}
-(async()=>{const status=document.getElementById("finstat");
-try{const r=await fetch("out/financials.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const data=await r.json();
-if(!data||!Array.isArray(data.stocks)||!data.stocks.length)throw new Error("empty");financialStocks=data.stocks;
-financialStocks.forEach(x=>{if(x&&x.symbol&&![...sp.children].some(o=>o.textContent===x.symbol)){const o=document.createElement("option");o.textContent=x.symbol;sp.appendChild(o)}});
-status.textContent="Financial data: "+(data.source||"Upstox")+(data.as_of?" · Updated: "+data.as_of:"");drawFinancials()}
-catch(e){status.textContent="Financial data not loaded yet.";drawFinancials()}})();
-(async()=>{try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const data=await r.json();
-valuationStocks=Array.isArray(data&&data.stocks)?data.stocks:[];drawFinancials()}catch(e){drawFinancials()}})();
 
 const M={
 "Relative strength":{x:"Shows which stocks are beating the market. Rating runs 1 to 99; 99 is strongest.",h:["Symbol","RS rating","1-month return %","Vs Nifty %","Verdict"],r:[["GLENMARK","92","+12.4","+8.1","Leader"],["MANKIND","88","+9.7","+5.4","Leader"],["SONACOMS","81","+7.2","+2.9","Strong"],["DEMO BANK","47","+0.8","-3.5","Average"],["LMN STEEL","22","-6.3","-10.6","Weak"]]},
 "Delivery":{x:"Delivery % is the share of traded shares actually taken home, not squared off the same day. High delivery with a rising price often means real buying.",h:["Symbol","Delivery %","20-day avg %","Volume vs avg","Change %"],r:[["SAMPLE FMCG","74","51","2.1×","+2.3"],["DEMO PHARMA","68","49","1.8×","+1.6"],["TEST BANK","61","55","1.1×","+0.4"],["ABC AUTO","33","52","2.6×","-2.8"]]},
 "FII / DII":{x:"Net money put in (+) or taken out (-) by foreign (FII) and domestic (DII) institutions, in ₹ crore.",h:["Date","FII net (₹ cr)","DII net (₹ cr)","Nifty change %"],r:[["28 Sep","-2,140","+3,020","-0.42"],["27 Sep","+860","+1,410","+0.65"],["26 Sep","-1,320","+2,270","-0.18"],["25 Sep","-3,480","+4,100","-0.90"],["24 Sep","+1,050","+780","+0.71"]]},
 "50 & 200 DMA":{x:"DMA is the average price of the last 50 or 200 days. Golden cross: the 50 rises above the 200 (bullish sign). Death cross is the opposite.",h:["Symbol","Price","50 DMA","200 DMA","Status"],r:[["GLENMARK","2,441","2,280","2,050","Above both"],["SONACOMS","816","779","781","Golden cross today"],["TORNTPHARM","4,894","4,700","4,410","Above both"],["XYZ IT","1,204","1,240","1,255","Death cross today"],["LMN STEEL","145","158","171","Below both"]]},
-"Volume gainers":{x:"Stocks trading far more shares than usual and rising in price.",h:["Symbol","Volume (lakh)","20-day avg (lakh)","Volume vs avg","Change %"],r:[["XYZ INDS","48.2","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","1.8","2.2"],["DEMO STEEL","145.5","3.4","1.7"]]},
+"Volume gainers":{x:"Stocks trading far more shares than usual and rising in price.",h:["Symbol","Volume (lakh)","20-day avg (lakh)","Volume vs avg","Change %"],r:[["XYZ INDS","48.2","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","7.2","3.1×","+2.2"],["DEMO STEEL","18.9","10.7","1.7×","+3.4"]]},
 "Big deals":{x:"Bulk and block deals are very large trades that the exchange must publish with the buyer or seller's name.",h:["Date","Symbol","Investor","Buy / Sell","Qty (lakh)","Price ₹","Type"],r:[["28 Sep","SAMPLE ENGINEERING","SAMPLE MUTUAL FUND","Buy","12.5","1,340","Block"],["28 Sep","DEMO INFRA","DEMO CAPITAL","Sell","8.0","412","Bulk"],["27 Sep","TEST FINANCE","EXAMPLE INSURANCE CO","Buy","20.0","688","Block"],["27 Sep","ABC PHARMA","SAMPLE FOREIGN FUND","Sell","6.4","1,015","Bulk"]]}};
 const mt=document.getElementById("mt");
 function cell(v){const c=/^[+-][\d.,]+$/.test(v)?(v[0]==="+"?"n up":"n dn"):v==="Buy"?"up":v==="Sell"?"dn":/\d/.test(v)&&!/[A-Za-z]/.test(v)?"n":"";return `<td class="${c}">${v}</td>`}
@@ -341,4 +319,166 @@ st.textContent="Live NSE end-of-day data as of "+S.as_of+". News and filings are
 document.getElementById("dnote").textContent="End-of-day data, calculated from NSE daily files and updated each evening.";
 document.getElementById("xnote").textContent="From NSE's daily end-of-day files. Check the exchange's terms before showing them on a paid site.";
 })();
-</script></body></html>
+</script>
+<script>
+/* StockLens Phase 3 Step 1 - Stock Detail view (#stock=SYMBOL). Separate from the dashboard scripts; reads existing JSON only. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var cr=function(v){return isn(v)?N0.format(v):"-"},r2=function(v){return isn(v)?N2.format(v):"-"};
+var pc=function(v){return isn(v)?(v>0?"+":"")+N2.format(v)+"%":"-"};
+var neg=function(v){return isn(v)&&v<0?" dn":""};
+var TABLES="#ftable,#t2a,#t2b,#t2,#t3a,#t3b";
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;   /* NSE symbols: letters, digits, & . _ - ; at least one letter */
+var DATA=null;
+
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+
+function loadData(){
+  if(DATA)return DATA;
+  var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/scans.json")]).then(function(a){return{val:a[0],fin:a[1],scans:a[2]}});
+  return DATA}
+
+function findStock(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
+
+function priceFor(scans,s){
+  var out={price:null,change:null};if(!scans)return out;
+  ["gainers","losers","volume_gainers","high_52w","delivery","dma"].forEach(function(k){
+    (Array.isArray(scans[k])?scans[k]:[]).forEach(function(r){
+      if(!r||r.symbol!==s)return;
+      if(out.price==null&&isn(r.price))out.price=r.price;
+      if(out.change==null&&isn(r.change_pct))out.change=r.change_pct})});
+  return out}
+
+function tile(label,value,cls){return '<div class="tile"><b style="font-size:1.1rem" class="'+(cls||"")+'">'+value+'</b><span>'+esc(label)+'</span></div>'}
+function per(g){return g&&g.period?esc(g.period)+(g.basis==="standalone"?" · standalone":""):"-"}
+
+function view(s,d){
+  var v=findStock(d.val,s)||{},f=findStock(d.fin,s)||{},inc=f.income||{},bal=f.balance_sheet||{},cf=f.cash_flow||{};
+  var p=priceFor(d.scans,s),has=!!(findStock(d.val,s)||findStock(d.fin,s));
+  var company=v.company_name||f.company_name,sector=v.sector;
+  var h='<p><button class="lk" id="detailBack" type="button">← Back to StockLens</button></p>';
+  h+='<h2 style="margin-top:.6em">Stock Detail: '+esc(s)+'</h2>';
+  if(!has)h+='<p class="note" style="padding-left:0">No fundamentals or financial statements were found for '+esc(s)+' in the current data. Missing values show "-".</p>';
+  h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Sector",sector?esc(sector):"-")+tile("LTP (last close, ₹)",r2(p.price))+tile("Today's change",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
+  h+='<p class="note" style="padding-left:0">LTP and change come from the latest end-of-day scan'+(d.scans&&d.scans.as_of?" ("+esc(d.scans.as_of)+")":"")+' and appear only when the stock is in that scan; otherwise "-".</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Overview</h3><div class="tiles">'+tile("P/E",r2(v.pe))+tile("P/B",r2(v.pb))+tile("ROE %",r2(v.roe))+tile("ROCE %",r2(v.roce))+tile("ROA %",r2(v.roa))+tile("EV/EBITDA",r2(v.ev_ebitda))+'</div>';
+  h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of):"Fundamentals not loaded yet.")+'</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Financial Health <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
+  h+='<p class="note" style="padding-left:0">Income statement: '+per(inc)+' · Balance sheet: '+per(bal)+'</p>';
+  h+='<div class="tiles">'+tile("Revenue",cr(inc.revenue))+tile("Total revenue",cr(inc.total_revenue))+tile("Profit before tax",cr(inc.profit_before_tax),neg(inc.profit_before_tax))+tile("Profit after tax",cr(inc.profit_after_tax),neg(inc.profit_after_tax))+tile("EPS basic (₹)",r2(inc.eps_basic))+tile("EPS diluted (₹)",r2(inc.eps_diluted))+'</div>';
+  h+='<div class="tiles">'+tile("Total assets",cr(bal.total_assets))+tile("Total liabilities",cr(bal.total_liabilities))+tile("Total equity",cr(bal.total_equity),neg(bal.total_equity))+tile("Liabilities / Equity",r2(bal.liabilities_to_equity))+tile("Debt / Equity","N/A")+'</div>';
+  h+='<p class="note" style="padding-left:0">Total equity = total assets − total liabilities (Upstox). Liabilities / Equity is not Debt / Equity and is not comparable for banks, whose liabilities are mostly customer deposits. Debt / Equity is N/A because Upstox did not return a clearly identifiable debt line.</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Cash Flow <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
+  h+='<p class="note" style="padding-left:0">Period: '+per(cf)+'</p>';
+  h+='<div class="tiles">'+tile("Operating cash flow",cr(cf.operating),neg(cf.operating))+tile("Investing cash flow",cr(cf.investing),neg(cf.investing))+tile("Financing cash flow",cr(cf.financing),neg(cf.financing))+tile("Free cash flow",isn(cf.free_cash_flow)?cr(cf.free_cash_flow):"N/A",neg(cf.free_cash_flow))+'</div>';
+  h+='<p class="note" style="padding-left:0">'+(isn(cf.free_cash_flow)?"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line.":"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.")+'</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Price chart</h3><div class="panel" style="padding:28px;text-align:center;color:var(--mute)" id="detailChart">Historical Price Chart — Coming in Phase 3 Step 2</div>';
+  h+='<p class="note" style="padding-left:0">'+(d.fin&&d.fin.as_of?"Financial data: "+esc(d.fin.source||"Upstox")+" · ₹ crore · Updated: "+esc(d.fin.as_of):"Financial statements not loaded yet.")+'</p>';
+  return h}
+
+function render(){
+  var s=routeSymbol(),box=$("detail"),b=document.body;
+  if(!s){b.classList.remove("detail-mode");return}
+  b.classList.add("detail-mode");
+  box.innerHTML='<p class="note">Loading '+esc(s)+'…</p>';
+  if(window.scrollTo)window.scrollTo(0,0);
+  loadData().then(function(d){if(routeSymbol()===s)box.innerHTML=view(s,d)})}
+
+function go(sym){window.location.hash="stock="+encodeURIComponent(sym)}
+function symbolTd(td){   /* first cell of a stock table, ignoring a trailing SAMPLE tag */
+  if(!td||(td.parentNode&&td.parentNode.firstElementChild!==td))return null;
+  var t=td.firstChild&&td.firstChild.nodeType===3?td.firstChild.nodeValue:td.textContent;t=(t||"").trim();
+  return SYM.test(t)?t:null}
+function symbolOf(target){
+  if(!target||!target.closest)return null;
+  var b=target.closest("#rows button");                       /* scan tabs: Gainers, Losers, Breakout ... */
+  if(b){var bt=(b.textContent||"").trim();return SYM.test(bt)?bt:null}
+  var td=target.closest("td");if(!td)return null;
+  if(td.closest("#tbody")){                                   /* tools tabs: only where the first column is "Symbol" */
+    var tb=td.closest("table"),th=tb&&tb.querySelector("th");
+    if(!th||(th.textContent||"").trim()!=="Symbol")return null;return symbolTd(td)}
+  return td.closest(TABLES)?symbolTd(td):null}
+
+document.addEventListener("click",function(e){
+  if(e.target&&e.target.closest&&e.target.closest("#detailBack")){window.location.hash="";return}
+  var s=symbolOf(e.target);if(s)go(s)});
+document.addEventListener("keydown",function(e){
+  if(e.key!=="Enter")return;var s=symbolOf(e.target);if(s)go(s)});
+window.addEventListener("hashchange",render);
+
+if(typeof MutationObserver!=="undefined"){   /* make the first cell keyboard-reachable after each table redraw */
+  var WATCH=TABLES+",#tbody";
+  var mark=function(root){var tds=root.querySelectorAll?root.querySelectorAll("td:first-child"):[];
+    for(var i=0;i<tds.length;i++){var t=symbolTd(tds[i]);if(!t)continue;
+      if(root.id==="tbody"){var th=document.querySelector("#thead th");if(!th||(th.textContent||"").trim()!=="Symbol")continue;tds[i].className+=" symlink"}
+      tds[i].setAttribute("tabindex","0");tds[i].setAttribute("role","link");tds[i].setAttribute("title","Open "+t+" detail")}};
+  var mo=new MutationObserver(function(){WATCH.split(",").forEach(function(q){var el=document.querySelector(q);if(el)mark(el)})});
+  WATCH.split(",").forEach(function(q){var el=document.querySelector(q);if(el)mo.observe(el,{childList:true,subtree:true})})}
+render();
+})();
+</script>
+<script>
+/* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
+(function(){
+const $=i=>document.getElementById(i),esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const cr=v=>v==null?"-":N0.format(v),r2=v=>v==null?"-":N2.format(v),pc=v=>v==null?"-":(v>0?"+":"")+N2.format(v)+"%";
+const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+const pk=p=>{const m=String(p||"").trim().split(/\s+/);return m.length===2&&MON[m[0].slice(0,3).toLowerCase()]?(+m[1])*100+MON[m[0].slice(0,3).toLowerCase()]:null};
+const per=(p,b)=>p?esc(p)+(b==="standalone"?" · standalone":""):"-";
+const ng=v=>v!=null&&v<0?" dn":"";
+const gc=(v,g)=>cr(v)+`<br><small style="color:${g!=null&&g<0?"var(--dn)":"var(--mute)"}">${pc(g)}</small>`;
+const C=(k,l,f,o)=>Object.assign({k,l,f},o||{});
+const stock=C("symbol","Stock",r=>esc(r.symbol),{s:1}),comp=C("company_name","Company",r=>r.company_name?esc(r.company_name):"-",{s:1}),
+period=C("pk","Period",r=>per(r.period,r.basis),{s:1}),num=(k,l,f)=>C(k,l,r=>f(r[k]),{n:1,g:k});
+const nz=(k,l,f)=>C(k,l,r=>f(r[k]),{n:1,g:k}),NA=f=>v=>v==null?"N/A":f(v),ex=s=>({symbol:s.symbol,company_name:s.company_name});
+const T={
+ t2a:{src:"fin",row:s=>{const i=s.income||{};return Object.assign(ex(s),{period:i.period,pk:pk(i.period),basis:i.basis,revenue:i.revenue,total_revenue:i.total_revenue,profit_before_tax:i.profit_before_tax,profit_after_tax:i.profit_after_tax,eps_basic:i.eps_basic,eps_diluted:i.eps_diluted})},
+  cols:[stock,period,nz("revenue","Revenue (₹ cr)",cr),nz("total_revenue","Total revenue (₹ cr)",cr),nz("profit_before_tax","Profit before tax (₹ cr)",cr),nz("profit_after_tax","Profit after tax (₹ cr)",cr),nz("eps_basic","EPS basic (₹)",r2),nz("eps_diluted","EPS diluted (₹)",r2)]},
+ t2b:{src:"val",row:v=>Object.assign(ex(v),{roe:v.roe,roce:v.roce,roa:v.roa,pe:v.pe,pb:v.pb,ev_ebitda:v.ev_ebitda}),
+  cols:[stock,nz("roe","ROE %",r2),nz("roce","ROCE %",r2),nz("roa","ROA %",r2),nz("pe","P/E",r2),nz("pb","P/B",r2),nz("ev_ebitda","EV/EBITDA",r2)]},
+ t2:{src:"fin",row:s=>{const b=s.balance_sheet||{};return Object.assign(ex(s),{period:b.period,pk:pk(b.period),basis:b.basis,total_assets:b.total_assets,total_liabilities:b.total_liabilities,total_equity:b.total_equity,liabilities_to_equity:b.liabilities_to_equity,debt_to_equity:b.debt_to_equity})},
+  cols:[stock,comp,period,nz("total_assets","Total assets (₹ cr)",cr),nz("total_liabilities","Total liabilities (₹ cr)",cr),nz("total_equity","Total equity (₹ cr)",cr),nz("liabilities_to_equity","Liabilities / Equity",r2),nz("debt_to_equity","Debt / Equity",NA(r2))]},
+ t3a:{src:"fin",row:s=>{const c=s.cash_flow||{};return Object.assign(ex(s),{period:c.period,pk:pk(c.period),basis:c.basis,operating:c.operating,investing:c.investing,financing:c.financing,free_cash_flow:c.free_cash_flow})},
+  cols:[stock,period,nz("operating","Operating cash flow (₹ cr)",cr),nz("investing","Investing cash flow (₹ cr)",cr),nz("financing","Financing cash flow (₹ cr)",cr),nz("free_cash_flow","Free cash flow (₹ cr)",NA(cr))]},
+ t3b:{src:"fin",row:s=>{const i=s.income||{};return Object.assign(ex(s),{period:i.period,pk:pk(i.period),basis:i.basis,total_revenue:i.total_revenue,total_revenue_growth:i.total_revenue_growth,profit_before_tax:i.profit_before_tax,profit_before_tax_growth:i.profit_before_tax_growth,profit_after_tax:i.profit_after_tax,profit_after_tax_growth:i.profit_after_tax_growth})},
+  cols:[stock,period,C("total_revenue","Total revenue (₹ cr) + growth %",r=>gc(r.total_revenue,r.total_revenue_growth),{n:1,g:"total_revenue"}),C("profit_before_tax","Profit before tax (₹ cr) + growth %",r=>gc(r.profit_before_tax,r.profit_before_tax_growth),{n:1,g:"profit_before_tax"}),C("profit_after_tax","Profit after tax (₹ cr) + growth %",r=>gc(r.profit_after_tax,r.profit_after_tax_growth),{n:1,g:"profit_after_tax"})]}};
+let FIN=null,VAL=null,ROE={},ST={};
+function draw(id){const t=T[id],box=$(id),m=+$("roe").value,src=t.src==="val"?VAL:FIN;
+ if(!src){box.innerHTML='<p class="note">'+(t.src==="val"?"Fundamentals":"Financial statements")+' not loaded yet.</p>';return}
+ const useRoe=m>0&&Object.keys(ROE).length>0;
+ const rows=src.stocks.filter(s=>!useRoe||(ROE[s.symbol]!=null&&ROE[s.symbol]>=m)).map(s=>t.row(s)),st=ST[id];
+ if(st)rows.sort((a,b)=>{const A=a[st.k],B=b[st.k];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;return(typeof A==="string"?A.localeCompare(B):A-B)*st.dir});
+ box.innerHTML=`<table><thead><tr>${t.cols.map(c=>`<th><button class="lk" data-t="${id}" data-k="${c.k}">${c.l}</button></th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${t.cols.map(c=>`<td class="${c.n?"n":""}${c.g?ng(r[c.g]):""}">${c.f(r)}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${t.cols.length}">No stocks match. Lower the ROE.</td></tr>`}</tbody></table>`}
+const all=()=>["t2a","t2b","t2","t3a","t3b"].forEach(draw);
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("button[data-t]");if(!b)return;
+ const id=b.dataset.t,k=b.dataset.k,c=T[id].cols.find(x=>x.k===k),s=ST[id];
+ ST[id]=s&&s.k===k?{k,dir:-s.dir}:{k,dir:c&&c.s?1:-1};draw(id)});
+$("roe").addEventListener("change",all);
+const tabs=$("ftabs"),names=["Valuation & Returns","Financial Health","Cash Flow & Growth"];
+names.forEach((n,i)=>{const b=document.createElement("button");b.textContent=n;b.setAttribute("role","tab");
+ b.onclick=()=>{[...tabs.children].forEach((x,j)=>{x.setAttribute("aria-selected",j===i);$("ftab"+(j+1)).hidden=j!==i})};tabs.appendChild(b)});
+tabs.children[0].onclick();
+(async()=>{const j=async u=>{try{const r=await fetch(u,{cache:"no-store"});return r.ok?await r.json():null}catch(e){return null}};
+ const [f,v]=await Promise.all([j("out/financials.json"),j("out/fundamentals.json")]);
+ if(v&&Array.isArray(v.stocks)&&v.stocks.length){VAL=v;v.stocks.forEach(s=>{ROE[s.symbol]=s.roe});$("vstat").textContent="Fundamentals data: Upstox · Updated: "+v.as_of}
+ const msg=document.querySelectorAll(".finstat");
+ if(f&&Array.isArray(f.stocks)&&f.stocks.length){FIN=f;
+  msg.forEach(m=>m.textContent="Financial data: Upstox · ₹ crore · Updated: "+f.as_of+(Object.keys(ROE).length?"":" · ROE filter needs valuation data, so it is off"));
+  const noFcf=f.stocks.every(s=>(s.cash_flow||{}).free_cash_flow==null);
+  $("fcfnote").textContent=noFcf?"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.":"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line; otherwise N/A.";
+  $("n2").textContent="Total equity = total assets − total liabilities (Upstox). Liabilities / Equity is not Debt / Equity and is not comparable for banks, whose liabilities are mostly customer deposits. Debt / Equity is N/A because Upstox did not return a clearly identifiable debt line.";
+  $("n3").textContent="Growth is Upstox's own change versus the previous year, shown only where it matches the reported line."}
+ else msg.forEach(m=>m.textContent="Financial statements not loaded yet.");
+ all()})();
+})();
+</script>
+</body></html>
