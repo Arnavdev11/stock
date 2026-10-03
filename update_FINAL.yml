@@ -1,0 +1,78 @@
+name: Update data and publish site
+
+on:
+  schedule:
+    - cron: "15 15 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pandas requests
+
+      - name: Restore saved data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Update NSE technical data
+        run: python nse_updater.py
+
+      - name: Update fundamentals
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python fundamentals_updater.py
+
+      - name: Update financial statements
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python financials_updater.py
+
+      - name: Validate outputs
+        continue-on-error: true
+        run: python validate_outputs.py
+
+      - name: Build site folder
+        run: |
+          mkdir _site
+          cp index.html _site/
+          mkdir _site/out
+          cp out/*.json _site/out/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
