@@ -6,6 +6,9 @@ name: Update historical price data
 # Run this first, wait for it to finish, then run "Update data and publish site".
 
 on:
+  push:
+    branches:
+      - phase1
   workflow_dispatch:
     inputs:
       symbols:
@@ -47,5 +50,5 @@ jobs:
       - name: Update historical prices
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
-          HISTORICAL_SYMBOLS: ${{ inputs.symbols }}
+         HISTORICAL_SYMBOLS: ${{ github.event_name == 'push' && 'TCS' || inputs.symbols }}
         run: python historical_updater.py
