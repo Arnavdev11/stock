@@ -82,7 +82,7 @@ const liOf = (h, title) => { const m = h.match(new RegExp("<li[^>]*><b>" + esc(t
 
 (async () => {
   // ================= 1. block structure and protection =================
-  eq(blocks.length, 6, "six script blocks: dashboard, detail, chart, snapshot, research, Phase 2B tabs");
+  eq(blocks.length, 7, "seven script blocks: dashboard, detail, chart, snapshot, research, checklist, Phase 2B tabs");
   eq(blocks.indexOf(researchCode), 4, "research block sits after the Technical Snapshot block");
   eq(blocks.indexOf(techCode), 3, "Technical Snapshot block is just before it"); ok(blocks.indexOf(researchCode) < blocks.length - 1, "research block is before the final Phase 2B block");
   eq(sha(blocks[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");

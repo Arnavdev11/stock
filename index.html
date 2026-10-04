@@ -928,6 +928,151 @@ window.SLResearch={build:build,sections:sections,check:check};
 })();
 </script>
 <script>
+/* StockLens Phase 4 Step 2 - Investment Checklist (inside the Stock Detail view, after Stock Research).
+   A read-only, descriptive checklist built ONLY from data the page already loads: out/fundamentals.json, out/financials.json and out/historical.json.
+   Values come from the Stock Research block (window.SLResearch.sections), which reuses SLTech.compute() and SLChart.prepare(); nothing is recalculated here.
+   Each row gets one status word: Available, Unavailable, Needs review or Data insufficient. A status describes the data only.
+   No score, no tally, no overall result, no advice. Debt is never inferred from liabilities; free cash flow is never estimated.
+   Missing value -> "-". Not provided by the data source -> "N/A". No new API, no token, no new data file. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var STATUS={A:"Available",U:"Unavailable",R:"Needs review",D:"Data insufficient"};
+var EQ_TOL=0.01;      /* rupee crore: tolerance when comparing stored total equity with total assets minus total liabilities */
+var MISSING="not in the current data";
+var NOTE="Descriptive only — this checklist does not provide investment advice.";
+
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
+function obj(v){return v&&typeof v==="object"?v:{}}
+
+/* ---------- the rows, as data: [{title, note, rows:[{l, v, st, note}]}] ---------- */
+function sections(s,d){
+  var base=window.SLResearch.sections(s,d),by={};
+  base.forEach(function(x){by[x.title]=x});
+  function item(t,l){var x=by[t];return x?(x.items.filter(function(i){return i.l===l})[0]||null):null}
+  function R(show,i,st,note){return{l:show,v:i?i.v:"-",st:st,note:note||""}}
+  var v=find(d.val,s)||{},f=find(d.fin,s)||{},inc=obj(f.income),bal=obj(f.balance_sheet),cf=obj(f.cash_flow);
+  var rowMixed=f.basis==="mixed";
+  var mInc=rowMixed||inc.basis==="mixed",mBal=rowMixed||bal.basis==="mixed",mCf=rowMixed||cf.basis==="mixed";
+  var MIX="statement basis is mixed (consolidated and standalone)";
+  function plain(t,l,show){var i=item(t,l);return R(show,i,i&&i.ok?"A":"U",i&&i.ok?"":MISSING)}
+  function stmt(t,l,show,mixed){var i=item(t,l),ok=!!(i&&i.ok);return R(show,i,ok?(mixed?"R":"A"):"U",ok?(mixed?MIX:""):MISSING)}
+  function ratio(t,l,show,raw){var i=item(t,l),ok=!!(i&&i.ok);return R(show,i,ok?(raw<=0?"R":"A"):"U",ok?(raw<=0?"value is zero or negative":""):MISSING)}
+  var out=[];
+
+  /* 1. Business */
+  var bd=item("Business","Business description");
+  out.push({title:"Business",note:by["Business"].note,rows:[
+    plain("Business","Company name","Company name"),plain("Business","Sector","Sector"),
+    R("Business description",bd,"U",bd&&bd.why?bd.why:"no business description exists in the current data files")]});
+
+  /* 2. Fundamental Quality */
+  var Q="Fundamental Quality";
+  out.push({title:Q,note:by[Q].note,rows:[
+    stmt(Q,"Revenue","Revenue",mInc),stmt(Q,"Total revenue","Total revenue",mInc),stmt(Q,"Total revenue growth","Total revenue growth",mInc),
+    stmt(Q,"Profit before tax","Profit before tax",mInc),stmt(Q,"Profit after tax","Profit after tax",mInc),stmt(Q,"Profit after tax growth","Profit after tax growth",mInc),
+    plain(Q,"ROE %","ROE"),plain(Q,"ROCE %","ROCE"),plain(Q,"ROA %","ROA")]});
+
+  /* 3. Financial Health */
+  var H="Financial Health",ta=bal.total_assets,tl=bal.total_liabilities,te=bal.total_equity;
+  var eqNote=null;
+  if(isn(te)){
+    if(te<=0)eqNote="total equity is zero or negative";
+    else if(isn(ta)&&isn(tl)&&Math.abs(te-(ta-tl))>EQ_TOL)eqNote="total equity differs from total assets minus total liabilities";
+    else if(mBal)eqNote=MIX}
+  var te_i=item(H,"Total equity"),le_i=item(H,"Liabilities / Equity"),leNote=null;
+  if(isn(bal.liabilities_to_equity)){
+    if(isn(te)&&te<=0)leNote="total equity is zero or negative, so the ratio is not meaningful";
+    else if(mBal)leNote=MIX}
+  var de_i=item(H,"Debt / Equity"),why=de_i&&de_i.why?de_i.why:"no reliable debt data in the current data files";
+  var HELD="a stored value exists but is not shown until debt data is validated";
+  out.push({title:H,note:by[H].note,rows:[
+    stmt(H,"Total assets","Total assets",mBal),stmt(H,"Total liabilities","Total liabilities",mBal),
+    R("Total equity",te_i,isn(te)?(eqNote?"R":"A"):"U",isn(te)?(eqNote||""):MISSING),
+    R("Liabilities / Equity",le_i,isn(bal.liabilities_to_equity)?(leNote?"R":"A"):"U",isn(bal.liabilities_to_equity)?(leNote||""):MISSING),
+    {l:"Debt / Equity",v:"N/A",st:isn(bal.debt_to_equity)?"R":"U",note:isn(bal.debt_to_equity)?HELD:why},
+    {l:"Total debt",v:"N/A",st:isn(bal.total_debt)?"R":"U",note:isn(bal.total_debt)?HELD:why}]});
+
+  /* 4. Cash Flow */
+  var C="Cash Flow",fcf=item(C,"Free cash flow");
+  out.push({title:C,note:by[C].note,rows:[
+    stmt(C,"Operating cash flow","Operating cash flow",mCf),stmt(C,"Investing cash flow","Investing cash flow",mCf),stmt(C,"Financing cash flow","Financing cash flow",mCf),
+    fcf&&fcf.ok?R("Free cash flow",fcf,"A",""):R("Free cash flow",fcf,"U",fcf&&fcf.why?fcf.why:"no unambiguous capital-expenditure line")]});
+
+  /* 5. Valuation */
+  var V="Valuation";
+  out.push({title:V,note:by[V].note,rows:[
+    ratio(V,"P/E","P/E",v.pe),ratio(V,"P/B","P/B",v.pb),ratio(V,"EV/EBITDA","EV/EBITDA",v.ev_ebitda)]});
+
+  /* 6. Technical: Unavailable = no daily candles at all; Data insufficient = candles exist but the existing calculation has no value yet */
+  var T="Technical Summary",h=d.hist,hs=h&&h.stocks&&typeof h.stocks==="object"?h.stocks[s]:null,n=0,nb=0;
+  try{n=window.SLChart&&hs?window.SLChart.cleanCandles(hs.candles).length:0}catch(e){n=0}
+  try{nb=window.SLChart&&h&&h.benchmark?window.SLChart.cleanCandles(h.benchmark.candles).length:0}catch(e){nb=0}
+  var noHist=!h?"historical data is not loaded":"no daily candles for this stock in historical.json";
+  function tech(l,show){var i=item(T,l);
+    if(n===0)return R(show,i,"U",noHist);
+    return i&&i.ok?R(show,i,"A",""):R(show,i,"D",n+" daily candle"+(n===1?"":"s")+" available, not enough for this value")}
+  var rsL="Relative Strength vs Nifty 50 (1Y ratio)",rsI=item(T,rsL),rs;
+  if(n===0)rs=R("Relative Strength vs Nifty 50 (1Y)",rsI,"U",noHist);
+  else if(nb===0)rs=R("Relative Strength vs Nifty 50 (1Y)",rsI,"U","Nifty 50 benchmark candles are not in historical.json");
+  else rs=rsI&&rsI.ok?R("Relative Strength vs Nifty 50 (1Y)",rsI,"A",""):R("Relative Strength vs Nifty 50 (1Y)",rsI,"D","not enough overlapping daily candles for this value");
+  out.push({title:"Technical",note:by[T].note,rows:[
+    tech("Last close (daily data)","Last close"),tech("Return 1M","Return 1M"),tech("Return 3M","Return 3M"),tech("Return 6M","Return 6M"),tech("Return 1Y","Return 1Y"),
+    tech("Close vs 20 DMA","20 DMA (close vs average)"),tech("Close vs 50 DMA","50 DMA (close vs average)"),tech("Close vs 200 DMA","200 DMA (close vs average)"),
+    tech("RSI(14)","RSI(14)"),tech("MACD (12, 26, 9) line","MACD line"),tech("MACD 9-day EMA line","MACD 9-day EMA line"),tech("MACD histogram","MACD histogram"),rs]});
+  return out}
+
+/* ---------- display ---------- */
+function table(rows){
+  return '<div style="overflow-x:auto"><table><thead><tr><th>Item</th><th>Value</th><th>Status</th><th>Note</th></tr></thead><tbody>'
+    +rows.map(function(r){return'<tr><td>'+esc(r.l)+'</td><td class="n">'+r.v+'</td><td>'+STATUS[r.st]+'</td><td>'+esc(r.note)+'</td></tr>'}).join("")+'</tbody></table></div>'}
+function head(){return '<h3 style="margin:1.4em 0 .4em">Investment Checklist</h3><p class="note" style="padding-left:0">'+NOTE+'</p>'}
+function build(s,d){
+  var h=head();
+  sections(s,d).forEach(function(sec){
+    h+='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">'+esc(sec.title)+'</h4><p class="note" style="padding:0 0 4px">'+sec.note+'</p>'+table(sec.rows)+'</div>'});
+  return h}
+
+/* ---------- loading (the same three static files; no other request) ---------- */
+var DATA=null;
+function loadAll(){
+  if(DATA)return DATA;
+  var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],hist:a[2]}});
+  return DATA}
+
+/* ---------- placement: append once to #detail, after the Stock Research section ---------- */
+var node=null,nodeSym=null;
+function failed(){return head()+'<p class="note" style="padding-left:0">Checklist data unavailable.</p>'}
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box)return;
+  var inner=String(box.innerHTML||"");
+  if(inner.indexOf('id="detailChart"')<0)return;                            /* the detail view has not finished rendering */
+  if(inner.indexOf('Stock Research</h3>')<0)return;                          /* the Stock Research section is not placed yet */
+  if(node&&node.parentNode===box&&nodeSym===s)return;                       /* already placed for this render */
+  var el=document.createElement("section");
+  el.id="detailChecklist";
+  el.innerHTML=head()+'<p class="note" style="padding-left:0">Loading…</p>';
+  box.appendChild(el);node=el;nodeSym=s;
+  loadAll().then(function(d){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=build(s,d)
+  }).catch(function(){if(node===el)el.innerHTML=failed()})}
+
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true})}
+check();
+window.SLChecklist={build:build,sections:sections,check:check};
+})();
+</script>
+<script>
 /* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
 (function(){
 const $=i=>document.getElementById(i),esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
