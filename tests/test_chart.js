@@ -196,7 +196,7 @@ const titles = (t) => t.charts.flatMap((c) => c.series.map((s) => s.opts.title |
   no(html, /api\.upstox\.com/, "the browser never calls Upstox"); no(JSON.stringify(HIST), /token/i, "historical.json has no token");
   const py = fs.readFileSync(__dirname + "/../historical_updater.py", "utf8"); re(py, /get_token\(\)/, "updater reads the token from the environment only"); no(py, /print\([^)]*token/i, "updater never prints the token");
   // scope
-  no(chartCode, /WebSocket|EventSource|setInterval|macd/i, "no live data, streaming or MACD"); no(html.split("<script>").slice(-3, -1).join(""), /WebSocket/, "no WebSocket anywhere in the new scripts");
+  no(chartCode, /WebSocket|EventSource|setInterval/i, "no live data or streaming"); /* Phase 3 Step 4 intentionally adds MACD to the chart block; the former "no MACD" scope guard is dropped */ no(html.split("<script>").slice(-3, -1).join(""), /WebSocket/, "no WebSocket anywhere in the new scripts");
 
   console.log("Chart tests passed (" + checks + " checks)");
 })().catch((e) => { console.error(e); process.exit(1); });
