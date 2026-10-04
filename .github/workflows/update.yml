@@ -44,6 +44,12 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
         run: python financials_updater.py
 
+      - name: Update financial history (Upstox)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python financial_history_updater.py
+
       - name: Validate outputs
         continue-on-error: true
         run: python validate_outputs.py
