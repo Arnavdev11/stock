@@ -1,0 +1,46 @@
+name: Probe NSE XBRL access (read-only)
+
+# ONE-OFF technical feasibility check (Tier 1). Run by hand: Actions > "Probe NSE XBRL access (read-only)" > Run workflow.
+# It requests ONLY NSE's official financial-results RSS feed and up to 3 XBRL files that feed links to. It does not search NSE's listing,
+# does not look up any company or any older year, uses no cookies, no retries and no secret, stores no NSE file, and prints no financial value.
+# It does not touch out/, data/, the saved-data cache or GitHub Pages, and it does not push anything.
+
+on:
+  push:
+    branches:
+      - phase1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-probe-nse-xbrl
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Probe the NSE RSS feed and linked XBRL files
+        run: python probe_nse_xbrl.py
+
+      - name: Save the probe report (metadata and tag names only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nse-xbrl-probe-report
+          path: probe_output/nse_xbrl_probe_report.json
+          if-no-files-found: ignore
+          retention-days: 7
