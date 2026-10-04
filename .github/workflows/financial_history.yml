@@ -7,6 +7,10 @@ name: Update financial history ledger
 # Manual only (workflow_dispatch).
 
 on:
+  # TEMPORARY validation trigger - to be removed in a cleanup commit.
+  push:
+    branches:
+      - phase1
   workflow_dispatch:
     inputs:
       symbols:
@@ -50,3 +54,39 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           HISTORY_SYMBOLS: ${{ inputs.symbols }}
         run: python financial_history_updater.py
+
+      - name: Validation summary (no financial values)
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          p = "out/financial_history.json"
+          if not os.path.exists(p):
+              print("NO OUTPUT FILE"); raise SystemExit(0)
+          d = json.load(open(p))
+          print("schema", d.get("schema"), "as_of", d.get("as_of"), "stocks_with_years", len(d["stocks"]), "errors", len(d["errors"]), "warnings", len(d["warnings"]))
+          for sym, s in sorted(d["stocks"].items()):
+              ys = s["years"]
+              bases = sorted({y["basis"] for y in ys})
+              fys = sorted({y["fy"] for y in ys})
+              rev = [y["fy"] for y in ys if y["values"].get("revenue") is not None]
+              fcf = [y["fy"] for y in ys if y["values"].get("free_cash_flow") is not None]
+              capex = [y["fy"] for y in ys if y["values"].get("capex") is not None]
+              print("OK  %s layout=%s fy_end_month=%s basis=%s records=%d fiscal_years=%s" % (sym, s.get("statement_layout"), s.get("fiscal_year_end_month"), bases, len(ys), fys))
+              print("      revenue=%s capex=%s fcf=%s gaps=%s" % ("available %s" % rev if rev else "unavailable", capex or "none", "available %s" % fcf if fcf else "null", s.get("gaps")))
+              print("      missing_by_year=%s" % {y["fy"]: y.get("missing") for y in ys})
+          for e in d["errors"]:
+              print("FAIL", e.get("symbol"), "-", e.get("error"))
+          for w in d["warnings"]:
+              print("WARN", {k: w[k] for k in w if k not in ("ledger", "financials")})
+          PY
+
+      - name: Upload generated ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-history
+          path: |
+            data/financial_history_ledger.json
+            out/financial_history.json
+          if-no-files-found: warn
