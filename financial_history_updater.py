@@ -32,7 +32,9 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
+import ledger_storage
 from financials_updater import capex_class, norm
 from upstox_common import (MONTHS, ROOT, SYMBOLS, Upstox, fail, get_token, load_instruments, log, num, today, write_json)
 
@@ -710,10 +712,15 @@ def normalise_ledger(ledger):
 def main():
     token = get_token()
     day = today()
-    ledger = read_json(LEDGER_FILE) or {"schema": SCHEMA_VERSION, "stocks": {}}
-    if ledger.get("schema") != SCHEMA_VERSION or not isinstance(ledger.get("stocks"), dict):
-        fail("The saved ledger has an unexpected schema. It was not changed.")
+    try:                                                      # Step 4D: the data branch is the source of truth; the cache is the first-migration fallback only
+        source, kind = ledger_storage.choose_source(os.environ.get("FINANCIAL_HISTORY_LEDGER_DIR", "").strip(), LEDGER_FILE)
+        ledger = ledger_storage.load_ledger(source)
+    except ledger_storage.StorageError as e:
+        fail(str(e))
+    log("Ledger source:", kind)
+    ledger_out = Path(os.environ.get("FINANCIAL_HISTORY_LEDGER_OUT", "").strip() or source)
     normalise_ledger(ledger)
+    before = copy.deepcopy(ledger)                            # what the ledger held before this run, for the no-loss check
     raw = os.environ.get("HISTORY_SYMBOLS", "").strip()
     symbols = [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else list(SYMBOLS)
     fund = read_json(FUNDAMENTALS_FILE) or {}
@@ -751,8 +758,13 @@ def main():
         for x in problems[:20]:
             print("::error::financial_history: " + x)
         fail("financial_history failed its checks. Neither the ledger nor the output was written.")
+    lost = ledger_storage.no_loss_problems(before, ledger)
+    if lost:
+        for x in lost[:20]:
+            print("::error::financial_history no-loss check: " + x)
+        fail("The no-loss check failed. Neither the ledger nor the output was written.")
     ledger["updated"] = day
-    write_json(LEDGER_FILE, ledger)
+    write_json(ledger_out, ledger)
     write_json(OUT_FILE, doc)
     log("Wrote", OUT_FILE, "-", len(doc["stocks"]), "stocks,", len(errors), "with problems,", len(warnings), "consistency warnings, API calls:", api.calls)
     for w in warnings[:30]:

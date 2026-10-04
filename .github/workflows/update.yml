@@ -8,12 +8,38 @@ name: Update data and publish site
 permissions:
   contents: read
 
+# One shared group for everything that reads or writes the financial-history ledger (see also financial_history.yml). Never cancels a run.
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      ledger_ready: ${{ steps.ledgerout.outputs.ready }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -48,7 +74,28 @@ jobs:
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FINANCIAL_HISTORY_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
+          FINANCIAL_HISTORY_LEDGER_OUT: ledger-out/financial_history_ledger.json
         run: python financial_history_updater.py
+
+      - name: Check the ledger output
+        id: ledgerout
+        run: |
+          if [ -s ledger-out/financial_history_ledger.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The financial history updater produced no ledger this run, so nothing will be saved."
+          fi
+
+      - name: Hand the updated ledger to the save job
+        if: steps.ledgerout.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-history-ledger
+          path: ledger-out/financial_history_ledger.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Validate outputs
         continue-on-error: true
@@ -79,3 +126,12 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  save-history:
+    needs: build
+    if: ${{ needs.build.outputs.ledger_ready == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/save_ledger.yml
+    with:
+      create_branch: false

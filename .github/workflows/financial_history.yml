@@ -1,9 +1,8 @@
 name: Update financial history ledger
 
-# Separate from "Update data and publish site" (which is not changed).
-# It restores the same saved-data cache, adds/updates data/financial_history_ledger.json and out/financial_history.json, and saves the cache again.
-# The next run of "Update data and publish site" then restores it and publishes out/financial_history.json with the site (it copies out/*.json).
-# Run this first, wait for it to finish, then run "Update data and publish site".
+# Separate from "Update data and publish site". Run it by hand for a forced refresh, or - once - to create the data branch (create_data_branch = true).
+# The ledger lives on the `stocklens-data` branch. If that branch exists it is the source of truth; if it does not, the cached ledger is used (first migration only).
+# This workflow does not publish the site; "Update data and publish site" publishes out/financial_history.json.
 # Manual only (workflow_dispatch).
 
 on:
@@ -13,20 +12,47 @@ on:
         description: "Optional comma list for a small first run, e.g. TCS. Empty = all 10 development stocks."
         required: false
         default: ""
+      create_data_branch:
+        description: "First migration only: create the stocklens-data branch from the cached ledger. Does nothing if the branch already exists."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
+# One shared group for everything that reads or writes the financial-history ledger (see also update.yml). Never cancels a run.
 concurrency:
-  group: stocklens-financial-history
+  group: stocklens-ledger
   cancel-in-progress: false
 
 jobs:
   history:
     runs-on: ubuntu-latest
+    outputs:
+      ledger_ready: ${{ steps.ledgerout.outputs.ready }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,4 +75,34 @@ jobs:
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           HISTORY_SYMBOLS: ${{ inputs.symbols }}
+          FINANCIAL_HISTORY_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
+          FINANCIAL_HISTORY_LEDGER_OUT: ledger-out/financial_history_ledger.json
         run: python financial_history_updater.py
+
+      - name: Check the ledger output
+        id: ledgerout
+        run: |
+          if [ -s ledger-out/financial_history_ledger.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The financial history updater produced no ledger this run, so nothing will be saved."
+          fi
+
+      - name: Hand the updated ledger to the save job
+        if: steps.ledgerout.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-history-ledger
+          path: ledger-out/financial_history_ledger.json
+          if-no-files-found: error
+          retention-days: 14
+
+  save-history:
+    needs: history
+    if: ${{ needs.history.outputs.ledger_ready == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/save_ledger.yml
+    with:
+      create_branch: ${{ inputs.create_data_branch }}
