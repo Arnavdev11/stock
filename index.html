@@ -439,6 +439,7 @@ render();
 var LIB_URL="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js";
 var ST_PERIOD=10, ST_MULT=3;          /* Supertrend: ATR period 10, multiplier 3 */
 var RSI_PERIOD=14, MIN_CANDLES=30;
+var MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9;   /* MACD (12, 26, 9) */
 var TFS=[["1M",1],["3M",3],["6M",6],["1Y",12],["3Y",36],["5Y",60]];
 var IND=[["dma20","20 DMA","#E8A317"],["dma50","50 DMA","#3B4CCA"],["dma200","200 DMA","#9B59B6"],
          ["ema20","20 EMA","#17A2B8"],["ema50","50 EMA","#D2691E"],["st","Supertrend","#0E8F5E"]];
@@ -509,6 +510,16 @@ function relStrength(stock,bench){
   var l=pts[pts.length-1];
   return{points:pts,last:l.value,stockReturn:l.s*100,benchReturn:l.b*100}}
 
+/* MACD (12, 26, 9) on the closes: MACD = EMA12 - EMA26 (first defined at index 25); Signal = EMA9 of the MACD values, seeded with the
+   simple average of the first 9 MACD values (first defined at index 33); Histogram = MACD - Signal. All EMAs use the SMA seed used elsewhere here.
+   Arrays have the input length; null = not defined yet (never zero-filled, never interpolated). Descriptive research indicator only. */
+function macd(c){
+  var n=c.length,e1=ema(c,MACD_FAST),e2=ema(c,MACD_SLOW),line=[],sig=[],hist=[],i,first=-1;
+  for(i=0;i<n;i++){var v=e1[i]!=null&&e2[i]!=null?e1[i]-e2[i]:null;line.push(v);if(v!=null&&first<0)first=i;sig.push(null);hist.push(null)}
+  if(first>=0){var s=ema(line.slice(first),MACD_SIGNAL);
+    for(i=0;i<s.length;i++)if(s[i]!=null){sig[first+i]=s[i];hist[first+i]=line[first+i]-s[i]}}
+  return{macd:line,signal:sig,hist:hist}}
+
 /* ---------- model for one stock + timeframe ---------- */
 function minusMonths(ds,n){var d=new Date(ds+"T00:00:00Z");d.setUTCMonth(d.getUTCMonth()-n);return d.toISOString().slice(0,10)}
 function tfsFor(candles){
@@ -541,13 +552,16 @@ function prepare(doc,sym,tf){
     m.st.up.push(s&&s.dir===1?{time:dates[i],value:s.value}:{time:dates[i]});
     m.st.down.push(s&&s.dir===-1?{time:dates[i],value:s.value}:{time:dates[i]})}
   m.rsi=series(dates,rsi(closes,RSI_PERIOD),from);
+  var mc=macd(closes);                              /* full history first, then cut to the range */
+  m.macd={line:series(dates,mc.macd,from),signal:series(dates,mc.signal,from),hist:series(dates,mc.hist,from)};
   var b=cleanCandles(doc.benchmark&&doc.benchmark.candles),rs=relStrength(shown,b);
   m.rs=null;
   if(rs){var by={};rs.points.forEach(function(p){by[p.date]=p.value});
     m.rs={line:shown.map(function(c){return isn(by[c.date])?{time:c.date,value:by[c.date]}:{time:c.date}}),
           last:rs.last,stockReturn:rs.stockReturn,benchReturn:rs.benchReturn}}
   m.avail={dma20:hasValues(m.lines.dma20),dma50:hasValues(m.lines.dma50),dma200:hasValues(m.lines.dma200),
-           ema20:hasValues(m.lines.ema20),ema50:hasValues(m.lines.ema50),st:hasValues(m.st.up)||hasValues(m.st.down),rsi:hasValues(m.rsi)};
+           ema20:hasValues(m.lines.ema20),ema50:hasValues(m.lines.ema50),st:hasValues(m.st.up)||hasValues(m.st.down),rsi:hasValues(m.rsi),
+           macd:hasValues(m.macd.line),macdSignal:hasValues(m.macd.signal)};
   return m}
 
 /* ---------- loading ---------- */
@@ -590,6 +604,7 @@ function draw(box,L){
   var h=controls(m);
   h+='<div id="slPrice"></div><div class="note" style="padding:6px 0 0">Volume</div><div id="slVol"></div>';
   h+='<div class="note" style="padding:10px 0 0"><b>RSI (14)</b> &mdash; reference levels 30 / 50 / 70. A momentum reading, not a buy or sell signal.</div>'+(m.avail.rsi?'<div id="slRsi"></div>':'<p class="note">Not enough historical data.</p>');
+  h+='<div class="note" style="padding:10px 0 0"><b>MACD (12, 26, 9)</b> &mdash; MACD line = 12-day EMA minus 26-day EMA of the close; Signal line = 9-day EMA of the MACD line; histogram = MACD minus Signal line. Descriptive only, not a recommendation.</div>'+(m.avail.macd?'<div id="slMacd"></div>'+(m.avail.macdSignal?'':'<p class="note" style="padding:2px 0 0">Signal line and histogram need at least 34 candles.</p>'):'<p class="note">Not enough historical data.</p>');
   if(m.rs)h+='<div class="note" style="padding:10px 0 0"><b>Relative Strength vs Nifty 50</b> &mdash; '+esc(cur.sym)+' '+f2(m.rs.stockReturn)+'% vs Nifty 50 '+f2(m.rs.benchReturn)+'% over '+esc(m.tf)+'; ratio now '+f2(m.rs.last)+' (100 = same as Nifty 50 at the start of the range). A comparison, not a signal.</div><div id="slRs"></div>';
   else h+='<div class="note" style="padding:10px 0 0"><b>Relative Strength vs Nifty 50</b> &mdash; Not enough historical data.</div>';
   h+='<p class="note" style="padding:8px 0 0">VWAP &mdash; Available in a future intraday-data phase</p>';
@@ -622,6 +637,13 @@ function draw(box,L){
       autoscaleInfoProvider:function(){return{priceRange:{minValue:0,maxValue:100}}}});
     rl.setData(m.rsi);
     [70,50,30].forEach(function(p){rl.createPriceLine({price:p,color:mute,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:""})})}
+  var mp=m.avail.macd?make("slMacd",150):null;      /* MACD panel: same candles/dates as every other panel, so the shared range sync covers it */
+  if(mp){
+    var mh=mp.addHistogramSeries({priceLineVisible:false,lastValueVisible:false,priceFormat:{type:"price",precision:2,minMove:0.01},title:"Histogram"});
+    mh.setData(m.macd.hist.map(function(p){return p.value===undefined?p:{time:p.time,value:p.value,color:p.value>=0?"rgba(59,76,202,0.55)":"rgba(140,150,170,0.65)"}}));   /* neutral two-tone: above / below zero */
+    var ml=mp.addLineSeries({color:"#3B4CCA",lineWidth:2,priceLineVisible:false,lastValueVisible:true,title:"MACD"});
+    ml.setData(m.macd.line);ml.createPriceLine({price:0,color:mute,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:""});   /* zero line */
+    if(m.avail.macdSignal)mp.addLineSeries({color:"#E8A317",lineWidth:1,priceLineVisible:false,lastValueVisible:true,title:"Signal"}).setData(m.macd.signal)}
   var rc=m.rs?make("slRs",130):null;
   if(rc){
     var rr=rc.addLineSeries({color:"#3B4CCA",lineWidth:2,priceLineVisible:false,lastValueVisible:true,title:"RS vs Nifty 50"});
@@ -658,8 +680,8 @@ function mount(sym,isCurrent){
     return loadLib().then(function(L){if(stillHere())draw(box,L)},function(){if(stillHere())msg(box,"Chart library could not be loaded.")})
   }).catch(function(){var b=$("detailChart");if(b===box)msg(box,"Historical data unavailable.")})}
 
-window.SLChart={mount:mount,prepare:prepare,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,
-  PARAMS:{supertrendPeriod:ST_PERIOD,supertrendMultiplier:ST_MULT,rsiPeriod:RSI_PERIOD}};
+window.SLChart={mount:mount,prepare:prepare,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,macd:macd,
+  PARAMS:{supertrendPeriod:ST_PERIOD,supertrendMultiplier:ST_MULT,rsiPeriod:RSI_PERIOD,macdFast:MACD_FAST,macdSlow:MACD_SLOW,macdSignal:MACD_SIGNAL}};
 })();
 </script>
 <script>
