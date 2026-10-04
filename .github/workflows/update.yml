@@ -54,6 +54,7 @@ jobs:
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
+          cp company_profiles.json _site/out/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

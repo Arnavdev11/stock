@@ -801,8 +801,8 @@ window.SLTech={mount:mount,compute:compute,cleanCandles:cleanCandles,atr:atr,min
 </script>
 <script>
 /* StockLens Phase 4 Step 1 - Stock Research (inside the Stock Detail view).
-   A descriptive overview built ONLY from files the page already loads: out/fundamentals.json, out/financials.json and out/historical.json.
-   No new API, no token, no new data file. Stored values are shown exactly as stored - nothing is recalculated here.
+   A descriptive overview built ONLY from static files: out/fundamentals.json, out/financials.json, out/historical.json and (Phase 4 Step 3) out/company_profiles.json.
+   No new API, no token. Stored values are shown exactly as stored - nothing is recalculated here.
    Technical values come from the existing SLTech.compute() and SLChart.prepare(); Relative Strength uses a fixed 1Y window.
    Missing value -> "-". Not provided by the data source -> "N/A" / "Unavailable". The section is appended to #detail after the
    Stock Detail view has rendered; the Stock Detail script itself is not changed. It gives no advice and no interpretation. */
@@ -838,6 +838,31 @@ function it(l,raw,fmt){var ok=isn(raw);return{l:l,ok:ok,v:ok?fmt(raw):"-",why:""
 function itx(l,ok,v,why){return{l:l,ok:ok,v:v,why:why||""}}
 function lastv(a){return a&&a.length&&isn(a[a.length-1].value)?a[a.length-1].value:null}
 
+/* ---------- verified business profile (out/company_profiles.json; Phase 4 Step 3) ----------
+   A profile is used only when it has a description, a source name, an https source URL and a valid retrieved_on date.
+   source_date may be null (shown as "Not shown"); a source_date that is present but not a real date makes the profile "review".
+   Upstox company name / sector stay primary; the profile's values are used only as a fallback. Nothing here is inferred. */
+function isDate(x){
+  if(typeof x!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;
+  var d=new Date(x+"T00:00:00Z");return !isNaN(d.getTime())&&d.toISOString().slice(0,10)===x}
+function httpsUrl(u){
+  if(typeof u!=="string"||u!==u.trim()||!/^https:\/\//i.test(u)||/[\s<>"'`\\]/.test(u))return null;
+  var p;try{p=new URL(u)}catch(e){return null}
+  if(p.protocol!=="https:"||!p.hostname||p.username||p.password)return null;
+  return p.href}
+function profileOf(doc,s){
+  var p=find(doc,s);
+  if(!p)return{state:"none"};
+  var desc=str(p.description),sn=str(p.source_name),url=httpsUrl(p.source_url),sd=p.source_date;
+  if(!desc||!sn||!url||!isDate(p.retrieved_on)||(sd!==null&&sd!==undefined&&!isDate(sd)))return{state:"review"};
+  var kb=Array.isArray(p.key_businesses)?p.key_businesses.map(str).filter(Boolean):[];
+  return{state:"ok",p:{name:str(p.company_name),sector:str(p.sector),desc:desc,kb:kb,model:str(p.business_model),sn:sn,url:url,sd:isDate(sd)?sd:null,rd:p.retrieved_on}}}
+function profileHtml(p){
+  var h='<div style="margin-top:12px"><h5 style="margin:0 0 .3em">Business Profile</h5><p style="margin:.2em 0">'+esc(p.desc)+'</p>';
+  if(p.kb.length)h+='<p style="margin:.6em 0 .1em"><b>Key businesses</b></p><ul style="margin:.2em 0;padding-left:18px">'+p.kb.map(function(k){return"<li>"+esc(k)+"</li>"}).join("")+"</ul>";
+  if(p.model)h+='<p style="margin:.6em 0 .1em"><b>Business model:</b> '+esc(p.model)+"</p>";
+  return h+'<p class="note" style="padding:6px 0 0">Source: <a href="'+esc(p.url)+'" rel="noopener noreferrer">'+esc(p.sn)+"</a> · Source date: "+(p.sd?esc(p.sd):"Not shown")+" · Retrieved: "+esc(p.rd)+"</p></div>"}
+
 /* ---------- technical values: reuse the existing calculations, never a second implementation ---------- */
 function technical(hist,s){
   var t=null,m=null;
@@ -858,14 +883,17 @@ function technical(hist,s){
 /* ---------- the seven parts of the section, as data ---------- */
 function sections(s,d){
   var v=find(d.val,s)||{},f=find(d.fin,s)||{},inc=obj(f.income),bal=obj(f.balance_sheet),cf=obj(f.cash_flow);
-  var name=str(v.company_name)||str(f.company_name),sector=str(v.sector);
+  var pf=profileOf(d.prof,s);
+  var name=str(v.company_name)||str(f.company_name)||(pf.state==="ok"?pf.p.name:null),sector=str(v.sector)||(pf.state==="ok"?pf.p.sector:null);
+  var bdesc=pf.state==="ok"?{l:"Business description",ok:true,v:"Profile on file",why:"",st:"A"}
+    :pf.state==="review"?{l:"Business description",ok:false,v:"Needs review",why:"a profile exists but its source details are incomplete or invalid",st:"R"}
+    :itx("Business description",false,"Unavailable","no verified business profile for this stock");
   var valNote=d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of):"Fundamentals not loaded yet.";
   var finNote=d.fin&&d.fin.as_of?"Financial data: "+esc(d.fin.source||"Upstox")+" · ₹ crore · Updated: "+esc(d.fin.as_of):"Financial statements not loaded yet.";
   var tech=technical(d.hist,s);
   return[
-    {title:"Business",note:valNote,items:[
-      itx("Company name",!!name,name?esc(name):"-"),itx("Sector",!!sector,sector?esc(sector):"-"),
-      itx("Business description",false,"Unavailable","no business description exists in the current data files")]},
+    {title:"Business",note:valNote,extra:pf.state==="ok"?profileHtml(pf.p):"",items:[
+      itx("Company name",!!name,name?esc(name):"-"),itx("Sector",!!sector,sector?esc(sector):"-"),bdesc]},
     {title:"Fundamental Quality",note:"Income statement: "+per(inc)+" (₹ crore). Ratios: "+valNote+". Growth is the source's own period-over-period change and is shown only where it was verified.",items:[
       it("Revenue",inc.revenue,cr),it("Total revenue",inc.total_revenue,cr),it("Total revenue growth",inc.total_revenue_growth,pc),
       it("Profit before tax",inc.profit_before_tax,cr),it("Profit after tax",inc.profit_after_tax,cr),it("Profit after tax growth",inc.profit_after_tax_growth,pc),
@@ -881,7 +909,7 @@ function sections(s,d){
     {title:"Technical Summary",note:(tech.asOf?"Daily data as of "+esc(tech.asOf)+". ":"")+"Historical data is not live. Calculated in your browser from out/historical.json with the same calculations as the Technical Snapshot and the chart. Relative Strength vs Nifty 50 uses the latest "+RS_WINDOW+" window (100 = same as Nifty 50 at the start of that window).",items:tech.items}]}
 
 function panel(sec){
-  return '<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">'+esc(sec.title)+'</h4><p class="note" style="padding:0 0 4px">'+sec.note+'</p><div class="tiles">'+sec.items.map(function(i){return tile(i.l,i.v)}).join("")+'</div></div>'}
+  return '<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">'+esc(sec.title)+'</h4><p class="note" style="padding:0 0 4px">'+sec.note+'</p><div class="tiles">'+sec.items.map(function(i){return tile(i.l,i.v)}).join("")+'</div>'+(sec.extra||"")+'</div>'}
 
 function checklist(s,secs){
   var rows=secs.map(function(sec){
@@ -897,12 +925,12 @@ function build(s,d){
   secs.forEach(function(sec){h+=panel(sec)});
   return h+checklist(s,secs)}
 
-/* ---------- loading (the same three static files; no other request) ---------- */
+/* ---------- loading (the same four static files; no other request) ---------- */
 var DATA=null;
 function loadAll(){
   if(DATA)return DATA;
   var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
-  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],hist:a[2]}});
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json"),j("out/company_profiles.json")]).then(function(a){return{val:a[0],fin:a[1],hist:a[2],prof:a[3]}});
   return DATA}
 
 /* ---------- placement: append once to #detail after the Stock Detail view has rendered ---------- */
@@ -929,7 +957,7 @@ window.SLResearch={build:build,sections:sections,check:check};
 </script>
 <script>
 /* StockLens Phase 4 Step 2 - Investment Checklist (inside the Stock Detail view, after Stock Research).
-   A read-only, descriptive checklist built ONLY from data the page already loads: out/fundamentals.json, out/financials.json and out/historical.json.
+   A read-only, descriptive checklist built ONLY from data the page already loads: out/fundamentals.json, out/financials.json, out/historical.json and out/company_profiles.json.
    Values come from the Stock Research block (window.SLResearch.sections), which reuses SLTech.compute() and SLChart.prepare(); nothing is recalculated here.
    Each row gets one status word: Available, Unavailable, Needs review or Data insufficient. A status describes the data only.
    No score, no tally, no overall result, no advice. Debt is never inferred from liabilities; free cash flow is never estimated.
@@ -968,10 +996,10 @@ function sections(s,d){
   var out=[];
 
   /* 1. Business */
-  var bd=item("Business","Business description");
+  var bd=item("Business","Business description"),bdSt=bd&&bd.st?bd.st:"U";
   out.push({title:"Business",note:by["Business"].note,rows:[
     plain("Business","Company name","Company name"),plain("Business","Sector","Sector"),
-    R("Business description",bd,"U",bd&&bd.why?bd.why:"no business description exists in the current data files")]});
+    R("Business description",bd,bdSt,bdSt==="A"?"":(bd&&bd.why?bd.why:"no verified business profile for this stock"))]});
 
   /* 2. Fundamental Quality */
   var Q="Fundamental Quality";
@@ -1040,12 +1068,12 @@ function build(s,d){
     h+='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">'+esc(sec.title)+'</h4><p class="note" style="padding:0 0 4px">'+sec.note+'</p>'+table(sec.rows)+'</div>'});
   return h}
 
-/* ---------- loading (the same three static files; no other request) ---------- */
+/* ---------- loading (the same four static files; no other request) ---------- */
 var DATA=null;
 function loadAll(){
   if(DATA)return DATA;
   var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
-  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],hist:a[2]}});
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json"),j("out/company_profiles.json")]).then(function(a){return{val:a[0],fin:a[1],hist:a[2],prof:a[3]}});
   return DATA}
 
 /* ---------- placement: append once to #detail, after the Stock Research section ---------- */

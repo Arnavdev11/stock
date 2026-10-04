@@ -195,7 +195,7 @@ const liOf = (h, title) => { const m = h.match(new RegExp("<li[^>]*><b>" + esc(t
 
   // ================= 10. Research Checklist (descriptive, available vs unavailable) =================
   t = await boot("#stock=TCS"); h = t.page();
-  re(liOf(h, "Business"), /Available: Company name, Sector\. . Unavailable: Business description \(no business description exists in the current data files\)\./, "Business: description always listed as unavailable");
+  re(liOf(h, "Business"), /Available: Company name, Sector\. . Unavailable: Business description \(no verified business profile for this stock\)\./, "Business: description always listed as unavailable");
   re(liOf(h, "Financial Health"), /Unavailable: Debt \/ Equity \(no reliable debt data in the current data files\)\./, "Financial Health: Debt / Equity always unavailable");
   re(liOf(h, "Financial Health"), /Available: Total assets, Total liabilities, Total equity, Liabilities \/ Equity\./, "Financial Health: available list");
   re(liOf(h, "Cash Flow"), /Unavailable: Free cash flow \(no unambiguous capital-expenditure line\)\./, "Cash Flow: FCF unavailable when null"); re(liOf(h, "Cash Flow"), /Available: Operating cash flow, Investing cash flow, Financing cash flow\./, "Cash Flow: available list");
@@ -226,8 +226,8 @@ const liOf = (h, title) => { const m = h.match(new RegExp("<li[^>]*><b>" + esc(t
   // ================= 13. security / scope =================
   const code = researchCode.replace(/\/\*[\s\S]*?\*\//g, "");
   no(code, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization|api\.upstox\.com|upstox\.com/i, "no token, auth header or Upstox host"); no(code, /WebSocket|EventSource|setInterval|XMLHttpRequest|localStorage|sessionStorage/, "no live data, polling or storage");
-  eq((code.match(/fetch\(/g) || []).length, 1, "the research module has exactly one fetch call (a helper)"); eq([...new Set(code.match(/out\/[a-z_]+\.json/g))].sort(), ["out/financials.json", "out/fundamentals.json", "out/historical.json"], "it reads only the three existing data files");
-  t = await boot("#stock=TCS"); ok(t.fetched.every((u) => /^out\/(fundamentals|financials|historical|scans)\.json$/.test(u)), "the whole page requests only existing JSON files: " + [...new Set(t.fetched)].join(", ")); ok(!t.fetched.some((u) => /upstox/i.test(u)), "browser never calls Upstox");
+  eq((code.match(/fetch\(/g) || []).length, 1, "the research module has exactly one fetch call (a helper)"); eq([...new Set(code.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json"], "it reads only the four data files (three existing + company_profiles.json)");
+  t = await boot("#stock=TCS"); ok(t.fetched.every((u) => /^out\/(fundamentals|financials|historical|scans|company_profiles)\.json$/.test(u)), "the whole page requests only existing JSON files: " + [...new Set(t.fetched)].join(", ")); ok(!t.fetched.some((u) => /upstox/i.test(u)), "browser never calls Upstox");
   no(html, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization/i, "no token or auth header anywhere in the page"); no(html, /api\.upstox\.com/, "no Upstox call anywhere in the page");
   ok(!fs.existsSync(__dirname + "/../out/historical.json"), "no fake out/historical.json is shipped"); ok(!fs.existsSync(__dirname + "/../out"), "no new data files shipped");
 

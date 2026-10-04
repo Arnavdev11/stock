@@ -66,7 +66,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   eq(sha(detailCode), "ec1d3d5d5791202fea1aa3d77e1189bb7fce41533ed529d98e35998ec8a1de77", "Stock Detail block byte-identical");
   eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
-  eq(sha(researchCode), "94a757e0f14a71b76e2ea101a2b9d46c6756294a0d833170f2819a351c9a171a", "Stock Research block byte-identical (Step 1 untouched)");
+  eq(sha(researchCode), "575598c575493f0d587c2c531e576f8c1ba85c1fffb183e079732f66e93682f9", "Stock Research block pinned (re-pinned in Phase 4 Step 3: Business Profile)");
   eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
   re(checkCode, /window\.SLChecklist=/, "checklist module exposes its API");
 
@@ -105,7 +105,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   eq(row("TCS", "Technical", "Last close").v, resVal("Technical Summary", "Last close (daily data)"), "technical values come straight from the Stock Research values");
 
   // ================= 4. Business =================
-  eq(row("TCS", "Business", "Business description"), { v: "Unavailable", st: "U", note: "no business description exists in the current data files" }, "business description: always Unavailable, shows the word Unavailable");
+  eq(row("TCS", "Business", "Business description"), { v: "Unavailable", st: "U", note: "no verified business profile for this stock" }, "business description: always Unavailable, shows the word Unavailable");
   eq(row("MISS", "Business", "Company name"), { v: "-", st: "U", note: "not in the current data" }, "missing company name: '-' and Unavailable");
   eq(row("MISS", "Business", "Sector"), { v: "-", st: "U", note: "not in the current data" }, "missing sector: '-' and Unavailable");
   eq(st("NOSUCH", "Business", "Company name"), "U", "stock in no file: company name Unavailable"); eq(st("NOSUCH", "Business", "Business description"), "U", "stock in no file: description Unavailable");
@@ -245,7 +245,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   ok(t.check().innerHTML.includes("Investment Checklist") && t.check().innerHTML.includes("Descriptive only — this checklist does not provide investment advice."), "the checklist section shows its title and descriptive line");
   eq(t.fetched.filter((u) => u.includes("fundamentals")).length, 3, "fundamentals.json: one fetch each by Stock Detail, Stock Research and the checklist (the checklist adds exactly one)");
   eq(t.fetched.filter((u) => u.includes("historical")).length, 4, "historical.json: chart, snapshot, research and the checklist each fetch it once");
-  eq([...new Set(t.fetched.map((u) => u.replace(/\?.*$/, "")))].sort(), ["out/financials.json", "out/fundamentals.json", "out/historical.json", "out/scans.json"].filter((u) => t.fetched.some((f) => f.startsWith(u))).sort(), "no URL beyond the existing data files is requested");
+  eq([...new Set(t.fetched.map((u) => u.replace(/\?.*$/, "")))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json", "out/scans.json"].filter((u) => t.fetched.some((f) => f.startsWith(u))).sort(), "no URL beyond the existing data files is requested");
   ok(t.fetched.every((u) => /^out\/[a-z_]+\.json$/.test(u)), "every request is a relative out/*.json file");
   const page = t.check().innerHTML;
   eq(cell(page, "Revenue"), { v: "2,50,000.5", st: "Available", note: "" }, "rendered row: value, status word, empty note");
@@ -296,7 +296,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   // ================= 13. security and scope =================
   no(checkCode, /Authorization|Bearer|access_token|api\.upstox|upstox\.com|localStorage|sessionStorage|WebSocket|EventSource|setInterval|XMLHttpRequest|eval\(|new Function|document\.write/i, "no token, no Upstox, no storage, no streaming, no dynamic code");
   eq((checkCode.match(/fetch\(/g) || []).length, 1, "exactly one fetch call (a helper)");
-  eq([...new Set(checkCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/financials.json", "out/fundamentals.json", "out/historical.json"], "it reads only the three existing data files");
+  eq([...new Set(checkCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json"], "it reads only the four data files (three existing + company_profiles.json)");
   eq((checkCode.match(/\bcache:"no-store"/g) || []).length, 1, "the helper uses no-store like the other loaders");
   no(checkCode, /https?:\/\//, "no external URL in the block");
   no(checkCode, /debt_to_equity\s*\/|total_liabilities\s*[-\/*]|operating\s*[-+]\s*\S*investing|investing\s*[-+]/, "no debt inferred from liabilities and no operating-minus-investing arithmetic");
