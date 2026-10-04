@@ -1100,6 +1100,128 @@ check();
 window.SLChecklist={build:build,sections:sections,check:check};
 })();
 </script>
+<script type="module">
+/* StockLens Phase 4 Step 4E - Financial History (a panel placed directly under the Stock Research section of the Stock Detail view).
+   Reads ONLY out/financial_history.json (one request, made when a Stock Detail view opens). Nothing is stored in the browser.
+   Fiscal-year columns come from the records actually present; a missing year or value shows "-" and is never estimated, carried forward or interpolated.
+   Shown per year: Revenue (Total income for banks), profit before tax, profit after tax, basic EPS, operating cash flow.
+   Change vs the previous year and CAGR are calculated for revenue/total income, profit before tax and profit after tax ONLY: change from two consecutive years that both hold a value,
+   CAGR over a fixed window per stock (TCS FY2022-FY2026, ITC and the rest FY2023-FY2026) that is never shortened. EPS and cash flow get no growth figure. No advice, rating, score or signal.
+   This is a separate module script on purpose: the seven classic script blocks above and below it are not touched. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var OFFICIAL="Official annual report";
+/* A presentation boundary: the value is the first fiscal year on the later side. No change or CAGR may span it. */
+var BOUNDARY={ITC:2023};
+var cr=function(v){return isn(v)?N0.format(v):"-"},r2=function(v){return isn(v)?N2.format(v):"-"};
+function pc(v){if(!isn(v))return"-";var s=v.toFixed(2);if(s==="-0.00")s="0.00";return(v>0?"+":"")+s+"%"}
+function yy(fy){return String(fy%100).length<2?"0"+(fy%100):String(fy%100)}
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+function crosses(sym,a,b){var B=Object.prototype.hasOwnProperty.call(BOUNDARY,sym)?BOUNDARY[sym]:null;return B!==null&&a<B&&b>=B}
+
+/* ---------- the model: columns from the real records, rows from the defined fields ---------- */
+function model(doc,s){
+  if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object"||Array.isArray(doc.stocks))return{state:"unavailable"};
+  var st=Object.prototype.hasOwnProperty.call(doc.stocks,s)?doc.stocks[s]:null;
+  if(!st||typeof st!=="object"||!Array.isArray(st.years))return{state:"none"};
+  var recs=st.years.filter(function(r){return r&&typeof r==="object"&&Number.isInteger(r.fy)&&r.values&&typeof r.values==="object"});
+  if(!recs.length)return{state:"none"};
+  var basis=recs.some(function(r){return r.basis==="consolidated"})?"consolidated":recs[0].basis;      /* bases are never mixed */
+  var seen={},cols=[];
+  recs.filter(function(r){return r.basis===basis}).sort(function(a,b){return a.fy-b.fy}).forEach(function(r){
+    if(seen[r.fy])return;seen[r.fy]=1;
+    var src=r.source&&typeof r.source==="object"?r.source:{},ver=r.verification&&typeof r.verification==="object"?r.verification:{};
+    cols.push({fy:r.fy,label:"FY"+r.fy,v:r.values,official:src.provider===OFFICIAL,differs:ver.reconciliation==="mismatch"})});
+  var bank=st.statement_layout==="financial";
+  return{state:"ok",sym:s,basis:basis,bank:bank,cols:cols,as_of:typeof doc.as_of==="string"?doc.as_of:null,source:typeof doc.source==="string"?doc.source:null,
+    metrics:[
+      {key:bank?"total_revenue":"revenue",label:bank?"Total income":"Revenue",fmt:cr,growth:true},
+      {key:"profit_before_tax",label:"Profit before tax",fmt:cr,growth:true},
+      {key:"profit_after_tax",label:"Profit after tax",fmt:cr,growth:true},
+      {key:"eps_basic",label:"EPS, basic (₹)",fmt:r2,growth:false},
+      {key:"operating_cash_flow",label:"Operating cash flow",fmt:cr,growth:false}]}}
+function val(col,key){var x=col.v[key];return isn(x)?x:null}
+
+/* change vs the previous fiscal year: both years present and consecutive (one basis), both values non-null, not across a boundary.
+   A negative previous value is allowed (the change is measured against its size, so an improvement is positive). A previous value of exactly 0
+   has no percentage change (division by zero), so it shows "-". */
+function change(m,i,key){
+  if(i<1)return null;var a=m.cols[i-1],b=m.cols[i],x=val(a,key),y=val(b,key);
+  if(a.fy!==b.fy-1||x===null||y===null||x===0||crosses(m.sym,a.fy,b.fy))return null;
+  return(y-x)/Math.abs(x)*100}
+/* CAGR: a FIXED comparable window per stock, never shortened. Every fiscal year in the window must be on file with a positive value, otherwise "-". */
+var WINDOWS={TCS:[2022,2026],ITC:[2023,2026]},DEFAULT_WINDOW=[2023,2026];
+function windowOf(sym){return Object.prototype.hasOwnProperty.call(WINDOWS,sym)?WINDOWS[sym]:DEFAULT_WINDOW}
+function cagr(m,key){
+  var w=windowOf(m.sym),from=w[0],to=w[1],byFy={};
+  m.cols.forEach(function(c){byFy[c.fy]=c});
+  var vals=[];
+  for(var fy=from;fy<=to;fy++){var c=byFy[fy],v=c?val(c,key):null;if(v===null||!(v>0))return null;vals.push(v)}
+  var n=to-from,s=vals[0],e=vals[vals.length-1];
+  return{n:n,from:from,to:to,pct:(Math.pow(e/s,1/n)-1)*100,label:n+"-yr CAGR (FY"+yy(from)+"–FY"+yy(to)+")"}}
+
+/* ---------- rendering ---------- */
+function head(){return '<h4 style="margin:0 0 .2em">Financial History</h4>'}
+function wrap(inner){return '<div class="panel" style="padding:16px;margin-top:14px">'+inner+'</div>'}
+function build(s,doc){
+  var m=model(doc,s);
+  if(m.state==="unavailable")return wrap(head()+'<p class="note" style="padding:0">Financial history unavailable.</p>');
+  if(m.state==="none")return wrap(head()+'<p class="note" style="padding:0">No financial history is on file for '+esc(s)+'.</p>');
+  var h=head()+'<p class="note" style="padding:0 0 6px">'+esc(m.basis.charAt(0).toUpperCase()+m.basis.slice(1))+' · ₹ crore (EPS in ₹)'+(m.source?" · Source: "+esc(m.source):"")+(m.as_of?" · Updated: "+esc(m.as_of):"")+'. "-" means the value is not available; nothing is estimated.</p>';
+  h+='<div class="scroll"><table id="finHistTable"><thead><tr><th></th>'+m.cols.map(function(c){return"<th>"+esc(c.label)+"</th>"}).join("")+'</tr></thead><tbody>';
+  m.metrics.forEach(function(x){h+='<tr data-row="'+x.key+'"><td>'+esc(x.label)+'</td>'+m.cols.map(function(c){return'<td class="n">'+x.fmt(val(c,x.key))+"</td>"}).join("")+"</tr>"});
+  m.metrics.filter(function(x){return x.growth}).forEach(function(x){
+    h+='<tr data-chg="'+x.key+'"><td>'+esc(x.label)+' change vs previous year</td>'+m.cols.map(function(c,i){return'<td class="n">'+pc(change(m,i,x.key))+"</td>"}).join("")+"</tr>"});
+  h+='<tr data-row="source"><td>Source notes</td>'+m.cols.map(function(c){
+    var t=[];if(c.official)t.push("Official annual report");if(c.differs)t.push("Source summary differs");
+    return"<td><small>"+t.map(esc).join("<br>")+"</small></td>"}).join("")+"</tr></tbody></table></div>";
+  h+='<div style="margin-top:10px">'+m.metrics.filter(function(x){return x.growth}).map(function(x){
+    var c=cagr(m,x.key);
+    return'<p style="margin:.2em 0" data-cagr="'+x.key+'"><b>'+esc(x.label)+'</b> · '+(c?esc(c.label)+": "+pc(c.pct):"CAGR: -")+"</p>"}).join("")+"</div>";
+  var notes=[];
+  if(m.cols.some(function(c){return c.official}))notes.push("Official annual report: the figures for that year were taken from the company's annual report, not from Upstox.");
+  if(m.cols.some(function(c){return c.differs}))notes.push("Source summary differs: the source's own summary lines did not agree with its statement lines for that year. The stored values are shown as they are.");
+  if(m.bank)notes.push("For banks, the first row is the bank's total income as reported. Bank operating cash flow includes deposit and lending movements and is not comparable with other companies.");
+  var B=Object.prototype.hasOwnProperty.call(BOUNDARY,s)?BOUNDARY[s]:null;
+  if(B!==null&&m.cols.some(function(c){return c.fy<B})&&m.cols.some(function(c){return c.fy>=B}))notes.push("Change and CAGR are not calculated across FY"+(B-1)+" to FY"+B+" for "+s+".");
+  notes.push("Change uses consecutive fiscal years that both have a value. CAGR uses a fixed window for "+s+" (FY"+windowOf(s)[0]+"–FY"+windowOf(s)[1]+") and needs every year in it to have a positive value. EPS and cash flow are shown per year only; no growth is calculated for them. Descriptive data only.");
+  return wrap(h+notes.map(function(n){return'<p class="note" style="padding:6px 0 0">'+esc(n)+"</p>"}).join(""))}
+
+/* ---------- loading and placement ---------- */
+var DATA=null;
+function loadAll(){
+  if(DATA)return DATA;
+  DATA=fetch("out/financial_history.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return DATA}
+var node=null,nodeSym=null;
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box)return;
+  if(String(box.innerHTML||"").indexOf('id="detailChart"')<0)return;        /* the detail view has not finished rendering */
+  var r=$("detailResearch");
+  if(!r||r.parentNode!==box)return;                                          /* the Stock Research section is not placed yet */
+  if(node&&node.parentNode===box&&nodeSym===s)return;                        /* already placed for this render */
+  var el=document.createElement("section");
+  el.id="detailFinancialHistory";
+  el.innerHTML=wrap(head()+'<p class="note" style="padding:0">Loading…</p>');
+  box.insertBefore(el,r.nextSibling);node=el;nodeSym=s;
+  loadAll().then(function(d){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=build(s,d)
+  }).catch(function(){if(node===el)el.innerHTML=build(s,null)})}
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true})}
+check();
+window.SLFinHistory={model:model,cagr:cagr,change:change,build:build,check:check};
+})();
+</script>
 <script>
 /* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
 (function(){
