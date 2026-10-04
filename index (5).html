@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>StockLens India – Screener platform plan and demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F3F6FA;--card:#fff;--ink:#14213D;--mute:#5B6784;--line:#DCE3EE;--up:#0E8F5E;--dn:#D13B3B;--ac:#3B4CCA;--acs:#E6E9FB;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1524;--card:#182036;--ink:#E8ECF6;--mute:#9AA6C4;--line:#2A3552;--up:#3DD598;--dn:#FF6B6B;--ac:#8C9AFF;--acs:#242E55}}
+:root[data-theme="dark"]{--bg:#0F1524;--card:#182036;--ink:#E8ECF6;--mute:#9AA6C4;--line:#2A3552;--up:#3DD598;--dn:#FF6B6B;--ac:#8C9AFF;--acs:#242E55}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Manrope,system-ui,sans-serif;line-height:1.55}
+.w{max-width:1040px;margin:0 auto;padding:0 18px}
+nav{display:flex;gap:18px;align-items:center;padding:14px 0;flex-wrap:wrap}
+nav b{font-weight:800;font-size:1.15rem;margin-right:auto}nav a{color:var(--mute);text-decoration:none;font-size:.9rem}
+nav a:hover,a:focus-visible{color:var(--ac)}
+h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.1;margin:.4em 0 .3em;font-weight:800;max-width:15em}
+h2{font-size:1.6rem;margin:2.2em 0 .5em}h3{margin:.2em 0}
+p.lead{color:var(--mute);max-width:40em;font-size:1.05rem}
+.btn{display:inline-block;background:var(--ac);color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tabs{display:flex;gap:6px;padding:10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{border:0;background:none;color:var(--mute);font:600 .9rem Manrope,sans-serif;padding:8px 14px;border-radius:20px;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected=true]{background:var(--ac);color:#fff}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:.92rem}
+th{color:var(--mute);font-weight:600}td.n{font-variant-numeric:tabular-nums}
+.up{color:var(--up);font-weight:600}.dn{color:var(--dn);font-weight:600}
+.note{font-size:.8rem;color:var(--mute);padding:10px 14px}
+.tag{background:var(--acs);color:var(--ac);border-radius:4px;padding:1px 6px;font-size:.7rem;font-weight:600;margin-left:6px}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0}
+.bar i{display:block}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.c ul{padding-left:18px;margin:.5em 0 0;color:var(--mute);font-size:.92rem}
+.c small{color:var(--ac);font-weight:600}
+.pro{border-left:4px solid var(--up)}.con{border-left:4px solid var(--dn)}
+.warn{background:var(--acs);border-radius:10px;padding:16px;margin-top:14px}
+footer{color:var(--mute);font-size:.8rem;padding:30px 0 50px}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}.tile b{font-size:1.5rem;display:block}.tile span{color:var(--mute);font-size:.82rem}
+.meter{height:6px;background:var(--line);border-radius:3px;margin-top:8px}.meter i{display:block;height:100%;border-radius:3px;background:var(--ac)}
+select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.chips button{border:1px solid var(--line);background:var(--card);color:var(--mute);font:600 .85rem Manrope,sans-serif;padding:6px 14px;border-radius:20px;cursor:pointer}
+.chips button[aria-pressed=true]{background:var(--ac);color:#fff;border-color:var(--ac)}
+.item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px}
+.item .m{color:var(--mute);font-size:.8rem;margin-top:6px}
+.k{display:inline-block;background:var(--acs);color:var(--ac);border-radius:4px;padding:1px 8px;font-size:.75rem;font-weight:700;margin-right:8px}
+.lk{background:none;border:0;padding:0;font:inherit;color:var(--ac);font-weight:600;cursor:pointer;text-decoration:underline}
+.tl{border-left:2px solid var(--line);margin:14px 0 0 6px;padding-left:16px}
+.tl>div{position:relative;margin-bottom:16px}.tl>div:before{content:"";position:absolute;left:-23px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--ac)}
+[hidden]{display:none!important}
+#ftable td:first-child,#t2a td:first-child,#t2b td:first-child,#t2 td:first-child,#t3a td:first-child,#t3b td:first-child{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
+td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
+#detail{display:none}.detail-mode .w>*:not(#detail){display:none!important}.detail-mode #detail{display:block}
+</style></head><body><div class="w">
+<nav aria-label="Main"><b>StockLens India</b><a href="#demo">Demo</a><a href="#all">All scans</a><a href="#more">More data</a><a href="#news">News &amp; filings</a><a href="#stock">Stock page</a><a href="#tools">More tools</a><a href="#road">Roadmap</a><a href="#cost">Costs</a><a href="#money">Earning</a><a href="#pc">Pros &amp; cons</a><a href="#law">SEBI rules</a></nav>
+
+<header>
+<h1>A simple end-of-day stock screener for Indian swing traders</h1>
+<p class="lead">This page is your working plan plus a live demo for swing traders (people who hold stocks for days to weeks): what to build, in what order, what it costs and what to watch out for. Name "StockLens India" is a placeholder; pick your own.</p>
+<a class="btn" href="#road">See the roadmap</a>
+<p class="note" id="stat" style="padding-left:0"></p>
+</header>
+
+<h2 id="demo">Demo: swing scans (updated after market close)</h2>
+<div class="panel">
+<div class="tabs" role="tablist" id="tabs"></div>
+<div class="scroll"><table><thead><tr><th>Symbol</th><th>LTP (₹)</th><th>Change %</th><th>Volume vs avg</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="note" id="dnote">Sample numbers only, not real market data. Real data comes from a paid data provider (see Costs).</p>
+</div>
+
+<div class="panel" style="margin-top:14px;padding:16px">
+<h3>Market breadth (sample): advance / decline</h3>
+<div class="bar" role="img" aria-label="1180 advancing, 60 unchanged, 760 declining"><i style="width:59%;background:var(--up)"></i><i style="width:3%;background:var(--line)"></i><i style="width:38%;background:var(--dn)"></i></div>
+<div id="adtxt"><span class="up">1,180 advancing</span> &nbsp; <span style="color:var(--mute)">60 flat</span> &nbsp; <span class="dn">760 declining</span></div>
+</div>
+
+<h2 id="all">Everything in one place</h2>
+<p class="lead">I could not open the widgets inside your Chartink link (it only showed the title, "Market Breadth Dashboard"). So this section covers what that kind of dashboard usually has, plus the gainers, losers, volume, highs, technical and fundamental scans you asked for.</p>
+<h3 style="margin-top:1.2em">Market breadth (sample)</h3>
+<div class="tiles" id="tiles"></div>
+<div class="g" style="margin-top:18px">
+<div class="c"><h3>Gainers and losers</h3><ul><li>Top gainers / top losers today</li><li>Up or down 4%+ with high volume</li><li>Gap up / gap down at open</li><li>Weekly and monthly gainers</li></ul></div>
+<div class="c"><h3>Volume</h3><ul><li>Volume 2x or more of the 20-day average</li><li>Highest traded value (₹) today</li><li>Quiet stocks about to move (low volume dry-up)</li></ul></div>
+<div class="c"><h3>Highs and lows</h3><ul><li>52-week high / 52-week low</li><li>All-time high</li><li>Near 52-week high (within 5%)</li><li>20-day high breakout</li></ul></div>
+<div class="c"><h3>Technical</h3><ul><li>Above 20 / 50 / 200 day average</li><li>Golden cross, MACD crossover</li><li>RSI above 60 or below 30</li><li>Supertrend, inside bar, Bollinger squeeze</li></ul></div>
+<div class="c"><h3>Fundamental</h3><ul><li>PE, market cap, dividend yield</li><li>ROE, ROCE, debt to equity</li><li>Sales and profit growth</li><li>Promoter holding, quarterly results</li></ul></div>
+<div class="c"><h3>Sectors</h3><ul><li>Sector gainers and losers</li><li>Sector strength this week and month</li><li>Stocks above 50 DMA per sector</li></ul></div>
+</div>
+<h3 style="margin-top:1.4em">Fundamental screen</h3>
+<p id="fstat" class="note" style="padding-left:0">Loading fundamentals…</p>
+<p style="margin:.3em 0 .6em;color:var(--mute)">Show me stocks with ROE above: <select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select></p>
+<div class="tabs" role="tablist" id="ftabs" style="padding:0 0 10px;border:0"></div>
+<div id="ftab1"><div class="panel scroll"><table id="ftable"><thead><tr>
+<th><button class="lk" data-k="symbol">Stock</button></th><th><button class="lk" data-k="company_name">Company</button></th><th><button class="lk" data-k="sector">Sector</button></th><th><button class="lk" data-k="pe">P/E</button></th><th><button class="lk" data-k="pb">P/B</button></th><th><button class="lk" data-k="roe">ROE %</button></th><th><button class="lk" data-k="roce">ROCE %</button></th><th><button class="lk" data-k="roa">ROA %</button></th><th><button class="lk" data-k="ev_ebitda">EV/EBITDA</button></th></tr></thead><tbody id="fund"></tbody></table>
+<p class="note">Real company data from Upstox. A dash (-) means Upstox did not provide that value.</p></div></div>
+<div id="ftab2" hidden><p class="note finstat" style="padding-left:0">Loading financial statements…</p>
+<h4 style="margin:.6em 0 .4em">Earnings (latest annual period)</h4><div class="panel scroll" id="t2a"></div>
+<h4 style="margin:1.2em 0 .4em">Returns and valuation</h4><div class="panel scroll" id="t2b"></div><p class="note" id="vstat" style="padding-left:0"></p>
+<h4 style="margin:1.2em 0 .4em">Balance sheet</h4><div class="panel scroll" id="t2"></div><p class="note" id="n2" style="padding-left:0"></p></div>
+<div id="ftab3" hidden><p class="note finstat" style="padding-left:0">Loading financial statements…</p>
+<h4 style="margin:.6em 0 .4em">Cash flow (latest annual period)</h4><div class="panel scroll" id="t3a"></div><p class="note" id="fcfnote" style="padding-left:0"></p>
+<h4 style="margin:1.2em 0 .4em">Growth (latest year, change vs previous year as reported by Upstox)</h4><div class="panel scroll" id="t3b"></div>
+<p class="note" id="n3" style="padding-left:0"></p></div>
+
+<h2 id="more">More market data</h2>
+<p class="lead">Six extra views swing traders check every evening. Each has a one-line explanation so beginners can follow.</p>
+<div class="panel">
+<div class="tabs" role="tablist" id="mt"></div>
+<p class="note" id="mx" style="padding-bottom:0"></p>
+<div class="scroll"><table><thead id="mh"></thead><tbody id="mb"></tbody></table></div>
+<p class="note">Sample numbers and made-up investor names only. Real data comes from the daily exchange files and your data vendor.</p>
+</div>
+
+<h2 id="news">News and filings: yesterday's company updates</h2>
+<p class="lead">Every item comes from an official company filing on the exchange, rewritten in two plain lines. Tap a tag to filter.</p>
+<div class="chips" id="chips" role="group" aria-label="Filter by type"></div>
+<div id="feed"></div>
+<p class="note">All companies, amounts and dates below are made up for the demo. Real items must link to the original filing and be checked before they go live.</p>
+
+<h2 id="stock">Filings for this stock</h2>
+<p class="lead">Tap any stock name in the scan table above, or choose one here.</p>
+<div class="panel" style="padding:16px">
+<label for="sp" style="color:var(--mute);font-size:.9rem">Stock </label><select id="sp"></select>
+<div class="tiles" id="snap"></div>
+<div class="chips" id="sf" role="group" aria-label="Filter filings"></div>
+<div class="tl" id="tl"></div>
+<p class="note" style="padding-left:0">Sample data. In the real product each line links to the original exchange filing.</p>
+</div>
+
+<h2 id="tools">Strength, delivery, big deals and FII/DII</h2>
+<p class="lead">Six more tools swing traders use every evening. Choose a tab.</p>
+<div class="panel"><div class="tabs" role="tablist" id="ttabs"></div>
+<p class="note" id="tdesc" style="padding-bottom:0"></p>
+<div class="scroll"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+<p class="note" id="xnote">Sample numbers and made-up investor names. Delivery %, bulk/block deals and FII/DII figures are published by the exchanges after market close. Relative strength and moving averages you calculate yourself from price data. Check the exchanges' terms before showing their reports on your site.</p></div>
+
+<h2 id="road">Roadmap: step by step</h2>
+<div class="g">
+<div class="c"><small>Weeks 1–2 · Plan</small><h3>Validate and set up</h3><ul><li>Niche is set: swing traders who hold for days to weeks</li><li>Talk to 20 traders, ask what they pay for today</li><li>Register company, buy domain, talk to a CA/lawyer about SEBI</li></ul></div>
+<div class="c"><small>Weeks 3–12 · Build</small><h3>MVP (first version)</h3><ul><li>End-of-day data from a licensed vendor (no live feed needed)</li><li>4 pages: Swing scans, Market breadth, Sector strength, Watchlist</li><li>Login, free vs paid plan, payments</li><li>Fast web app that works well on mobile</li></ul></div>
+<div class="c"><small>Months 4–6 · Launch</small><h3>Go live</h3><ul><li>Beta with 100 users, fix bugs</li><li>YouTube, Telegram, X, WhatsApp communities</li><li>Weekly market-breadth posts to build trust</li></ul></div>
+<div class="c"><small>Months 7–12 · Grow</small><h3>Add depth</h3><ul><li>Evening Telegram/email digest, custom scans, chart patterns</li><li>% of stocks above 50/200 DMA, FII/DII, results calendar</li><li>Broker tie-ups, mobile app</li></ul></div>
+<div class="c"><small>Year 2 · Scale</small><h3>Become a brand</h3><ul><li>Backtesting, API for developers</li><li>Hindi and regional language versions</li><li>Education courses, B2B for brokers</li></ul></div>
+</div>
+
+<h2 id="cost">Expected spending (India, rough estimates)</h2>
+<div class="panel scroll"><table><thead><tr><th>Item</th><th>Cost</th><th>Note</th></tr></thead><tbody>
+<tr><td>Developers (freelance / small agency)</td><td class="n">₹1.5–4 lakh</td><td>3-month MVP</td></tr>
+<tr><td>Design (logo, UI)</td><td class="n">₹30–60k</td><td>One-time</td></tr>
+<tr><td>Market data (end-of-day)</td><td class="n">₹500–5k / month</td><td>Much cheaper than live F&amp;O data</td></tr>
+<tr><td>Cloud servers, database, domain</td><td class="n">₹3–10k / month</td><td>Start small, scale later</td></tr>
+<tr><td>Company registration, legal, disclaimers</td><td class="n">₹20–50k</td><td>Plus yearly CA fees</td></tr>
+<tr><td>Marketing (first 6 months)</td><td class="n">₹1–3 lakh</td><td>Content beats ads at the start</td></tr>
+<tr><td><b>Total to launch</b></td><td class="n"><b>₹4–9 lakh</b></td><td>Year 1 including running costs: about ₹8–18 lakh</td></tr>
+</tbody></table></div>
+<p class="note">Get 2–3 quotes for every item. Exact vendor prices change, so confirm before paying.</p>
+
+<h2 id="money">How you earn</h2>
+<div class="g">
+<div class="c"><h3>Subscriptions</h3><p>Free plan with delay and limits. Pro at about ₹299–999/month. This is your main income.</p></div>
+<div class="c"><h3>Broker referrals</h3><p>Earn when users open demat accounts. Always disclose it clearly.</p></div>
+<div class="c"><h3>Evening alerts and API</h3><p>Paid daily scan digests on Telegram or email, plus data access for developers.</p></div>
+<div class="c"><h3>Education</h3><p>Courses and webinars on reading OI, breadth and pivots.</p></div>
+</div>
+<p class="note">Rough goal: 1,000 paying users × ₹500 = ₹5 lakh/month. Most sites need 12–24 months to get there.</p>
+
+<h2 id="pc">Pros and cons</h2>
+<div class="g">
+<div class="c pro"><h3>Pros</h3><ul><li>Millions of new demat accounts in India</li><li>Repeat subscriptions, users come daily</li><li>End-of-day data keeps running costs low</li><li>Content and SEO bring free users</li></ul></div>
+<div class="c con"><h3>Cons</h3><ul><li>Crowded: Intraday Screener, Chartink, Screener.in already exist</li><li>Swing traders visit once a day, so you need evening alerts to bring them back</li><li>Users leave quickly if data is late or wrong</li><li>Strict SEBI rules; a bad month for markets means fewer users</li></ul></div>
+<div class="c"><h3>How to win</h3><ul><li>Choose a narrow niche and do it better</li><li>Simple Hindi and English explanations</li><li>Very fast pages, clean mobile view</li><li>Honest, no-tips, education-first brand</li></ul></div>
+</div>
+
+<h2 id="law">Rules you must follow</h2>
+<div class="warn"><ul>
+<li>Do not say "buy" or "sell" or give targets unless you are a SEBI-registered Research Analyst or Investment Adviser. Show data, not advice.</li>
+<li>Do not copy exchange data or another site's data. Use a licensed vendor.</li>
+<li>Add a risk disclaimer, privacy policy and terms on every page.</li>
+<li>Follow SEBI rules on influencers and paid promotions. Disclose affiliate links.</li>
+<li>Check the current rules with a lawyer before launch; they change often.</li>
+</ul></div>
+
+<section id="detail" aria-live="polite"></section>
+<footer>Sample plan for learning purposes. Not financial or legal advice. Market figures on this page are dummy data.</footer>
+</div>
+<script>
+var LIVE=false;
+const D={
+"Breakout":[["GLENMARK",2441.5,4.98,2.4],["MANKIND",2545,4.49,1.9],["SONACOMS",815.65,3.1,2.8]],
+"Pullback to 20 EMA":[["TORNTPHARM",4894,0.51,0.8],["ADANIPOWER",196.3,0.4,0.9],["DEMO BANK",640.2,-0.3,0.7]],
+"52-Week High":[["SAMPLE CO",980,2.2,3.1],["TEST AUTO",2210,1.6,2.2],["DEMO STEEL",145.5,3.4,1.7]],
+"Volume Surge":[["XYZ INDS",1204,1.2,4.6],["ABC LTD",312.4,0.6,3.9],["GLENMARK",2441.5,4.98,2.4]],
+"Near Support":[["PQR PHARMA",455,-0.8,0.6],["LMN TECH",1320,-1.1,0.9],["DEMO BANK",640.2,-0.3,0.7]]};
+const tabs=document.getElementById("tabs"),rows=document.getElementById("rows");
+function show(k){[...tabs.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));
+rows.innerHTML=D[k].map(r=>`<tr><td><button class="lk" type="button">${r[0]}</button>${LIVE?"":'<span class="tag">SAMPLE</span>'}</td><td class="n">${r[1].toFixed(2)}</td><td class="n ${r[2]>=0?"up":"dn"}">${r[2]>=0?"▲":"▼"} ${Math.abs(r[2]).toFixed(2)}</td><td class="n">${r[3].toFixed(1)}×</td></tr>`).join("")}
+Object.keys(D).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>show(k);tabs.appendChild(b)});
+show("Breakout");
+
+const T=[["Above 20 DMA",58],["Above 50 DMA",46],["Above 200 DMA",52],["New 52-week highs",41,1],["New 52-week lows",17,1],["Up 4%+ today",63,1],["Down 4%+ today",38,1],["Advance/decline ratio",1.6,1]];
+document.getElementById("tiles").innerHTML=T.map(t=>`<div class="tile"><b>${t[0].includes("ratio")?t[1].toFixed(1):t[1]+(t[2]?"":"%")}</b><span>${t[0]}</span>${t[2]?"":`<div class="meter"><i style="width:${t[1]}%"></i></div>`}</div>`).join("");
+let FD=[],fsort={k:"roe",dir:-1};
+const fesc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ffmt=v=>v==null?"-":v.toLocaleString("en-IN",{maximumFractionDigits:2});
+function fund(){const m=+document.getElementById("roe").value,b=document.getElementById("fund");
+const r=FD.filter(x=>m===0||(x.roe!=null&&x.roe>=m));
+r.sort((a,c)=>{const A=a[fsort.k],B=c[fsort.k];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;return typeof A==="string"?A.localeCompare(B)*fsort.dir:(A-B)*fsort.dir});
+b.innerHTML=r.length?r.map(x=>`<tr><td>${fesc(x.symbol)}</td><td>${x.company_name?fesc(x.company_name):"-"}</td><td>${x.sector?fesc(x.sector):"-"}</td><td class="n">${ffmt(x.pe)}</td><td class="n">${ffmt(x.pb)}</td><td class="n">${ffmt(x.roe)}</td><td class="n">${ffmt(x.roce)}</td><td class="n">${ffmt(x.roa)}</td><td class="n">${ffmt(x.ev_ebitda)}</td></tr>`).join(""):'<tr><td colspan="9">No stocks match. Lower the ROE.</td></tr>'}
+document.getElementById("roe").onchange=fund;
+document.querySelectorAll("#ftable [data-k]").forEach(b=>b.onclick=()=>{const k=b.dataset.k;fsort=fsort.k===k?{k,dir:-fsort.dir}:{k,dir:typeof (FD[0]||{})[k]==="string"?1:-1};fund()});
+(async()=>{const st=document.getElementById("fstat");
+try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const j=await r.json();
+if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.stocks;
+st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
+catch(e){st.textContent="Fundamentals not loaded yet.";document.getElementById("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';return}
+fund()})();
+
+const N=[
+["Orders","SAMPLE ENGINEERING","Wins a ₹850 crore order from a state power company.","Work to be finished in 24 months.","Order book filing","28 Sep, 6:40 pm"],
+["Orders","DEMO INFRA","Gets a ₹310 crore road project from a national agency.","Project is 12% of last year's sales.","Exchange filing","28 Sep, 4:15 pm"],
+["Fundraising","TEST FINANCE","Board approves raising up to ₹2,000 crore through bonds.","Money is for lending; timing is not fixed.","Board meeting outcome","28 Sep, 5:30 pm"],
+["Fundraising","ABC PHARMA","Plans a share sale to institutions (QIP) of up to ₹1,200 crore.","Shareholders must approve first.","Exchange filing","28 Sep, 2:05 pm"],
+["Mergers","XYZ CEMENT","Board approves merging its small subsidiary into the parent.","Needs approval from regulators and courts.","Scheme of arrangement","28 Sep, 7:10 pm"],
+["Ratings","LMN AUTO","Credit rating raised by one level with a stable outlook.","Agency cites lower debt and steady cash flow.","Rating rationale","28 Sep, 3:00 pm"],
+["Ratings","DEMO STEEL","Rating outlook changed from stable to negative.","Agency points to weak margins.","Rating rationale","28 Sep, 11:20 am"],
+["Management","SAMPLE FMCG","Chief financial officer resigns; interim CFO named.","Change takes effect next month.","Change in management","28 Sep, 8:00 pm"],
+["Capex","PQR POWER","Plans ₹4,000 crore for new capacity over 3 years.","Management shared this on the earnings call.","Concall transcript","28 Sep, 9:15 pm"],
+["Capex","TEST CHEMICALS","Sets aside ₹600 crore to expand a plant by 40%.","Production starts in the second half of next year.","Investor presentation","28 Sep, 6:00 pm"]];
+const types=["All","Orders","Fundraising","Mergers","Ratings","Management","Capex"];let cur="All";
+const ch=document.getElementById("chips"),fd=document.getElementById("feed");
+function draw(){[...ch.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===cur));
+fd.innerHTML=N.filter(n=>cur==="All"||n[0]===cur).map(n=>`<div class="item"><span class="k">${n[0]}</span><b>${n[1]}</b><span class="tag">SAMPLE</span><div style="margin-top:6px">${n[2]} ${n[3]}</div><div class="m">${n[4]} · ${n[5]}</div></div>`).join("")}
+types.forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{cur=t;draw()};ch.appendChild(b)});draw();
+
+const P={
+"GLENMARK":{s:["₹2,441.50","+4.98%","Pharma"],f:[["28 Sep","Orders","Signs a licensing deal worth up to ₹900 crore in milestone payments.","Exchange filing"],["24 Sep","Ratings","Credit rating kept at the same level, outlook stable.","Rating rationale"],["12 Sep","Capex","Plans ₹700 crore to expand a plant in Gujarat.","Concall transcript"],["30 Aug","Management","New head of research and development joins.","Change in management"]]},
+"MANKIND":{s:["₹2,545.00","+4.49%","Pharma"],f:[["27 Sep","Fundraising","Board approves bonds of up to ₹1,500 crore.","Board outcome"],["15 Sep","Capex","Sets aside ₹500 crore for a new factory.","Investor presentation"]]},
+"SONACOMS":{s:["₹815.65","+3.10%","Auto parts"],f:[["28 Sep","Orders","Wins a multi-year supply contract from a large car maker.","Exchange filing"],["19 Sep","Mergers","Board approves buying a small electronics company.","Scheme of arrangement"]]},
+"TORNTPHARM":{s:["₹4,894.00","+0.51%","Pharma"],f:[["26 Sep","Ratings","Rating raised by one level.","Rating rationale"]]},
+"ADANIPOWER":{s:["₹196.30","+0.40%","Power"],f:[["25 Sep","Orders","Signs a long-term power supply agreement with a state utility.","Exchange filing"],["10 Sep","Capex","Plans new units adding to total capacity.","Concall transcript"]]}};
+const sp=document.getElementById("sp"),sn=document.getElementById("snap"),sf=document.getElementById("sf"),tl=document.getElementById("tl");let sc="All",cs="GLENMARK";
+Object.keys(P).forEach(k=>{const o=document.createElement("option");o.textContent=k;sp.appendChild(o)});
+["All","Orders","Fundraising","Mergers","Ratings","Management","Capex"].forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{sc=t;drawS()};sf.appendChild(b)});
+function drawS(){const d=P[cs];sp.value=cs in P?cs:"";[...sf.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===sc));
+if(!d){sn.innerHTML="";tl.innerHTML=`<p>No filings found for ${cs} in this sample. Real data would show the last 90 days.</p>`;return}
+sn.innerHTML=[["Price",d.s[0]],["Today",d.s[1]],["Sector",d.s[2]],["Filings (90 days)",d.f.length]].map(x=>`<div class="tile"><b style="font-size:1.1rem">${x[1]}</b><span>${x[0]}</span></div>`).join("");
+const r=d.f.filter(f=>sc==="All"||f[1]===sc);
+tl.innerHTML=r.length?r.map(f=>`<div><span class="k">${f[1]}</span><b>${f[0]}</b><div style="margin:4px 0 0;position:static">${f[2]}</div><span style="color:var(--mute);font-size:.8rem">${f[3]}</span></div>`).join(""):"<p>No filings of this type for this stock.</p>"}
+sp.onchange=()=>{cs=sp.value;sc="All";drawS()};
+function pick(k){cs=k;sc="All";drawS();document.getElementById("stock").scrollIntoView({behavior:"smooth"})}
+drawS();
+
+const M={
+"Relative strength":{x:"Shows which stocks are beating the market. Rating runs 1 to 99; 99 is strongest.",h:["Symbol","RS rating","1-month return %","Vs Nifty %","Verdict"],r:[["GLENMARK","92","+12.4","+8.1","Leader"],["MANKIND","88","+9.7","+5.4","Leader"],["SONACOMS","81","+7.2","+2.9","Strong"],["DEMO BANK","47","+0.8","-3.5","Average"],["LMN STEEL","22","-6.3","-10.6","Weak"]]},
+"Delivery":{x:"Delivery % is the share of traded shares actually taken home, not squared off the same day. High delivery with a rising price often means real buying.",h:["Symbol","Delivery %","20-day avg %","Volume vs avg","Change %"],r:[["SAMPLE FMCG","74","51","2.1×","+2.3"],["DEMO PHARMA","68","49","1.8×","+1.6"],["TEST BANK","61","55","1.1×","+0.4"],["ABC AUTO","33","52","2.6×","-2.8"]]},
+"FII / DII":{x:"Net money put in (+) or taken out (-) by foreign (FII) and domestic (DII) institutions, in ₹ crore.",h:["Date","FII net (₹ cr)","DII net (₹ cr)","Nifty change %"],r:[["28 Sep","-2,140","+3,020","-0.42"],["27 Sep","+860","+1,410","+0.65"],["26 Sep","-1,320","+2,270","-0.18"],["25 Sep","-3,480","+4,100","-0.90"],["24 Sep","+1,050","+780","+0.71"]]},
+"50 & 200 DMA":{x:"DMA is the average price of the last 50 or 200 days. Golden cross: the 50 rises above the 200 (bullish sign). Death cross is the opposite.",h:["Symbol","Price","50 DMA","200 DMA","Status"],r:[["GLENMARK","2,441","2,280","2,050","Above both"],["SONACOMS","816","779","781","Golden cross today"],["TORNTPHARM","4,894","4,700","4,410","Above both"],["XYZ IT","1,204","1,240","1,255","Death cross today"],["LMN STEEL","145","158","171","Below both"]]},
+"Volume gainers":{x:"Stocks trading far more shares than usual and rising in price.",h:["Symbol","Volume (lakh)","20-day avg (lakh)","Volume vs avg","Change %"],r:[["XYZ INDS","48.2","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","7.2","3.1×","+2.2"],["DEMO STEEL","18.9","10.7","1.7×","+3.4"]]},
+"Big deals":{x:"Bulk and block deals are very large trades that the exchange must publish with the buyer or seller's name.",h:["Date","Symbol","Investor","Buy / Sell","Qty (lakh)","Price ₹","Type"],r:[["28 Sep","SAMPLE ENGINEERING","SAMPLE MUTUAL FUND","Buy","12.5","1,340","Block"],["28 Sep","DEMO INFRA","DEMO CAPITAL","Sell","8.0","412","Bulk"],["27 Sep","TEST FINANCE","EXAMPLE INSURANCE CO","Buy","20.0","688","Block"],["27 Sep","ABC PHARMA","SAMPLE FOREIGN FUND","Sell","6.4","1,015","Bulk"]]}};
+const mt=document.getElementById("mt");
+function cell(v){const c=/^[+-][\d.,]+$/.test(v)?(v[0]==="+"?"n up":"n dn"):v==="Buy"?"up":v==="Sell"?"dn":/\d/.test(v)&&!/[A-Za-z]/.test(v)?"n":"";return `<td class="${c}">${v}</td>`}
+function mshow(k){[...mt.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));const d=M[k];
+document.getElementById("mx").textContent=d.x;
+document.getElementById("mh").innerHTML="<tr>"+d.h.map(h=>`<th>${h}</th>`).join("")+"</tr>";
+document.getElementById("mb").innerHTML=d.r.map(r=>"<tr>"+r.map(cell).join("")+"</tr>").join("")}
+Object.keys(M).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>mshow(k);mt.appendChild(b)});mshow("Relative strength");
+
+const X={
+"Relative strength":{d:"How a stock performed compared with the Nifty. Rating 99 is the strongest, 1 the weakest.",h:["Symbol","3-month return","Nifty 3-month","RS rating"],r:[["SAMPLE FMCG","+24.5%","+6.1%","94"],["DEMO PHARMA","+17.2%","+6.1%","86"],["TEST AUTO","+8.0%","+6.1%","64"],["ABC BANK","+1.2%","+6.1%","35"],["LMN STEEL","-9.4%","+6.1%","12"]]},
+"Delivery":{d:"Delivery % is the share of traded shares actually taken home, not squared off the same day. High delivery on a rising price shows real buying.",h:["Symbol","Price change","Volume vs avg","Delivery %","Usual delivery %"],r:[["SAMPLE FMCG","+2.8%","2.6x","74%","51%"],["DEMO PHARMA","+1.9%","1.8x","68%","46%"],["XYZ IT","-1.4%","2.1x","62%","40%"],["ABC BANK","+0.3%","0.9x","38%","44%"]]},
+"50 & 200 DMA":{d:"DMA means daily moving average. Above both is a healthy uptrend. Golden cross is when the 50 DMA moves above the 200 DMA.",h:["Symbol","Price","50 DMA","200 DMA","Status"],r:[["SAMPLE FMCG","1,240","1,150","1,020","Above both"],["DEMO PHARMA","845","812","805","Golden cross today"],["TEST AUTO","2,210","2,300","2,180","Between the two"],["LMN STEEL","145","162","171","Below both"],["ABC BANK","640","655","648","Death cross today"]]},
+"Volume gainers":{d:"Stocks rising on much higher volume than usual.",h:["Symbol","Change","Volume (lakh shares)","Vs 20-day avg"],r:[["XYZ INDS","+6.2%","48.5","5.1x"],["DEMO INFRA","+4.1%","31.2","3.8x"],["SAMPLE ENGINEERING","+3.3%","22.9","3.2x"],["TEST CHEMICALS","+2.7%","18.4","2.6x"]]},
+"Big deals":{d:"Bulk and block deals: large trades reported by the exchange after close. Names below are made up.",h:["Date","Symbol","Investor","Buy / Sell","Shares (lakh)","Price (₹)","Type"],r:[["28 Sep","DEMO INFRA","SAMPLE FUND A","Buy","12.0","310.40","Block"],["28 Sep","TEST FINANCE","DEMO INVESTOR B","Sell","8.5","512.10","Bulk"],["27 Sep","ABC PHARMA","SAMPLE MUTUAL FUND","Buy","15.2","1,180.00","Block"],["27 Sep","XYZ INDS","DEMO PROMOTER C","Sell","20.0","1,204.00","Block"]]},
+"FII / DII":{d:"Net buying (+) or selling (-) by foreign (FII) and domestic (DII) institutions, in ₹ crore.",h:["Date","FII net","DII net","Combined"],r:[["28 Sep","-1,240","+1,860","+620"],["27 Sep","+820","+540","+1,360"],["26 Sep","-2,150","+2,400","+250"],["25 Sep","-310","+1,120","+810"],["24 Sep","+1,470","-220","+1,250"]]}};
+const tt=document.getElementById("ttabs");
+function tshow(k){[...tt.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));const v=X[k];
+document.getElementById("tdesc").textContent=v.d;
+document.getElementById("thead").innerHTML="<tr>"+v.h.map(h=>`<th>${h}</th>`).join("")+"</tr>";
+document.getElementById("tbody").innerHTML=v.r.map(r=>"<tr>"+r.map((c,i)=>{const cl=/^\+/.test(c)||c==="Buy"||c==="Above both"||c.startsWith("Golden")?"up":/^-/.test(c)||c==="Sell"||c==="Below both"||c.startsWith("Death")?"dn":"";return `<td class="n ${cl}">${i===0&&v.h[0]==="Symbol"?c+(LIVE?'':'<span class="tag">SAMPLE</span>'):c}</td>`}).join("")+"</tr>").join("")}
+Object.keys(X).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>tshow(k);tt.appendChild(b)});
+tshow("Relative strength");
+
+(async()=>{
+const j=async u=>{try{const r=await fetch(u,{cache:"no-store"});return r.ok?await r.json():null}catch(e){return null}};
+const [S,B,F]=await Promise.all([j("out/scans.json"),j("out/bigdeals.json"),j("out/fiidii_history.json")]);
+const st=document.getElementById("stat");
+if(!S){st.textContent="Showing sample data. Real data appears when this site is hosted and the updater has run.";return}
+LIVE=true;
+const n=v=>v==null?0:v,sg=(v,d=2,u="%")=>(v>0?"+":"")+n(v).toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d})+u;
+Object.keys(D).forEach(k=>delete D[k]);
+const M=a=>(a||[]).slice(0,15).map(r=>[r.symbol,n(r.price),n(r.change_pct),n(r.volume_x_avg)]);
+D["Gainers"]=M(S.gainers);D["Losers"]=M(S.losers);D["Volume Surge"]=M(S.volume_gainers);D["52-Week High"]=M(S.high_52w);
+tabs.innerHTML="";Object.keys(D).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>show(k);tabs.appendChild(b)});show("Gainers");
+const b=S.breadth,tot=b.advancing+b.declining+b.unchanged||1;
+const tiles=[["Above 50 DMA",b.above_50dma_pct+"%",b.above_50dma_pct],["Above 200 DMA",b.above_200dma_pct+"%",b.above_200dma_pct],["New 52-week highs",b.new_52w_highs],["Advancing",b.advancing],["Declining",b.declining],["Advance/decline ratio",(b.advancing/Math.max(b.declining,1)).toFixed(1)]];
+document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><b>${t[1]}</b><span>${t[0]}</span>${t[2]!=null&&typeof t[1]==="string"&&t[1].includes("%")?`<div class="meter"><i style="width:${t[2]}%"></i></div>`:""}</div>`).join("");
+const bar=document.querySelector(".bar").children;
+bar[0].style.width=b.advancing/tot*100+"%";bar[1].style.width=b.unchanged/tot*100+"%";bar[2].style.width=b.declining/tot*100+"%";
+document.getElementById("adtxt").innerHTML=`<span class="up">${b.advancing.toLocaleString("en-IN")} advancing</span> &nbsp; <span style="color:var(--mute)">${b.unchanged} flat</span> &nbsp; <span class="dn">${b.declining.toLocaleString("en-IN")} declining</span>`;
+const L=(a,k=25)=>(a||[]).slice(0,k);
+X["Relative strength"].h=["Symbol","3-month return","RS rating"];
+X["Relative strength"].r=L(S.relative_strength).map(r=>[r.symbol,sg(r.return_3m_pct,1),String(r.rs_rating)]);
+X["Delivery"].r=L(S.delivery).map(r=>[r.symbol,sg(r.change_pct,1),n(r.volume_x_avg).toFixed(1)+"x",n(r.delivery_pct).toFixed(0)+"%",n(r.usual_delivery_pct).toFixed(0)+"%"]);
+const dm=(S.dma||[]),cr=dm.filter(r=>/cross/.test(r.status)),rest=dm.filter(r=>!/cross/.test(r.status));
+X["50 & 200 DMA"].r=L(cr.concat(rest)).map(r=>[r.symbol,n(r.price).toFixed(0),n(r.dma50).toFixed(0),n(r.dma200).toFixed(0),r.status]);
+X["Volume gainers"].r=L(S.volume_gainers).map(r=>[r.symbol,sg(r.change_pct,1),(n(r.volume)/1e5).toFixed(1),n(r.volume_x_avg).toFixed(1)+"x"]);
+if(B){const pk=(o,re)=>{const k=Object.keys(o).find(k=>re.test(k.toLowerCase()));return k?o[k]:""};
+X["Big deals"].r=B.slice(-30).reverse().map(o=>{const q=parseFloat(String(pk(o,/quantity/)).replace(/,/g,""))||0,bs=String(pk(o,/buy/)).toLowerCase();
+return [pk(o,/^date/),pk(o,/^symbol/),pk(o,/client/),bs.startsWith("b")?"Buy":"Sell",(q/1e5).toFixed(1),pk(o,/price/),o.Type||""]})}
+else X["Big deals"].d+=" (Sample data. Not loaded yet.)";
+if(F){const by={};F.forEach(x=>{const d=x.date;by[d]=by[d]||{};const v=parseFloat(String(x.netValue).replace(/,/g,""));if(/FII/i.test(x.category))by[d].f=v;else if(/DII/i.test(x.category))by[d].d=v});
+X["FII / DII"].r=Object.entries(by).slice(-8).reverse().map(([d,v])=>[d,sg(v.f,0,""),sg(v.d,0,""),sg((v.f||0)+(v.d||0),0,"")])}
+else X["FII / DII"].d+=" (Sample data. Not loaded yet.)";
+const cur=[...tt.children].find(x=>x.getAttribute("aria-selected")==="true");tshow(cur?cur.textContent:"Relative strength");
+st.textContent="Live NSE end-of-day data as of "+S.as_of+". News and filings are still sample.";
+document.getElementById("dnote").textContent="End-of-day data, calculated from NSE daily files and updated each evening.";
+document.getElementById("xnote").textContent="From NSE's daily end-of-day files. Check the exchange's terms before showing them on a paid site.";
+})();
+</script>
+<script>
+/* StockLens Phase 3 Step 1 - Stock Detail view (#stock=SYMBOL). Separate from the dashboard scripts; reads existing JSON only. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var cr=function(v){return isn(v)?N0.format(v):"-"},r2=function(v){return isn(v)?N2.format(v):"-"};
+var pc=function(v){return isn(v)?(v>0?"+":"")+N2.format(v)+"%":"-"};
+var neg=function(v){return isn(v)&&v<0?" dn":""};
+var TABLES="#ftable,#t2a,#t2b,#t2,#t3a,#t3b";
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;   /* NSE symbols: letters, digits, & . _ - ; at least one letter */
+var DATA=null;
+
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+
+function loadData(){
+  if(DATA)return DATA;
+  var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/scans.json")]).then(function(a){return{val:a[0],fin:a[1],scans:a[2]}});
+  return DATA}
+
+function findStock(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
+
+function priceFor(scans,s){
+  var out={price:null,change:null};if(!scans)return out;
+  ["gainers","losers","volume_gainers","high_52w","delivery","dma"].forEach(function(k){
+    (Array.isArray(scans[k])?scans[k]:[]).forEach(function(r){
+      if(!r||r.symbol!==s)return;
+      if(out.price==null&&isn(r.price))out.price=r.price;
+      if(out.change==null&&isn(r.change_pct))out.change=r.change_pct})});
+  return out}
+
+function tile(label,value,cls){return '<div class="tile"><b style="font-size:1.1rem" class="'+(cls||"")+'">'+value+'</b><span>'+esc(label)+'</span></div>'}
+function per(g){return g&&g.period?esc(g.period)+(g.basis==="standalone"?" · standalone":""):"-"}
+
+function view(s,d){
+  var v=findStock(d.val,s)||{},f=findStock(d.fin,s)||{},inc=f.income||{},bal=f.balance_sheet||{},cf=f.cash_flow||{};
+  var p=priceFor(d.scans,s),has=!!(findStock(d.val,s)||findStock(d.fin,s));
+  var company=v.company_name||f.company_name,sector=v.sector;
+  var h='<p><button class="lk" id="detailBack" type="button">← Back to StockLens</button></p>';
+  h+='<h2 style="margin-top:.6em">Stock Detail: '+esc(s)+'</h2>';
+  if(!has)h+='<p class="note" style="padding-left:0">No fundamentals or financial statements were found for '+esc(s)+' in the current data. Missing values show "-".</p>';
+  h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Sector",sector?esc(sector):"-")+tile("LTP (last close, ₹)",r2(p.price))+tile("Today's change",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
+  h+='<p class="note" style="padding-left:0">LTP and change come from the latest end-of-day scan'+(d.scans&&d.scans.as_of?" ("+esc(d.scans.as_of)+")":"")+' and appear only when the stock is in that scan; otherwise "-".</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Overview</h3><div class="tiles">'+tile("P/E",r2(v.pe))+tile("P/B",r2(v.pb))+tile("ROE %",r2(v.roe))+tile("ROCE %",r2(v.roce))+tile("ROA %",r2(v.roa))+tile("EV/EBITDA",r2(v.ev_ebitda))+'</div>';
+  h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of):"Fundamentals not loaded yet.")+'</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Financial Health <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
+  h+='<p class="note" style="padding-left:0">Income statement: '+per(inc)+' · Balance sheet: '+per(bal)+'</p>';
+  h+='<div class="tiles">'+tile("Revenue",cr(inc.revenue))+tile("Total revenue",cr(inc.total_revenue))+tile("Profit before tax",cr(inc.profit_before_tax),neg(inc.profit_before_tax))+tile("Profit after tax",cr(inc.profit_after_tax),neg(inc.profit_after_tax))+tile("EPS basic (₹)",r2(inc.eps_basic))+tile("EPS diluted (₹)",r2(inc.eps_diluted))+'</div>';
+  h+='<div class="tiles">'+tile("Total assets",cr(bal.total_assets))+tile("Total liabilities",cr(bal.total_liabilities))+tile("Total equity",cr(bal.total_equity),neg(bal.total_equity))+tile("Liabilities / Equity",r2(bal.liabilities_to_equity))+tile("Debt / Equity","N/A")+'</div>';
+  h+='<p class="note" style="padding-left:0">Total equity = total assets − total liabilities (Upstox). Liabilities / Equity is not Debt / Equity and is not comparable for banks, whose liabilities are mostly customer deposits. Debt / Equity is N/A because Upstox did not return a clearly identifiable debt line.</p>';
+  h+='<h3 style="margin:1.4em 0 .4em">Cash Flow <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
+  h+='<p class="note" style="padding-left:0">Period: '+per(cf)+'</p>';
+  h+='<div class="tiles">'+tile("Operating cash flow",cr(cf.operating),neg(cf.operating))+tile("Investing cash flow",cr(cf.investing),neg(cf.investing))+tile("Financing cash flow",cr(cf.financing),neg(cf.financing))+tile("Free cash flow",isn(cf.free_cash_flow)?cr(cf.free_cash_flow):"N/A",neg(cf.free_cash_flow))+'</div>';
+  h+='<p class="note" style="padding-left:0">'+(isn(cf.free_cash_flow)?"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line.":"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.")+'</p>';
+  h+='<div id="detailTech"></div>';   /* Phase 3 Step 3: Technical Snapshot fills this */
+  h+='<h3 style="margin:1.4em 0 .4em">Price chart</h3><div class="panel" style="padding:28px;text-align:center;color:var(--mute)" id="detailChart">Historical Price Chart — Coming in Phase 3 Step 2</div>';
+  h+='<p class="note" style="padding-left:0">'+(d.fin&&d.fin.as_of?"Financial data: "+esc(d.fin.source||"Upstox")+" · ₹ crore · Updated: "+esc(d.fin.as_of):"Financial statements not loaded yet.")+'</p>';
+  return h}
+
+function render(){
+  var s=routeSymbol(),box=$("detail"),b=document.body;
+  if(!s){b.classList.remove("detail-mode");return}
+  b.classList.add("detail-mode");
+  box.innerHTML='<p class="note">Loading '+esc(s)+'…</p>';
+  if(window.scrollTo)window.scrollTo(0,0);
+  loadData().then(function(d){if(routeSymbol()!==s)return;
+    box.innerHTML=view(s,d);
+    if(window.SLTech)window.SLTech.mount(s,function(){return routeSymbol()===s});   /* Phase 3 Step 3 snapshot */
+    if(window.SLChart)window.SLChart.mount(s,function(){return routeSymbol()===s})})}   /* Phase 3 Step 2 chart */
+
+function go(sym){window.location.hash="stock="+encodeURIComponent(sym)}
+function symbolTd(td){   /* first cell of a stock table, ignoring a trailing SAMPLE tag */
+  if(!td||(td.parentNode&&td.parentNode.firstElementChild!==td))return null;
+  var t=td.firstChild&&td.firstChild.nodeType===3?td.firstChild.nodeValue:td.textContent;t=(t||"").trim();
+  return SYM.test(t)?t:null}
+function symbolOf(target){
+  if(!target||!target.closest)return null;
+  var b=target.closest("#rows button");                       /* scan tabs: Gainers, Losers, Breakout ... */
+  if(b){var bt=(b.textContent||"").trim();return SYM.test(bt)?bt:null}
+  var td=target.closest("td");if(!td)return null;
+  if(td.closest("#tbody")){                                   /* tools tabs: only where the first column is "Symbol" */
+    var tb=td.closest("table"),th=tb&&tb.querySelector("th");
+    if(!th||(th.textContent||"").trim()!=="Symbol")return null;return symbolTd(td)}
+  return td.closest(TABLES)?symbolTd(td):null}
+
+document.addEventListener("click",function(e){
+  if(e.target&&e.target.closest&&e.target.closest("#detailBack")){window.location.hash="";return}
+  var s=symbolOf(e.target);if(s)go(s)});
+document.addEventListener("keydown",function(e){
+  if(e.key!=="Enter")return;var s=symbolOf(e.target);if(s)go(s)});
+window.addEventListener("hashchange",render);
+
+if(typeof MutationObserver!=="undefined"){   /* make the first cell keyboard-reachable after each table redraw */
+  var WATCH=TABLES+",#tbody";
+  var mark=function(root){var tds=root.querySelectorAll?root.querySelectorAll("td:first-child"):[];
+    for(var i=0;i<tds.length;i++){var t=symbolTd(tds[i]);if(!t)continue;
+      if(root.id==="tbody"){var th=document.querySelector("#thead th");if(!th||(th.textContent||"").trim()!=="Symbol")continue;tds[i].className+=" symlink"}
+      tds[i].setAttribute("tabindex","0");tds[i].setAttribute("role","link");tds[i].setAttribute("title","Open "+t+" detail")}};
+  var mo=new MutationObserver(function(){WATCH.split(",").forEach(function(q){var el=document.querySelector(q);if(el)mark(el)})});
+  WATCH.split(",").forEach(function(q){var el=document.querySelector(q);if(el)mo.observe(el,{childList:true,subtree:true})})}
+render();
+})();
+</script>
+<script>
+/* StockLens Phase 3 Step 2 - historical price chart + technical indicators inside the Stock Detail view.
+   Data: out/historical.json = daily OHLCV written server-side by historical_updater.py (Upstox). The browser never
+   calls Upstox and never sees a token. No live data. Indicators are calculated here from the daily candles.
+   These are research indicators only - none of them is a buy/sell signal. */
+(function(){
+"use strict";
+var LIB_URL="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js";
+var ST_PERIOD=10, ST_MULT=3;          /* Supertrend: ATR period 10, multiplier 3 */
+var RSI_PERIOD=14, MIN_CANDLES=30;
+var TFS=[["1M",1],["3M",3],["6M",6],["1Y",12],["3Y",36],["5Y",60]];
+var IND=[["dma20","20 DMA","#E8A317"],["dma50","50 DMA","#3B4CCA"],["dma200","200 DMA","#9B59B6"],
+         ["ema20","20 EMA","#17A2B8"],["ema50","50 EMA","#D2691E"],["st","Supertrend","#0E8F5E"]];
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var DATE=/^\d{4}-\d{2}-\d{2}$/;
+
+/* ---------- data cleaning: invalid rows are dropped, never repaired or invented ---------- */
+function cleanCandles(arr){
+  var by={};
+  (Array.isArray(arr)?arr:[]).forEach(function(c){
+    if(!c||typeof c.date!=="string"||!DATE.test(c.date))return;
+    if(!isn(c.open)||!isn(c.high)||!isn(c.low)||!isn(c.close))return;
+    if(Math.min(c.open,c.high,c.low,c.close)<=0||c.high<c.low)return;
+    by[c.date]={date:c.date,open:c.open,high:c.high,low:c.low,close:c.close,volume:isn(c.volume)&&c.volume>=0?c.volume:null}});
+  return Object.keys(by).sort().map(function(d){return by[d]})}
+
+/* ---------- indicators (all return an array the same length as the input; null = not enough data yet) ---------- */
+/* SMA(n) = average of the last n closes. This is what "DMA" means here. */
+function sma(c,n){var out=[],sum=0;
+  for(var i=0;i<c.length;i++){sum+=c[i];if(i>=n)sum-=c[i-n];out.push(i>=n-1?sum/n:null)}return out}
+/* EMA(n): seeded with the SMA of the first n closes, then ema = close*k + prev*(1-k), k = 2/(n+1). */
+function ema(c,n){var out=[],k=2/(n+1),prev=null,sum=0;
+  for(var i=0;i<c.length;i++){
+    if(i<n-1){out.push(null);sum+=c[i];continue}
+    if(i===n-1){sum+=c[i];prev=sum/n}else prev=c[i]*k+prev*(1-k);
+    out.push(prev)}return out}
+/* RSI(14), Wilder: first averages are the plain mean of the first 14 changes, afterwards avg = (prev*13 + current)/14.
+   RSI = 100 - 100/(1+avgGain/avgLoss); 100 when there are no losses, 50 when there is no movement at all. */
+function rsi(c,n){var out=[],g=0,l=0,i;
+  for(i=0;i<c.length;i++){
+    if(i===0){out.push(null);continue}
+    var d=c[i]-c[i-1],up=d>0?d:0,dn=d<0?-d:0;
+    if(i<=n){g+=up;l+=dn;if(i<n){out.push(null);continue}g/=n;l/=n}
+    else{g=(g*(n-1)+up)/n;l=(l*(n-1)+dn)/n}
+    out.push(l===0?(g===0?50:100):100-100/(1+g/l))}return out}
+/* Supertrend(period, mult): TR=max(H-L,|H-prevC|,|L-prevC|); ATR = Wilder average of TR (seed = mean of the first
+   `period` TRs). Bands = (H+L)/2 -/+ mult*ATR; the final bands only tighten while the close stays inside them.
+   Direction flips up when the close ends above the final upper band and down when it ends below the final lower band.
+   Start: the first valid bar is treated as down-trend (upper band) until the close crosses it - the usual convention.
+   Returns [{value,dir}|null] where dir 1 = up-trend (line = lower band), -1 = down-trend (line = upper band). */
+function supertrend(cs,period,mult){
+  var n=cs.length,out=[],atr=null,fu=null,fl=null,dir=0,i,tr,sum=0;
+  for(i=0;i<n;i++){
+    var h=cs[i].high,l=cs[i].low,pc=i>0?cs[i-1].close:null;
+    tr=pc==null?h-l:Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));
+    if(i<period-1){sum+=tr;out.push(null);continue}
+    if(i===period-1){sum+=tr;atr=sum/period}else atr=(atr*(period-1)+tr)/period;
+    var mid=(h+l)/2,bu=mid+mult*atr,bl=mid-mult*atr;
+    if(dir===0){fu=bu;fl=bl;dir=cs[i].close>fu?1:-1}
+    else{
+      fu=(bu<fu||pc>fu)?bu:fu;fl=(bl>fl||pc<fl)?bl:fl;
+      if(dir===-1&&cs[i].close>fu)dir=1;else if(dir===1&&cs[i].close<fl)dir=-1}
+    out.push({value:dir===1?fl:fu,dir:dir})}
+  return out}
+/* Relative Strength vs Nifty 50: on the dates present in BOTH series inside the selected range,
+   RS(t) = (stockClose(t)/stockClose(first)) / (niftyClose(t)/niftyClose(first)) * 100.
+   100 at the start of the range; above 100 = the stock outperformed Nifty 50 since the start, below 100 = underperformed.
+   A research ratio only - no score, no signal. */
+function relStrength(stock,bench){
+  var bm={};(bench||[]).forEach(function(c){bm[c.date]=c.close});
+  var pts=[],s0=null,b0=null;
+  stock.forEach(function(c){var b=bm[c.date];if(!isn(b))return;
+    if(s0==null){s0=c.close;b0=b}
+    pts.push({date:c.date,value:(c.close/s0)/(b/b0)*100,s:c.close/s0-1,b:b/b0-1})});
+  if(pts.length<2)return null;
+  var l=pts[pts.length-1];
+  return{points:pts,last:l.value,stockReturn:l.s*100,benchReturn:l.b*100}}
+
+/* ---------- model for one stock + timeframe ---------- */
+function minusMonths(ds,n){var d=new Date(ds+"T00:00:00Z");d.setUTCMonth(d.getUTCMonth()-n);return d.toISOString().slice(0,10)}
+function tfsFor(candles){
+  var first=candles[0].date,last=candles[candles.length-1].date;
+  /* 1M-1Y always; 3Y / 5Y only when the data really reaches back that far (10 days tolerance for holidays) */
+  return TFS.filter(function(t){return t[1]<=12||first<=addDays(minusMonths(last,t[1]),10)})}
+function addDays(ds,n){var d=new Date(ds+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+function series(dates,vals,from){var o=[];
+  for(var i=from;i<dates.length;i++)o.push(isn(vals[i])?{time:dates[i],value:vals[i]}:{time:dates[i]});return o}
+function hasValues(a){return a.some(function(p){return p.value!==undefined})}
+
+/* Indicators are computed on the FULL history (warm-up), then only the selected range is shown. */
+function prepare(doc,sym,tf){
+  var st=doc&&doc.stocks&&typeof doc.stocks==="object"?doc.stocks[sym]:null;
+  var all=cleanCandles(st&&st.candles);
+  if(all.length<MIN_CANDLES)return{error:"Not enough historical data."};
+  var tfs=tfsFor(all),label=tfs.some(function(t){return t[0]===tf})?tf:"1Y";
+  var months=TFS.filter(function(t){return t[0]===label})[0][1];
+  var cutoff=minusMonths(all[all.length-1].date,months),from=0;
+  while(from<all.length-1&&all[from].date<cutoff)from++;
+  var dates=all.map(function(c){return c.date}),closes=all.map(function(c){return c.close});
+  var shown=all.slice(from),m={tf:label,tfs:tfs.map(function(t){return t[0]}),dates:dates.slice(from),last:all[all.length-1].date};
+  m.candles=shown.map(function(c){return{time:c.date,open:c.open,high:c.high,low:c.low,close:c.close}});
+  m.volume=shown.filter(function(c){return c.volume!=null}).map(function(c){return{time:c.date,value:c.volume,up:c.close>=c.open}});
+  m.lines={dma20:sma(closes,20),dma50:sma(closes,50),dma200:sma(closes,200),ema20:ema(closes,20),ema50:ema(closes,50)};
+  Object.keys(m.lines).forEach(function(k){m.lines[k]=series(dates,m.lines[k],from)});
+  var stv=supertrend(all,ST_PERIOD,ST_MULT);
+  m.st={up:[],down:[]};
+  for(var i=from;i<all.length;i++){var s=stv[i];
+    m.st.up.push(s&&s.dir===1?{time:dates[i],value:s.value}:{time:dates[i]});
+    m.st.down.push(s&&s.dir===-1?{time:dates[i],value:s.value}:{time:dates[i]})}
+  m.rsi=series(dates,rsi(closes,RSI_PERIOD),from);
+  var b=cleanCandles(doc.benchmark&&doc.benchmark.candles),rs=relStrength(shown,b);
+  m.rs=null;
+  if(rs){var by={};rs.points.forEach(function(p){by[p.date]=p.value});
+    m.rs={line:shown.map(function(c){return isn(by[c.date])?{time:c.date,value:by[c.date]}:{time:c.date}}),
+          last:rs.last,stockReturn:rs.stockReturn,benchReturn:rs.benchReturn}}
+  m.avail={dma20:hasValues(m.lines.dma20),dma50:hasValues(m.lines.dma50),dma200:hasValues(m.lines.dma200),
+           ema20:hasValues(m.lines.ema20),ema50:hasValues(m.lines.ema50),st:hasValues(m.st.up)||hasValues(m.st.down),rsi:hasValues(m.rsi)};
+  return m}
+
+/* ---------- loading ---------- */
+var HIST=null;
+function loadHist(){
+  if(HIST)return HIST;
+  HIST=fetch("out/historical.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return HIST}
+var LIB=null;
+function loadLib(){
+  if(window.LightweightCharts)return Promise.resolve(window.LightweightCharts);
+  if(LIB)return LIB;
+  LIB=new Promise(function(res,rej){
+    var s=document.createElement("script");s.src=LIB_URL;s.async=true;
+    s.onload=function(){window.LightweightCharts?res(window.LightweightCharts):rej(new Error("no library"))};
+    s.onerror=function(){LIB=null;rej(new Error("load failed"))};
+    document.head.appendChild(s)});
+  return LIB}
+
+/* ---------- drawing ---------- */
+var cur=null;   /* {sym, doc, tf, on:{...}, charts:[]} for the stock detail currently open */
+function css(name,fb){try{var v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();return v||fb}catch(e){return fb}}
+function msg(box,text){box.setAttribute("style","padding:28px;text-align:center;color:var(--mute)");box.innerHTML=esc(text)}
+function f2(v){return isn(v)?v.toFixed(2):"-"}
+
+function controls(m){
+  var h='<div role="group" aria-label="Timeframe" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+  m.tfs.forEach(function(t){h+='<button class="lk" type="button" data-tf="'+t+'" aria-pressed="'+(t===m.tf)+'" style="padding:4px 12px;border:1px solid var(--line);border-radius:16px;'+(t===m.tf?"background:var(--ac);color:#fff;text-decoration:none":"")+'">'+t+'</button>'});
+  h+='</div><div role="group" aria-label="Indicators" style="display:flex;gap:14px;flex-wrap:wrap;font-size:.85rem;margin-bottom:8px">';
+  IND.forEach(function(d){var ok=m.avail[d[0]];
+    h+='<label style="'+(ok?"":"opacity:.55")+'"><input type="checkbox" data-ind="'+d[0]+'"'+(cur.on[d[0]]&&ok?" checked":"")+(ok?"":" disabled")+'> <span style="color:'+d[2]+'">&#9632;</span> '+d[1]+(ok?"":" (not enough history)")+'</label>'});
+  return h+'</div>'}
+
+function draw(box,L){
+  var m=prepare(cur.doc,cur.sym,cur.tf);
+  if(m.error){msg(box,m.error);return}
+  cur.tf=m.tf;
+  var up=css("--up","#0E8F5E"),dn=css("--dn","#D13B3B"),ink=css("--ink","#14213D"),line=css("--line","#DCE3EE"),mute=css("--mute","#5B6784");
+  box.setAttribute("style","padding:12px;text-align:left");
+  var h=controls(m);
+  h+='<div id="slPrice"></div><div class="note" style="padding:6px 0 0">Volume</div><div id="slVol"></div>';
+  h+='<div class="note" style="padding:10px 0 0"><b>RSI (14)</b> &mdash; reference levels 30 / 50 / 70. A momentum reading, not a buy or sell signal.</div>'+(m.avail.rsi?'<div id="slRsi"></div>':'<p class="note">Not enough historical data.</p>');
+  if(m.rs)h+='<div class="note" style="padding:10px 0 0"><b>Relative Strength vs Nifty 50</b> &mdash; '+esc(cur.sym)+' '+f2(m.rs.stockReturn)+'% vs Nifty 50 '+f2(m.rs.benchReturn)+'% over '+esc(m.tf)+'; ratio now '+f2(m.rs.last)+' (100 = same as Nifty 50 at the start of the range). A comparison, not a signal.</div><div id="slRs"></div>';
+  else h+='<div class="note" style="padding:10px 0 0"><b>Relative Strength vs Nifty 50</b> &mdash; Not enough historical data.</div>';
+  h+='<p class="note" style="padding:8px 0 0">VWAP &mdash; Available in a future intraday-data phase</p>';
+  h+='<p class="note" style="padding:2px 0 0">Daily candles: '+esc(cur.doc.source||"Upstox")+(cur.doc.updated?" · Updated: "+esc(cur.doc.updated):"")+' · last candle '+esc(m.last)+'. DMA = simple moving average. Supertrend: ATR '+ST_PERIOD+', multiplier '+ST_MULT+'. Indicators are research tools, not recommendations.</p>';
+  box.innerHTML=h;
+  cur.charts.forEach(function(c){try{c.remove()}catch(e){}});cur.charts=[];
+  var base={layout:{background:{color:"transparent"},textColor:mute},grid:{vertLines:{color:line},horzLines:{color:line}},
+            rightPriceScale:{borderColor:line,minimumWidth:70},timeScale:{borderColor:line,rightOffset:2},autoSize:true,
+            crosshair:{mode:0}};
+  function make(id,height,extra){var el=$(id);if(!el)return null;el.setAttribute("style","height:"+height+"px");
+    var c=L.createChart(el,Object.assign({height:height},base,extra||{}));cur.charts.push(c);return c}
+  var price=make("slPrice",340);
+  if(price){
+    var cs=price.addCandlestickSeries({upColor:up,downColor:dn,borderUpColor:up,borderDownColor:dn,wickUpColor:up,wickDownColor:dn});
+    cs.setData(m.candles);
+    IND.forEach(function(d){
+      if(!cur.on[d[0]]||!m.avail[d[0]]||d[0]==="st")return;
+      price.addLineSeries({color:d[2],lineWidth:1,priceLineVisible:false,lastValueVisible:false,title:d[1]}).setData(m.lines[d[0]])});
+    if(cur.on.st&&m.avail.st){
+      price.addLineSeries({color:up,lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:"Supertrend"}).setData(m.st.up);
+      price.addLineSeries({color:dn,lineWidth:2,priceLineVisible:false,lastValueVisible:false,title:"Supertrend"}).setData(m.st.down)}}
+  var vol=make("slVol",110);
+  if(vol){
+    var hs=vol.addHistogramSeries({priceFormat:{type:"volume"},priceLineVisible:false,lastValueVisible:false});
+    var vd={};m.volume.forEach(function(v){vd[v.time]=v});
+    hs.setData(m.candles.map(function(c){var v=vd[c.time];return v?{time:c.time,value:v.value,color:v.up?up:dn}:{time:c.time}}))}
+  var r=m.avail.rsi?make("slRsi",140):null;
+  if(r){
+    var rl=r.addLineSeries({color:ink,lineWidth:1,priceLineVisible:false,lastValueVisible:true,title:"RSI (14)",
+      autoscaleInfoProvider:function(){return{priceRange:{minValue:0,maxValue:100}}}});
+    rl.setData(m.rsi);
+    [70,50,30].forEach(function(p){rl.createPriceLine({price:p,color:mute,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:""})})}
+  var rc=m.rs?make("slRs",130):null;
+  if(rc){
+    var rr=rc.addLineSeries({color:"#3B4CCA",lineWidth:2,priceLineVisible:false,lastValueVisible:true,title:"RS vs Nifty 50"});
+    rr.setData(m.rs.line);rr.createPriceLine({price:100,color:mute,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:""})}
+  var busy=false;                                   /* keep all panels on the same visible range */
+  cur.charts.forEach(function(c){c.timeScale().fitContent();
+    c.timeScale().subscribeVisibleLogicalRangeChange(function(rg){
+      if(busy||!rg)return;busy=true;
+      cur.charts.forEach(function(o){if(o!==c)o.timeScale().setVisibleLogicalRange(rg)});busy=false})})}
+
+function redraw(box,focus){
+  loadLib().then(function(L){draw(box,L);
+    if(focus&&box.querySelector){var el=box.querySelector(focus);if(el&&el.focus)el.focus()}},
+    function(){msg(box,"Chart library could not be loaded.")})}
+
+function onControl(e){
+  var t=e.target;if(!t||!t.getAttribute||!cur)return;
+  var box=$("detailChart"),tf=t.getAttribute("data-tf"),ind=t.getAttribute("data-ind");
+  if(!box)return;
+  if(tf&&e.type==="click"){cur.tf=tf;redraw(box,'[data-tf="'+tf+'"]')}
+  else if(ind&&e.type==="change"){cur.on[ind]=!!t.checked;redraw(box,'[data-ind="'+ind+'"]')}}
+
+/* Called by the Stock Detail view after it has rendered. The placeholder stays until valid history has loaded. */
+function mount(sym,isCurrent){
+  var box=$("detailChart");if(!box)return Promise.resolve();
+  var stillHere=function(){return(!isCurrent||isCurrent())&&$("detailChart")===box};
+  return loadHist().then(function(doc){
+    if(!stillHere())return;
+    if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object"){msg(box,"Historical data unavailable.");return}
+    var probe=prepare(doc,sym,"1Y");
+    if(probe.error){msg(box,probe.error);return}
+    cur={sym:sym,doc:doc,tf:"1Y",on:{dma20:true,dma50:true,dma200:true,ema20:false,ema50:false,st:false},charts:[]};
+    box.addEventListener("click",onControl);box.addEventListener("change",onControl);
+    return loadLib().then(function(L){if(stillHere())draw(box,L)},function(){if(stillHere())msg(box,"Chart library could not be loaded.")})
+  }).catch(function(){var b=$("detailChart");if(b===box)msg(box,"Historical data unavailable.")})}
+
+window.SLChart={mount:mount,prepare:prepare,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,
+  PARAMS:{supertrendPeriod:ST_PERIOD,supertrendMultiplier:ST_MULT,rsiPeriod:RSI_PERIOD}};
+})();
+</script>
+<script>
+/* StockLens Phase 3 Step 3 - Technical Snapshot for the Stock Detail view.
+   Read-only facts calculated in the browser from out/historical.json (daily candles written by historical_updater.py).
+   No new API, no token, not live. Nothing is estimated: anything that cannot be calculated from real candles shows "-".
+   These are descriptive numbers only - none of them is a recommendation or signal. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var DATE=/^\d{4}-\d{2}-\d{2}$/;
+var N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var ATR_PERIOD=14, VOL_DAYS=20, RANGE_DAYS=365;
+var RETURNS=[["1M",1],["3M",3],["6M",6],["1Y",12]];
+var DMAS=[20,50,200];
+
+/* Same cleaning rule as the chart: invalid rows are dropped, never repaired. Sorted by date, one candle per date. */
+function cleanCandles(arr){
+  var by={};
+  (Array.isArray(arr)?arr:[]).forEach(function(c){
+    if(!c||typeof c.date!=="string"||!DATE.test(c.date))return;
+    if(!isn(c.open)||!isn(c.high)||!isn(c.low)||!isn(c.close))return;
+    if(Math.min(c.open,c.high,c.low,c.close)<=0||c.high<c.low)return;
+    by[c.date]={date:c.date,open:c.open,high:c.high,low:c.low,close:c.close,volume:isn(c.volume)&&c.volume>=0?c.volume:null}});
+  return Object.keys(by).sort().map(function(d){return by[d]})}
+
+function pad(n,w){var s=String(n);while(s.length<(w||2))s="0"+s;return s}
+function addDays(ds,n){var d=new Date(ds+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+/* Calendar cutoff n months back. A day that does not exist in the earlier month is clamped to its last day (31 Mar - 1 month = 28 Feb). */
+function minusMonths(ds,n){
+  var y=+ds.slice(0,4),m=+ds.slice(5,7)-1,d=+ds.slice(8,10),t=y*12+m-n,ny=Math.floor(t/12),nm=t-ny*12;
+  var dim=new Date(Date.UTC(ny,nm+1,0)).getUTCDate();
+  return pad(ny,4)+"-"+pad(nm+1)+"-"+pad(Math.min(d,dim))}
+var pct=function(a,b){return isn(a)&&isn(b)&&b!==0?(a/b-1)*100:null};
+
+/* ATR(14), Wilder - the same true-range method as the Supertrend in the chart:
+   TR = max(H-L, |H-prevClose|, |L-prevClose|) (first bar: H-L); seed = mean of the first 14 TRs; then ATR = (prevATR*13 + TR)/14. */
+function atr(cs,period){
+  if(cs.length<period)return null;
+  var a=null,sum=0;
+  for(var i=0;i<cs.length;i++){
+    var h=cs[i].high,l=cs[i].low,pc=i>0?cs[i-1].close:null;
+    var tr=pc==null?h-l:Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));
+    if(i<period-1){sum+=tr;continue}
+    a=i===period-1?(sum+tr)/period:(a*(period-1)+tr)/period}
+  return a}
+
+/* All snapshot numbers for one stock, or null when there is no usable candle. */
+function compute(doc,sym){
+  var st=doc&&typeof doc==="object"&&doc.stocks&&typeof doc.stocks==="object"?doc.stocks[sym]:null;
+  var cs=cleanCandles(st&&st.candles);
+  if(!cs.length)return null;
+  var n=cs.length,last=cs[n-1],c=last.close,r={asOf:last.date,lastClose:c};
+  r.change1d=n>1?pct(c,cs[n-2].close):null;
+  r.returns={};                                   /* latest close ON OR BEFORE the calendar cutoff; no interpolation */
+  RETURNS.forEach(function(x){
+    var cut=minusMonths(last.date,x[1]),ref=null;
+    for(var i=n-1;i>=0;i--)if(cs[i].date<=cut){ref=cs[i];break}
+    r.returns[x[0]]=ref?pct(c,ref.close):null});
+  var ws=addDays(last.date,-RANGE_DAYS);          /* 52 weeks = candles dated from (last date - 365 days) to the last date */
+  r.range={high:null,low:null,fromHigh:null,fromLow:null};
+  if(cs[0].date<=ws){   /* the history must actually reach back to the start of the 365-day window (no tolerance), otherwise it is not a 52-week range */
+    var sub=cs.filter(function(x){return x.date>=ws}),hi=-Infinity,lo=Infinity;
+    sub.forEach(function(x){if(x.high>hi)hi=x.high;if(x.low<lo)lo=x.low});
+    r.range={high:hi,low:lo,fromHigh:pct(c,hi),fromLow:pct(c,lo)}}
+  r.dma={};                                       /* SMA of the last n closes, as in the chart */
+  DMAS.forEach(function(k){
+    if(n<k){r.dma[k]=null;return}
+    var s=0;for(var i=n-k;i<n;i++)s+=cs[i].close;
+    r.dma[k]=pct(c,s/k)});
+  r.volRatio=null;                                /* latest volume / mean volume of the 20 candles before it; every volume must be present */
+  if(n>VOL_DAYS&&last.volume!=null){
+    var prev=cs.slice(n-1-VOL_DAYS,n-1),vs=0,okv=true;
+    prev.forEach(function(x){if(x.volume==null)okv=false;else vs+=x.volume});
+    if(okv&&vs>0)r.volRatio=last.volume/(vs/VOL_DAYS)}
+  var a=atr(cs,ATR_PERIOD);
+  r.atrPct=a==null?null:a/c*100;
+  return r}
+
+/* ---------- display ---------- */
+function tile(label,value){return '<div class="tile"><b style="font-size:1.1rem">'+value+'</b><span>'+esc(label)+'</span></div>'}
+function fp(v){return isn(v)?(v>0?"+":"")+v.toFixed(2)+"%":"-"}
+function fx(v){return isn(v)?v.toFixed(2)+"×":"-"}
+function fr(v){return isn(v)?"₹"+N2.format(v):"-"}
+function render(r){
+  var h='<h3 style="margin:1.4em 0 .4em">Technical Snapshot</h3>';
+  h+='<div class="tiles">'+tile("Last close (daily data)",fr(r.lastClose))+tile("1-day change",fp(r.change1d))
+    +tile("Volume ÷ 20-day average",fx(r.volRatio))+tile("ATR(14) as % of close",isn(r.atrPct)?r.atrPct.toFixed(2)+"%":"-")+'</div>';
+  h+='<div class="tiles">'+RETURNS.map(function(x){return tile("Return "+x[0],fp(r.returns[x[0]]))}).join("")+'</div>';
+  h+='<div class="tiles">'+tile("52-week high",fr(r.range.high))+tile("52-week low",fr(r.range.low))
+    +tile("From 52-week high",fp(r.range.fromHigh))+tile("From 52-week low",fp(r.range.fromLow))+'</div>';
+  h+='<div class="tiles">'+DMAS.map(function(k){return tile("Close vs "+k+" DMA",fp(r.dma[k]))}).join("")+'</div>';
+  h+='<p class="note" style="padding-left:0">Daily data as of '+esc(r.asOf)+'. Historical data is not live. Returns use the latest close on or before the calendar cutoff; the 52-week range uses candles from the latest 365 days; DMA is the simple average of closes; volume is compared with the previous 20 candles. Descriptive figures only.</p>';
+  return h}
+function unavailable(){return '<h3 style="margin:1.4em 0 .4em">Technical Snapshot</h3><p class="note" style="padding-left:0">Historical data unavailable.</p>'}
+
+var HIST=null;
+function loadHist(){
+  if(HIST)return HIST;
+  HIST=fetch("out/historical.json").then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return HIST}
+
+/* Called by the Stock Detail view after it has rendered. Fills #detailTech, which sits between Cash Flow and the price chart. */
+function mount(sym,isCurrent){
+  var box=$("detailTech");if(!box)return Promise.resolve();
+  return loadHist().then(function(doc){
+    if(isCurrent&&!isCurrent())return;
+    if($("detailTech")!==box)return;
+    var r=compute(doc,sym);
+    box.innerHTML=r?render(r):unavailable()
+  }).catch(function(){if($("detailTech")===box)box.innerHTML=unavailable()})}
+
+window.SLTech={mount:mount,compute:compute,cleanCandles:cleanCandles,atr:atr,minusMonths:minusMonths};
+})();
+</script>
+<script>
+/* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
+(function(){
+const $=i=>document.getElementById(i),esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const cr=v=>v==null?"-":N0.format(v),r2=v=>v==null?"-":N2.format(v),pc=v=>v==null?"-":(v>0?"+":"")+N2.format(v)+"%";
+const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+const pk=p=>{const m=String(p||"").trim().split(/\s+/);return m.length===2&&MON[m[0].slice(0,3).toLowerCase()]?(+m[1])*100+MON[m[0].slice(0,3).toLowerCase()]:null};
+const per=(p,b)=>p?esc(p)+(b==="standalone"?" · standalone":""):"-";
+const ng=v=>v!=null&&v<0?" dn":"";
+const gc=(v,g)=>cr(v)+`<br><small style="color:${g!=null&&g<0?"var(--dn)":"var(--mute)"}">${pc(g)}</small>`;
+const C=(k,l,f,o)=>Object.assign({k,l,f},o||{});
+const stock=C("symbol","Stock",r=>esc(r.symbol),{s:1}),comp=C("company_name","Company",r=>r.company_name?esc(r.company_name):"-",{s:1}),
+period=C("pk","Period",r=>per(r.period,r.basis),{s:1}),num=(k,l,f)=>C(k,l,r=>f(r[k]),{n:1,g:k});
+const nz=(k,l,f)=>C(k,l,r=>f(r[k]),{n:1,g:k}),NA=f=>v=>v==null?"N/A":f(v),ex=s=>({symbol:s.symbol,company_name:s.company_name});
+const T={
+ t2a:{src:"fin",row:s=>{const i=s.income||{};return Object.assign(ex(s),{period:i.period,pk:pk(i.period),basis:i.basis,revenue:i.revenue,total_revenue:i.total_revenue,profit_before_tax:i.profit_before_tax,profit_after_tax:i.profit_after_tax,eps_basic:i.eps_basic,eps_diluted:i.eps_diluted})},
+  cols:[stock,period,nz("revenue","Revenue (₹ cr)",cr),nz("total_revenue","Total revenue (₹ cr)",cr),nz("profit_before_tax","Profit before tax (₹ cr)",cr),nz("profit_after_tax","Profit after tax (₹ cr)",cr),nz("eps_basic","EPS basic (₹)",r2),nz("eps_diluted","EPS diluted (₹)",r2)]},
+ t2b:{src:"val",row:v=>Object.assign(ex(v),{roe:v.roe,roce:v.roce,roa:v.roa,pe:v.pe,pb:v.pb,ev_ebitda:v.ev_ebitda}),
+  cols:[stock,nz("roe","ROE %",r2),nz("roce","ROCE %",r2),nz("roa","ROA %",r2),nz("pe","P/E",r2),nz("pb","P/B",r2),nz("ev_ebitda","EV/EBITDA",r2)]},
+ t2:{src:"fin",row:s=>{const b=s.balance_sheet||{};return Object.assign(ex(s),{period:b.period,pk:pk(b.period),basis:b.basis,total_assets:b.total_assets,total_liabilities:b.total_liabilities,total_equity:b.total_equity,liabilities_to_equity:b.liabilities_to_equity,debt_to_equity:b.debt_to_equity})},
+  cols:[stock,comp,period,nz("total_assets","Total assets (₹ cr)",cr),nz("total_liabilities","Total liabilities (₹ cr)",cr),nz("total_equity","Total equity (₹ cr)",cr),nz("liabilities_to_equity","Liabilities / Equity",r2),nz("debt_to_equity","Debt / Equity",NA(r2))]},
+ t3a:{src:"fin",row:s=>{const c=s.cash_flow||{};return Object.assign(ex(s),{period:c.period,pk:pk(c.period),basis:c.basis,operating:c.operating,investing:c.investing,financing:c.financing,free_cash_flow:c.free_cash_flow})},
+  cols:[stock,period,nz("operating","Operating cash flow (₹ cr)",cr),nz("investing","Investing cash flow (₹ cr)",cr),nz("financing","Financing cash flow (₹ cr)",cr),nz("free_cash_flow","Free cash flow (₹ cr)",NA(cr))]},
+ t3b:{src:"fin",row:s=>{const i=s.income||{};return Object.assign(ex(s),{period:i.period,pk:pk(i.period),basis:i.basis,total_revenue:i.total_revenue,total_revenue_growth:i.total_revenue_growth,profit_before_tax:i.profit_before_tax,profit_before_tax_growth:i.profit_before_tax_growth,profit_after_tax:i.profit_after_tax,profit_after_tax_growth:i.profit_after_tax_growth})},
+  cols:[stock,period,C("total_revenue","Total revenue (₹ cr) + growth %",r=>gc(r.total_revenue,r.total_revenue_growth),{n:1,g:"total_revenue"}),C("profit_before_tax","Profit before tax (₹ cr) + growth %",r=>gc(r.profit_before_tax,r.profit_before_tax_growth),{n:1,g:"profit_before_tax"}),C("profit_after_tax","Profit after tax (₹ cr) + growth %",r=>gc(r.profit_after_tax,r.profit_after_tax_growth),{n:1,g:"profit_after_tax"})]}};
+let FIN=null,VAL=null,ROE={},ST={};
+function draw(id){const t=T[id],box=$(id),m=+$("roe").value,src=t.src==="val"?VAL:FIN;
+ if(!src){box.innerHTML='<p class="note">'+(t.src==="val"?"Fundamentals":"Financial statements")+' not loaded yet.</p>';return}
+ const useRoe=m>0&&Object.keys(ROE).length>0;
+ const rows=src.stocks.filter(s=>!useRoe||(ROE[s.symbol]!=null&&ROE[s.symbol]>=m)).map(s=>t.row(s)),st=ST[id];
+ if(st)rows.sort((a,b)=>{const A=a[st.k],B=b[st.k];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;return(typeof A==="string"?A.localeCompare(B):A-B)*st.dir});
+ box.innerHTML=`<table><thead><tr>${t.cols.map(c=>`<th><button class="lk" data-t="${id}" data-k="${c.k}">${c.l}</button></th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${t.cols.map(c=>`<td class="${c.n?"n":""}${c.g?ng(r[c.g]):""}">${c.f(r)}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${t.cols.length}">No stocks match. Lower the ROE.</td></tr>`}</tbody></table>`}
+const all=()=>["t2a","t2b","t2","t3a","t3b"].forEach(draw);
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("button[data-t]");if(!b)return;
+ const id=b.dataset.t,k=b.dataset.k,c=T[id].cols.find(x=>x.k===k),s=ST[id];
+ ST[id]=s&&s.k===k?{k,dir:-s.dir}:{k,dir:c&&c.s?1:-1};draw(id)});
+$("roe").addEventListener("change",all);
+const tabs=$("ftabs"),names=["Valuation & Returns","Financial Health","Cash Flow & Growth"];
+names.forEach((n,i)=>{const b=document.createElement("button");b.textContent=n;b.setAttribute("role","tab");
+ b.onclick=()=>{[...tabs.children].forEach((x,j)=>{x.setAttribute("aria-selected",j===i);$("ftab"+(j+1)).hidden=j!==i})};tabs.appendChild(b)});
+tabs.children[0].onclick();
+(async()=>{const j=async u=>{try{const r=await fetch(u,{cache:"no-store"});return r.ok?await r.json():null}catch(e){return null}};
+ const [f,v]=await Promise.all([j("out/financials.json"),j("out/fundamentals.json")]);
+ if(v&&Array.isArray(v.stocks)&&v.stocks.length){VAL=v;v.stocks.forEach(s=>{ROE[s.symbol]=s.roe});$("vstat").textContent="Fundamentals data: Upstox · Updated: "+v.as_of}
+ const msg=document.querySelectorAll(".finstat");
+ if(f&&Array.isArray(f.stocks)&&f.stocks.length){FIN=f;
+  msg.forEach(m=>m.textContent="Financial data: Upstox · ₹ crore · Updated: "+f.as_of+(Object.keys(ROE).length?"":" · ROE filter needs valuation data, so it is off"));
+  const noFcf=f.stocks.every(s=>(s.cash_flow||{}).free_cash_flow==null);
+  $("fcfnote").textContent=noFcf?"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.":"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line; otherwise N/A.";
+  $("n2").textContent="Total equity = total assets − total liabilities (Upstox). Liabilities / Equity is not Debt / Equity and is not comparable for banks, whose liabilities are mostly customer deposits. Debt / Equity is N/A because Upstox did not return a clearly identifiable debt line.";
+  $("n3").textContent="Growth is Upstox's own change versus the previous year, shown only where it matches the reported line."}
+ else msg.forEach(m=>m.textContent="Financial statements not loaded yet.");
+ all()})();
+})();
+</script>
+</body></html>
