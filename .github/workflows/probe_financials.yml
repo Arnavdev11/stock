@@ -5,6 +5,9 @@ name: Probe financial statement history (read-only)
 # It does not touch out/, data/, the saved-data cache or GitHub Pages, and it does not push anything.
 
 on:
+  push:
+    branches:
+      - phase1
   workflow_dispatch:
 
 permissions:
