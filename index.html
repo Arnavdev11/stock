@@ -800,6 +800,134 @@ window.SLTech={mount:mount,compute:compute,cleanCandles:cleanCandles,atr:atr,min
 })();
 </script>
 <script>
+/* StockLens Phase 4 Step 1 - Stock Research (inside the Stock Detail view).
+   A descriptive overview built ONLY from files the page already loads: out/fundamentals.json, out/financials.json and out/historical.json.
+   No new API, no token, no new data file. Stored values are shown exactly as stored - nothing is recalculated here.
+   Technical values come from the existing SLTech.compute() and SLChart.prepare(); Relative Strength uses a fixed 1Y window.
+   Missing value -> "-". Not provided by the data source -> "N/A" / "Unavailable". The section is appended to #detail after the
+   Stock Detail view has rendered; the Stock Detail script itself is not changed. It gives no advice and no interpretation. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var RS_WINDOW="1Y";
+
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+
+/* ---------- formatting (same styles as the Stock Detail and Technical Snapshot views) ---------- */
+var cr=function(v){return isn(v)?N0.format(v):"-"};
+var r2=function(v){return isn(v)?N2.format(v):"-"};
+var pc=function(v){return isn(v)?(v>0?"+":"")+N2.format(v)+"%":"-"};
+function fix2(v){if(!isn(v))return"-";var s=v.toFixed(2);return s==="-0.00"?"0.00":s}
+var fp=function(v){return isn(v)?(v>0?"+":"")+fix2(v)+"%":"-"};
+var money=function(v){return isn(v)?"₹"+N2.format(v):"-"};
+function str(v){return typeof v==="string"&&v.trim()?v.trim():null}
+function obj(v){return v&&typeof v==="object"?v:{}}
+function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
+function per(g){return g&&g.period?esc(g.period)+(g.basis?" · "+esc(g.basis):""):"period not available"}
+function tile(label,value){return '<div class="tile"><b style="font-size:1.1rem">'+value+'</b><span>'+esc(label)+'</span></div>'}
+
+/* an item: label, shown value, whether real data is behind it, and (for structural gaps) a short reason */
+function it(l,raw,fmt){var ok=isn(raw);return{l:l,ok:ok,v:ok?fmt(raw):"-",why:""}}
+function itx(l,ok,v,why){return{l:l,ok:ok,v:v,why:why||""}}
+function lastv(a){return a&&a.length&&isn(a[a.length-1].value)?a[a.length-1].value:null}
+
+/* ---------- technical values: reuse the existing calculations, never a second implementation ---------- */
+function technical(hist,s){
+  var t=null,m=null;
+  try{if(window.SLTech&&hist)t=window.SLTech.compute(hist,s)}catch(e){t=null}
+  try{if(window.SLChart&&hist){m=window.SLChart.prepare(hist,s,RS_WINDOW);if(!m||m.error)m=null}}catch(e){m=null}
+  var ret=t&&t.returns?t.returns:{},rg=t&&t.range?t.range:{},dm=t&&t.dma?t.dma:{},mc=m&&m.macd?m.macd:{},rs=m&&m.rs?m.rs:null;
+  return{asOf:t?t.asOf:(m?m.last:null),items:[
+    it("Last close (daily data)",t?t.lastClose:null,money),
+    it("Return 1M",ret["1M"],fp),it("Return 3M",ret["3M"],fp),it("Return 6M",ret["6M"],fp),it("Return 1Y",ret["1Y"],fp),
+    it("52-week high",rg.high,money),it("52-week low",rg.low,money),
+    it("Close vs 20 DMA",dm[20],fp),it("Close vs 50 DMA",dm[50],fp),it("Close vs 200 DMA",dm[200],fp),
+    it("RSI(14)",m?lastv(m.rsi):null,fix2),
+    it("MACD (12, 26, 9) line",lastv(mc.line),fix2),it("MACD 9-day EMA line",lastv(mc.signal),fix2),it("MACD histogram",lastv(mc.hist),fix2),
+    it("Relative Strength vs Nifty 50 ("+RS_WINDOW+" ratio)",rs?rs.last:null,fix2),
+    it("Stock return in the "+RS_WINDOW+" window",rs?rs.stockReturn:null,fp),
+    it("Nifty 50 return in the "+RS_WINDOW+" window",rs?rs.benchReturn:null,fp)]}}
+
+/* ---------- the seven parts of the section, as data ---------- */
+function sections(s,d){
+  var v=find(d.val,s)||{},f=find(d.fin,s)||{},inc=obj(f.income),bal=obj(f.balance_sheet),cf=obj(f.cash_flow);
+  var name=str(v.company_name)||str(f.company_name),sector=str(v.sector);
+  var valNote=d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of):"Fundamentals not loaded yet.";
+  var finNote=d.fin&&d.fin.as_of?"Financial data: "+esc(d.fin.source||"Upstox")+" · ₹ crore · Updated: "+esc(d.fin.as_of):"Financial statements not loaded yet.";
+  var tech=technical(d.hist,s);
+  return[
+    {title:"Business",note:valNote,items:[
+      itx("Company name",!!name,name?esc(name):"-"),itx("Sector",!!sector,sector?esc(sector):"-"),
+      itx("Business description",false,"Unavailable","no business description exists in the current data files")]},
+    {title:"Fundamental Quality",note:"Income statement: "+per(inc)+" (₹ crore). Ratios: "+valNote+". Growth is the source's own period-over-period change and is shown only where it was verified.",items:[
+      it("Revenue",inc.revenue,cr),it("Total revenue",inc.total_revenue,cr),it("Total revenue growth",inc.total_revenue_growth,pc),
+      it("Profit before tax",inc.profit_before_tax,cr),it("Profit after tax",inc.profit_after_tax,cr),it("Profit after tax growth",inc.profit_after_tax_growth,pc),
+      it("ROE %",v.roe,r2),it("ROCE %",v.roce,r2),it("ROA %",v.roa,r2)]},
+    {title:"Financial Health",note:"Balance sheet: "+per(bal)+" (₹ crore). "+finNote+". Total equity is derived by the data pipeline (total assets minus total liabilities). Liabilities / Equity is not Debt / Equity and is not comparable for banks.",items:[
+      it("Total assets",bal.total_assets,cr),it("Total liabilities",bal.total_liabilities,cr),it("Total equity",bal.total_equity,cr),
+      it("Liabilities / Equity",bal.liabilities_to_equity,r2),
+      itx("Debt / Equity",false,"N/A","no reliable debt data in the current data files")]},
+    {title:"Cash Flow",note:"Period: "+per(cf)+" (₹ crore). Free cash flow is shown only where the source gave an unambiguous capital-expenditure line.",items:[
+      it("Operating cash flow",cf.operating,cr),it("Investing cash flow",cf.investing,cr),it("Financing cash flow",cf.financing,cr),
+      isn(cf.free_cash_flow)?it("Free cash flow",cf.free_cash_flow,cr):itx("Free cash flow",false,"N/A","no unambiguous capital-expenditure line")]},
+    {title:"Valuation",note:valNote,items:[it("P/E",v.pe,r2),it("P/B",v.pb,r2),it("EV/EBITDA",v.ev_ebitda,r2)]},
+    {title:"Technical Summary",note:(tech.asOf?"Daily data as of "+esc(tech.asOf)+". ":"")+"Historical data is not live. Calculated in your browser from out/historical.json with the same calculations as the Technical Snapshot and the chart. Relative Strength vs Nifty 50 uses the latest "+RS_WINDOW+" window (100 = same as Nifty 50 at the start of that window).",items:tech.items}]}
+
+function panel(sec){
+  return '<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">'+esc(sec.title)+'</h4><p class="note" style="padding:0 0 4px">'+sec.note+'</p><div class="tiles">'+sec.items.map(function(i){return tile(i.l,i.v)}).join("")+'</div></div>'}
+
+function checklist(s,secs){
+  var rows=secs.map(function(sec){
+    var have=sec.items.filter(function(i){return i.ok}).map(function(i){return esc(i.l)});
+    var miss=sec.items.filter(function(i){return !i.ok}).map(function(i){return esc(i.l)+(i.why?" ("+esc(i.why)+")":"")});
+    return '<li style="margin-bottom:6px"><b>'+esc(sec.title)+'</b> — ✔ Available: '+(have.length?have.join(", "):"none")+'. ○ Unavailable: '+(miss.length?miss.join(", "):"none")+'.</li>'});
+  return '<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Research Checklist</h4><p class="note" style="padding:0 0 4px">Which data exists for '+esc(s)+' and which does not. A list of what is present, not an assessment.</p><ul style="padding-left:18px;margin:.4em 0 0;font-size:.92rem">'+rows.join("")+'</ul></div>'}
+
+function build(s,d){
+  var secs=sections(s,d),any=secs.some(function(sec){return sec.items.some(function(i){return i.ok})});
+  var h='<h3 style="margin:1.4em 0 .4em">Stock Research</h3><p class="note" style="padding-left:0">Descriptive data only, taken from the StockLens data files already loaded on this page. This section gives no advice. "-" means a value is missing; "N/A" means the data source does not provide it.</p>';
+  if(!any)h+='<p class="note" style="padding-left:0">No data was found for '+esc(s)+' in the current files.</p>';
+  secs.forEach(function(sec){h+=panel(sec)});
+  return h+checklist(s,secs)}
+
+/* ---------- loading (the same three static files; no other request) ---------- */
+var DATA=null;
+function loadAll(){
+  if(DATA)return DATA;
+  var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],hist:a[2]}});
+  return DATA}
+
+/* ---------- placement: append once to #detail after the Stock Detail view has rendered ---------- */
+var node=null,nodeSym=null;
+function failed(){return '<h3 style="margin:1.4em 0 .4em">Stock Research</h3><p class="note" style="padding-left:0">Research data unavailable.</p>'}
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box)return;
+  if(String(box.innerHTML||"").indexOf('id="detailChart"')<0)return;      /* the detail view has not finished rendering */
+  if(node&&node.parentNode===box&&nodeSym===s)return;                       /* already placed for this render */
+  var el=document.createElement("section");
+  el.id="detailResearch";
+  el.innerHTML='<h3 style="margin:1.4em 0 .4em">Stock Research</h3><p class="note" style="padding-left:0">Loading…</p>';
+  box.appendChild(el);node=el;nodeSym=s;
+  loadAll().then(function(d){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=build(s,d)
+  }).catch(function(){if(node===el)el.innerHTML=failed()})}
+
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true})}
+check();
+window.SLResearch={build:build,sections:sections,check:check};
+})();
+</script>
+<script>
 /* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
 (function(){
 const $=i=>document.getElementById(i),esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
