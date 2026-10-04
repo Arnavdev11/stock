@@ -416,6 +416,35 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("git switch --orphan stocklens-data", create)
         self.assertEqual(wf("update.yml").count("create_branch: false"), 1)                                 # the daily run can never create the branch
 
+    def test_first_migration_really_creates_a_branch_holding_exactly_one_file(self):
+        """Runs the real 'Create the data branch' script in a scratch clone (orphan branch starts with an empty index)."""
+        step = wf("save_ledger.yml").split("name: Create the data branch")[1]
+        script = re.search(r"run: \|\n(.*)", step, re.S).group(1)
+        script = "\n".join(l[10:] if l.startswith(" " * 10) else l for l in script.splitlines()).replace("${{ github.run_id }}", "42")
+        self.assertNotIn("git rm", script)
+        env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull, GIT_TERMINAL_PROMPT="0")
+
+        def git(cwd, *a):
+            return subprocess.run(["git", *a], cwd=cwd, env=env, capture_output=True, text=True, check=True).stdout
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d); remote = d / "remote.git"; work = d / "work"
+            git(d, "init", "-q", "--bare", str(remote))
+            git(d, "init", "-q", "-b", "phase1", str(work))
+            git(work, "config", "user.email", "t@example.com"); git(work, "config", "user.name", "t")
+            (work / "index.html").write_text("page"); (work / ".github" / "workflows").mkdir(parents=True)
+            (work / ".github" / "workflows" / "x.yml").write_text("x")
+            git(work, "add", "-A"); git(work, "commit", "-q", "-m", "code"); git(work, "remote", "add", "origin", str(remote))
+            git(work, "push", "-q", "origin", "phase1")
+            (work / "ledger-new").mkdir(); (work / "ledger-new" / "financial_history_ledger.json").write_text('{"schema": 1, "stocks": {}}')   # the downloaded artifact, untracked
+            r = subprocess.run(["bash", "-e", "-c", script], cwd=work, env=env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(git(remote, "ls-tree", "-r", "--name-only", "stocklens-data").split(), ["financial_history_ledger.json"])
+            self.assertEqual(git(remote, "rev-list", "--count", "stocklens-data").strip(), "1")                  # one commit, no code history
+            self.assertEqual(git(remote, "rev-parse", "phase1").strip(), git(work, "rev-parse", "phase1").strip())   # the code branch is untouched
+            r2 = subprocess.run(["bash", "-e", "-c", script], cwd=work, env=env, capture_output=True, text=True)    # a second run must refuse: the branch now exists
+            self.assertNotEqual(r2.returncode, 0)
+            self.assertEqual(git(remote, "rev-list", "--count", "stocklens-data").strip(), "1")
+
     def test_the_manual_workflow_can_create_the_branch_only_when_asked(self):
         t = wf("financial_history.yml")
         self.assertRegex(t, r"create_data_branch:\n(?:.*\n)*?\s+type: boolean\n(?:\s+required: false\n)?\s+default: false")

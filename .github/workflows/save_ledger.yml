@@ -89,9 +89,12 @@ jobs:
             exit 1
           fi
           git switch --orphan stocklens-data
-          git rm -rf --quiet .
           cp ledger-new/financial_history_ledger.json financial_history_ledger.json
           git add financial_history_ledger.json
+          if [ "$(git diff --cached --name-only)" != "financial_history_ledger.json" ]; then
+            echo "::error::The first commit must contain exactly financial_history_ledger.json. Not creating the branch."
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Start the financial history ledger (first migration, run ${{ github.run_id }})"
