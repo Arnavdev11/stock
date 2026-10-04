@@ -206,6 +206,23 @@ class BankTests(unittest.TestCase):
         v = fh.parse_income(income_body(lines), layout="financial")["years"][2026]["values"]
         self.assertEqual(v["revenue"], 650.0); self.assertEqual(v["total_revenue"], 900.0)
 
+    def test_bank_does_not_get_ordinary_company_summary_checks(self):
+        summ = {"revenue": {"Mar_2026": 111.0}, "operating_profit": {"Mar_2026": 222.0}, "net_profit": {"Mar_2026": 220.0}}
+        c = fh.parse_income(income_body(self.BANK, summary=summ), layout="financial")["years"][2026]["checks"]
+        self.assertIsNone(c["summary_revenue_equals_total_revenue"]); self.assertIsNone(c["summary_operating_profit_equals_pbt"])
+        self.assertTrue(c["summary_net_profit_equals_pat"])                                # the one check that applies to every layout
+        c2 = fh.parse_income(income_body(self.BANK, summary=summ), layout="standard")["years"][2026]["checks"]
+        self.assertFalse(c2["summary_revenue_equals_total_revenue"]); self.assertFalse(c2["summary_operating_profit_equals_pbt"])
+
+    def test_bank_summary_difference_gives_no_warning_and_keeps_revenue_null(self):
+        s = fh.new_stock("ICICIBANK", "INE2", "ICICI Bank", "Financial Services")
+        summ = {"revenue": {"Mar_2026": 111.0}, "operating_profit": {"Mar_2026": 222.0}, "net_profit": {"Mar_2026": 220.0}}
+        p = fh.parse_income(income_body(self.BANK, summary=summ), layout="financial")
+        fh.upsert(s, p["years"], "income", "consolidated", "e", TODAY, TODAY)
+        r = rec(s, 2026)
+        self.assertEqual((r["verification"]["status"], r["verification"]["reconciliation"], r["verification"]["warnings"]), ("verified", "matched", []))
+        self.assertIsNone(r["values"]["revenue"]); self.assertEqual(r["values"]["total_revenue"], 900.0)
+
     def test_classify_layout(self):
         for s in ("Financial Services", "Banks", "Private Sector Bank", "Insurance", "NBFC - Finance", "financial services"):
             self.assertEqual(fh.classify_layout(s), "financial", s)
@@ -435,12 +452,52 @@ class LedgerTests(unittest.TestCase):
         s = stock(); up_income(s, YEARS4)
         self.assertEqual(s["gaps"], {})
 
-    def test_failed_check_status(self):
+    def test_reconciliation_mismatch_is_a_warning_not_an_invalid_record(self):
         s = stock()
         parsed = fh.parse_income(income_body(std_lines(["Mar_2026"]), summary={"net_profit": {"Mar_2026": 1.0}}))
+        before = copy.deepcopy(parsed["years"][2026]["values"])
         fh.upsert(s, parsed["years"], "income", "consolidated", "e", TODAY, TODAY)
-        self.assertEqual(rec(s, 2026)["verification"]["status"], "check_failed")
-        self.assertFalse(rec(s, 2026)["verification"]["checks"]["summary_net_profit_equals_pat"])
+        v = rec(s, 2026)["verification"]
+        self.assertEqual(v["status"], "verified")                                          # required detail was extracted
+        self.assertEqual(v["reconciliation"], "mismatch"); self.assertEqual(v["warnings"], ["summary_net_profit_equals_pat"])
+        self.assertFalse(v["checks"]["summary_net_profit_equals_pat"])
+        self.assertEqual({k: x for k, x in rec(s, 2026)["values"].items() if k in before and before[k] is not None}, {k: x for k, x in before.items() if x is not None})
+        self.assertEqual(fh.validate_doc(fh.build_output({"stocks": {"TCS": s}}, [], [], TODAY)), [])                                   # and the document is still valid
+
+    def test_main_normalises_the_saved_ledger_before_processing(self):
+        import inspect
+        body = inspect.getsource(fh.main)
+        self.assertIn("normalise_ledger(ledger)", body)
+        self.assertLess(body.index("normalise_ledger(ledger)"), body.index("process_stock"))
+
+    def test_reconciliation_states(self):
+        self.assertEqual(fh._reconcile({"a": True, "b": None}), ("matched", []))
+        self.assertEqual(fh._reconcile({"a": None, "b": None}), ("not_checked", []))
+        self.assertEqual(fh._reconcile({"a": True, "b": False}), ("mismatch", ["b"]))
+
+    def test_status_depends_on_required_detail_not_on_checks(self):
+        self.assertEqual(fh._status({f: None for f in fh.VALUE_FIELDS}), "incomplete")      # genuinely nothing extracted
+        only_optional = {f: None for f in fh.VALUE_FIELDS}; only_optional["eps_diluted"] = 1.0
+        self.assertEqual(fh._status(only_optional), "incomplete")                          # optional fields alone are not required detail
+        one_core = {f: None for f in fh.VALUE_FIELDS}; one_core["profit_after_tax"] = 1.0
+        self.assertEqual(fh._status(one_core), "verified")
+
+    def test_incomplete_record_is_still_valid_and_flagged(self):
+        s = stock(); up_income(s, ["Mar_2026"])
+        r = rec(s, 2026)
+        for f in fh.VALUE_FIELDS:
+            r["values"][f] = None
+        r["verification"]["status"] = "incomplete"; r["missing"] = fh.missing_of(r["values"])
+        self.assertEqual(fh._status(r["values"]), "incomplete")
+
+    def test_old_check_failed_ledger_is_normalised_without_touching_values(self):
+        s = stock(); up_income(s, ["Mar_2026"])
+        r = rec(s, 2026); r["verification"]["status"] = "check_failed"; r["verification"]["checks"]["summary_net_profit_equals_pat"] = False
+        r["verification"].pop("reconciliation"); r["verification"].pop("warnings")
+        before = copy.deepcopy((r["values"], r["revisions"], r.get("other_lines")))
+        fh.normalise_ledger({"stocks": {"TCS": s}})
+        self.assertEqual(r["verification"]["status"], "verified"); self.assertEqual(r["verification"]["reconciliation"], "mismatch")
+        self.assertEqual((r["values"], r["revisions"], r.get("other_lines")), before)
 
     def test_financial_layout_other_lines_stored_in_the_record(self):
         s = fh.new_stock("HDFCBANK", "INE1", "HDFC Bank", "Financial Services")

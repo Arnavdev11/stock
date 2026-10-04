@@ -183,8 +183,9 @@ def parse_income(body, layout="standard"):
         if all(v is None for v in vals.values()):
             continue
         s = lambda cat: (summ.get(cat) or {}).get(fy)
-        checks = {"summary_revenue_equals_total_revenue": same(s("revenue"), vals["total_revenue"]),
-                  "summary_operating_profit_equals_pbt": same(s("operating_profit"), vals["profit_before_tax"]),
+        ordinary = layout == "standard"           # revenue = total revenue and operating profit = PBT are ordinary-company assumptions
+        checks = {"summary_revenue_equals_total_revenue": same(s("revenue"), vals["total_revenue"]) if ordinary else None,
+                  "summary_operating_profit_equals_pbt": same(s("operating_profit"), vals["profit_before_tax"]) if ordinary else None,
                   "summary_net_profit_equals_pat": same(s("net_profit"), vals["profit_after_tax"])}
         other = {}
         if layout == "financial":
@@ -261,8 +262,23 @@ def compute_gaps(years):
     return out
 
 
-def _status(checks):
-    return "check_failed" if any(v is False for v in checks.values()) else "verified"
+def _status(values):
+    """Record status = was the required detail extracted? Summary/detail reconciliation never decides this (see _reconcile)."""
+    return "verified" if any(values.get(f) is not None for f in CORE_FIELDS) else "incomplete"
+
+
+def _reconcile(checks):
+    """(reconciliation, warnings): an optional cross-check of Upstox's summary lines against its detail lines. Informational only."""
+    bad = sorted(k for k, v in checks.items() if v is False)
+    if bad:
+        return "mismatch", bad
+    return ("matched" if any(v is True for v in checks.values()) else "not_checked"), []
+
+
+def _set_verification(r):
+    ver = r["verification"]
+    ver["status"] = _status(r["values"])
+    ver["reconciliation"], ver["warnings"] = _reconcile(ver["checks"])
 
 
 def upsert(stock, years, statement, basis, endpoint, fetched, today_, month=None):
@@ -283,7 +299,7 @@ def upsert(stock, years, statement, basis, endpoint, fetched, today_, month=None
         if r is None:
             r = {"fy": fy, "period": y["period"], "period_end": info["period_end"], "basis": basis,
                  "values": {f: None for f in VALUE_FIELDS}, "missing": [],
-                 "verification": {"status": "verified", "checks": {k: None for k in CHECK_KEYS}},
+                 "verification": {"status": "incomplete", "reconciliation": "not_checked", "warnings": [], "checks": {k: None for k in CHECK_KEYS}},
                  "source": {"provider": "Upstox", "income": None, "cash_flow": None},
                  "first_seen": today_, "last_confirmed": today_, "revisions": []}
             stock["years"].append(r)
@@ -317,10 +333,10 @@ def upsert(stock, years, statement, basis, endpoint, fetched, today_, month=None
         for k, v in (y.get("checks") or {}).items():
             if v is not None:
                 r["verification"]["checks"][k] = v
-        r["verification"]["status"] = _status(r["verification"]["checks"])
+        r["missing"] = missing_of(r["values"])
+        _set_verification(r)
         r["source"][statement] = {"endpoint": endpoint, "fetched": fetched}
         r["last_confirmed"] = today_
-        r["missing"] = missing_of(r["values"])
         stats["confirmed"] += 1
     sort_years(stock)
     stock["gaps"] = compute_gaps(stock["years"])
@@ -486,7 +502,7 @@ def validate_doc(doc):
                 if not (isnum(cx) and isnum(op) and abs(fc - (op - cx)) <= DIFF_TOLERANCE):
                     p.append(x + "free_cash_flow is not operating cash flow minus an explicit capex value")
             ver = r.get("verification")
-            if not isinstance(ver, dict) or ver.get("status") not in ("verified", "check_failed") or not isinstance(ver.get("checks"), dict):
+            if not isinstance(ver, dict) or ver.get("status") not in ("verified", "incomplete") or ver.get("reconciliation") not in ("matched", "mismatch", "not_checked") or not isinstance(ver.get("warnings"), list) or not isinstance(ver.get("checks"), dict):
                 p.append(x + "bad verification")
             src = r.get("source")
             if not isinstance(src, dict) or src.get("provider") != "Upstox":
@@ -525,12 +541,21 @@ def read_json(path):
         return None
 
 
+def normalise_ledger(ledger):
+    """Re-derive verification from stored values/checks (older ledgers used 'check_failed'). Values, revisions and other_lines are untouched."""
+    for st in (ledger.get("stocks") or {}).values():
+        for r in (st or {}).get("years") or []:
+            if isinstance(r, dict) and isinstance(r.get("verification"), dict) and isinstance(r["verification"].get("checks"), dict) and isinstance(r.get("values"), dict):
+                _set_verification(r)
+
+
 def main():
     token = get_token()
     day = today()
     ledger = read_json(LEDGER_FILE) or {"schema": SCHEMA_VERSION, "stocks": {}}
     if ledger.get("schema") != SCHEMA_VERSION or not isinstance(ledger.get("stocks"), dict):
         fail("The saved ledger has an unexpected schema. It was not changed.")
+    normalise_ledger(ledger)
     raw = os.environ.get("HISTORY_SYMBOLS", "").strip()
     symbols = [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else list(SYMBOLS)
     fund = read_json(FUNDAMENTALS_FILE) or {}
