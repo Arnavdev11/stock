@@ -686,7 +686,7 @@ class SchemaTests(unittest.TestCase):
 
     def test_output_shape(self):
         d = valid_doc()
-        self.assertEqual(d["schema"], fh.SCHEMA_VERSION); self.assertEqual(d["as_of"], TODAY); self.assertEqual(d["source"], "Upstox"); self.assertEqual(d["interval"], "annual")
+        self.assertEqual(d["schema"], fh.SCHEMA_VERSION); self.assertEqual(d["as_of"], TODAY); self.assertIn("Upstox", d["source"]); self.assertEqual(d["interval"], "annual")
         self.assertIn("TCS", d["stocks"]); self.assertNotIn("fetch_state", d["stocks"]["TCS"])
         self.assertIsInstance(d["stocks"]["TCS"]["years"], list); self.assertIn("notes", d)
         json.dumps(d, allow_nan=False)

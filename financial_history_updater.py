@@ -41,6 +41,9 @@ LEDGER_FILE = ROOT / "data" / "financial_history_ledger.json"
 OUT_FILE = ROOT / "out" / "financial_history.json"
 FINANCIALS_FILE = ROOT / "out" / "financials.json"
 FUNDAMENTALS_FILE = ROOT / "out" / "fundamentals.json"
+OFFICIAL_FILE = ROOT / "official_financial_records.json"       # committed, hand-verified company statements (Step 4B)
+OFFICIAL_PROVIDER = "Official annual report"
+PROVIDERS = ("Upstox", OFFICIAL_PROVIDER)
 REFRESH_DAYS = 30
 DEFAULT_MAX_CALLS = 120
 DIFF_TOLERANCE = 0.01
@@ -296,6 +299,9 @@ def upsert(stock, years, statement, basis, endpoint, fetched, today_, month=None
     for fy, y in years.items():
         info = period_info(y["period"])
         r = next((x for x in stock["years"] if x["fy"] == fy and x["basis"] == basis), None)
+        if r is not None and (r.get("source") or {}).get("provider") != "Upstox":
+            stats["skipped_other_provider"] = stats.get("skipped_other_provider", 0) + 1      # an official-report record keeps its own provenance
+            continue
         if r is None:
             r = {"fy": fy, "period": y["period"], "period_end": info["period_end"], "basis": basis,
                  "values": {f: None for f in VALUE_FIELDS}, "missing": [],
@@ -437,7 +443,7 @@ def build_output(ledger, errors, warnings, today_):
             c = copy.deepcopy(s)
             c.pop("fetch_state", None)
             stocks[sym] = c
-    return {"schema": SCHEMA_VERSION, "as_of": today_, "source": "Upstox", "interval": "annual", "notes": NOTES,
+    return {"schema": SCHEMA_VERSION, "as_of": today_, "source": "Upstox (API) and official company annual reports - the provider is stated on every record", "interval": "annual", "notes": NOTES,
             "stocks": stocks, "errors": errors, "warnings": warnings}
 
 
@@ -505,13 +511,15 @@ def validate_doc(doc):
             if not isinstance(ver, dict) or ver.get("status") not in ("verified", "incomplete") or ver.get("reconciliation") not in ("matched", "mismatch", "not_checked") or not isinstance(ver.get("warnings"), list) or not isinstance(ver.get("checks"), dict):
                 p.append(x + "bad verification")
             src = r.get("source")
-            if not isinstance(src, dict) or src.get("provider") != "Upstox":
+            if not isinstance(src, dict) or src.get("provider") not in PROVIDERS:
                 p.append(x + "bad source")
-            else:
+            elif src["provider"] == "Upstox":
                 for st in ("income", "cash_flow"):
                     e = src.get(st)
                     if e is not None and not (isinstance(e, dict) and isinstance(e.get("endpoint"), str) and isdate(e.get("fetched"))):
                         p.append(x + "bad source metadata for " + st)
+            else:
+                p.extend(x + m for m in _official_source_problems(src, v))
             if not isdate(r.get("first_seen")) or not isdate(r.get("last_confirmed")):
                 p.append(x + "first_seen / last_confirmed are not dates")
             revs = r.get("revisions")
@@ -522,6 +530,8 @@ def validate_doc(doc):
                     if not (isinstance(rv, dict) and isdate(rv.get("superseded_on")) and isinstance(rv.get("values"), dict)
                             and set(rv["values"]) <= set(VALUE_FIELDS) and all(isnum(z) for z in rv["values"].values())):
                         p.append(x + "bad revision entry")
+            if "notes" in r and not (isinstance(r["notes"], list) and all(isinstance(n, str) for n in r["notes"])):
+                p.append(x + "notes is not a list of text")
             if "other_lines" in r and not isinstance(r["other_lines"], dict):
                 p.append(x + "other_lines is not an object")
         if len(set(keys)) != len(keys):
@@ -531,6 +541,154 @@ def validate_doc(doc):
         if s.get("gaps") != compute_gaps([r for r in years if isinstance(r, dict) and r.get("basis") in BASES and isinstance(r.get("fy"), int)]):
             p.append(w + "gaps do not match the years")
     return p
+
+
+# ---------------------------------------------------------------- official annual-report records (Step 4B)
+def _https(u):
+    return isinstance(u, str) and u.startswith("https://") and len(u) > 12 and not re.search(r"[\s\"'<>]", u)
+
+
+def _field_meta_problems(f, m):
+    if not isinstance(m, dict):
+        return ["source.fields.%s is not an object" % f]
+    out = []
+    if not _https(m.get("document_url")):
+        out.append("source.fields.%s needs an https document_url" % f)
+    pg = m.get("page")
+    if not ((isinstance(pg, int) and not isinstance(pg, bool) and pg >= 1) or (isinstance(pg, str) and pg.strip())):
+        out.append("source.fields.%s needs a page" % f)
+    if not (isinstance(m.get("exact_label"), str) and m["exact_label"].strip()):
+        out.append("source.fields.%s needs an exact_label" % f)
+    if "heading" in m and not (isinstance(m["heading"], str) and m["heading"].strip()):
+        out.append("source.fields.%s heading must be text" % f)
+    return out
+
+
+def _official_source_problems(src, values):
+    out = []
+    for k in ("company", "accounting_basis", "units"):
+        if not (isinstance(src.get(k), str) and src[k].strip()):
+            out.append("official source needs " + k)
+    if not isdate(src.get("retrieved_on")):
+        out.append("official source needs a retrieved_on date")
+    fields = src.get("fields")
+    if not isinstance(fields, dict):
+        return out + ["official source fields is not an object"]
+    for f, m in fields.items():
+        if f not in VALUE_FIELDS:
+            out.append("source.fields.%s is not a defined field" % f)
+        else:
+            out.extend(_field_meta_problems(f, m))
+    have = {f for f, val in values.items() if val is not None}
+    if have != set(fields):
+        out.append("source.fields must describe exactly the fields that hold a value")
+    cc = src.get("cross_checks", [])
+    if not (isinstance(cc, list) and all(isinstance(c, dict) and _https(c.get("document_url")) and isinstance(c.get("result"), str) for c in cc)):
+        out.append("bad cross_checks")
+    return out
+
+
+def validate_official(doc):
+    """Check the curated official-records file. Returns a list of problems (empty = valid)."""
+    if not isinstance(doc, dict) or doc.get("schema") != 1 or not isinstance(doc.get("records"), list):
+        return ["official records file has the wrong shape"]
+    p, seen = [], set()
+    for i, r in enumerate(doc["records"]):
+        w = "record %d: " % i
+        if not isinstance(r, dict):
+            p.append(w + "not an object")
+            continue
+        info = period_info(r.get("period"))
+        key = (r.get("symbol"), r.get("fy"), r.get("basis"))
+        w = "%s FY%s %s: " % key
+        if not (isinstance(r.get("symbol"), str) and r["symbol"].strip()):
+            p.append(w + "symbol missing")
+        if not info or info["fy"] != r.get("fy") or not (isinstance(r.get("fy"), int) and not isinstance(r.get("fy"), bool)):
+            p.append(w + "fy does not match the period")
+        if r.get("basis") not in BASES:
+            p.append(w + "bad basis")
+        if key in seen:
+            p.append(w + "duplicate record")
+        seen.add(key)
+        v = r.get("values")
+        if not isinstance(v, dict) or not set(v) <= set(VALUE_FIELDS):
+            p.append(w + "values has unknown fields")
+            continue
+        if any(val is not None and not isnum(val) for val in v.values()) or all(val is None for val in v.values()):
+            p.append(w + "values must be numbers or null, with at least one number")
+            continue
+        src = {"company": r.get("company"), "accounting_basis": r.get("accounting_basis"), "units": r.get("units"), "retrieved_on": r.get("retrieved_on"),
+               "fields": r.get("fields"), "cross_checks": r.get("cross_checks", [])}
+        p.extend(w + m for m in _official_source_problems(src, v))
+        if "notes" in r and not (isinstance(r["notes"], list) and all(isinstance(n, str) for n in r["notes"])):
+            p.append(w + "notes is not a list of text")
+    return p
+
+
+def apply_official(stock, r, today_):
+    """Add or confirm ONE verified official record. Returns {"status": ...}. Never touches a record that came from another provider."""
+    if r.get("symbol") != stock.get("symbol"):
+        return {"status": "wrong_symbol"}
+    info = period_info(r["period"])
+    have = stock.get("fiscal_year_end_month")
+    if have and have != info["month"]:
+        return {"status": "refused", "reason": "fiscal_year_end_changed"}
+    if not have:
+        stock["fiscal_year_end_month"] = info["month"]
+    new_vals = {f: r["values"].get(f) for f in VALUE_FIELDS}
+    meta = {f: dict(r["fields"][f]) for f in VALUE_FIELDS if new_vals[f] is not None}
+    ex = next((x for x in stock["years"] if x["fy"] == r["fy"] and x["basis"] == r["basis"]), None)
+    if ex is not None and (ex.get("source") or {}).get("provider") != OFFICIAL_PROVIDER:
+        return {"status": "kept_other_provider"}
+    status = "confirmed"
+    if ex is None:
+        ex = {"fy": r["fy"], "period": r["period"], "period_end": info["period_end"], "basis": r["basis"],
+              "values": {f: None for f in VALUE_FIELDS}, "missing": [],
+              "verification": {"status": "incomplete", "reconciliation": "not_checked", "warnings": [], "checks": {k: None for k in CHECK_KEYS}},
+              "source": {"provider": OFFICIAL_PROVIDER, "kind": "annual_report", "company": r["company"], "accounting_basis": r["accounting_basis"],
+                         "units": r["units"], "retrieved_on": r["retrieved_on"], "fields": {}, "cross_checks": []},
+              "first_seen": today_, "last_confirmed": today_, "revisions": []}
+        stock["years"].append(ex)
+        status = "created"
+    old, old_meta = {}, {}
+    for f, v in new_vals.items():
+        if v is None:
+            continue                                                  # a null never erases an existing value
+        cur = ex["values"][f]
+        if cur is not None and abs(cur - v) >= 0.005:
+            old[f] = cur
+            old_meta[f] = (ex["source"]["fields"] or {}).get(f)
+        ex["values"][f] = v
+    if old:
+        ex["revisions"].append({"superseded_on": today_, "source_fetched": ex["source"].get("retrieved_on"), "values": old,
+                                "source_fields": {f: m for f, m in old_meta.items() if m}})
+        status = "revised"
+    ex["source"]["fields"].update(meta)
+    ex["source"].update(company=r["company"], accounting_basis=r["accounting_basis"], units=r["units"], retrieved_on=r["retrieved_on"],
+                        cross_checks=copy.deepcopy(r.get("cross_checks") or []))
+    if r.get("notes"):
+        ex["notes"] = list(r["notes"])
+    ex["last_confirmed"] = today_
+    ex["missing"] = missing_of(ex["values"])
+    _set_verification(ex)
+    sort_years(stock)
+    stock["gaps"] = compute_gaps(stock["years"])
+    return {"status": status}
+
+
+def apply_all_official(ledger, doc, today_):
+    """Apply every curated record whose stock is already in the ledger. Stocks Upstox did not produce are skipped, never created."""
+    res = {"applied": 0, "skipped": [], "results": []}
+    for r in doc["records"]:
+        st = ledger["stocks"].get(r["symbol"])
+        if st is None:
+            res["skipped"].append({"symbol": r["symbol"], "reason": "not in ledger"})
+            continue
+        out = apply_official(st, r, today_)
+        res["results"].append((r["symbol"], r["fy"], out["status"]))
+        if out["status"] in ("created", "confirmed", "revised"):
+            res["applied"] += 1
+    return res
 
 
 # ---------------------------------------------------------------- main
@@ -577,6 +735,15 @@ def main():
         if problems:
             errors.append({"symbol": sym, "error": "; ".join(problems)})
         log(sym, "-", "ok" if not problems else "problem: " + "; ".join(problems), "| years:", len({r["fy"] for r in s["years"]}))
+    official = read_json(OFFICIAL_FILE)
+    if official is not None:
+        bad = validate_official(official)
+        if bad:
+            for x in bad[:20]:
+                print("::error::official_financial_records: " + x)
+            fail("official_financial_records.json failed its checks. Neither the ledger nor the output was written.")
+        applied = apply_all_official(ledger, official, day)
+        log("Official records applied:", applied["applied"], "| skipped:", len(applied["skipped"]), "|", applied["results"])
     warnings = compare_with_financials(ledger["stocks"], read_json(FINANCIALS_FILE))
     doc = build_output(ledger, errors, warnings, day)
     problems = validate_doc(doc)
