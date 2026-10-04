@@ -6,6 +6,9 @@ name: Update financial history ledger
 # Manual only (workflow_dispatch).
 
 on:
+  # TEMPORARY (to be removed in a cleanup commit): runs the first stocklens-data migration from the current phase1 code.
+  push:
+    branches: [phase1]
   workflow_dispatch:
     inputs:
       symbols:
@@ -105,4 +108,4 @@ jobs:
       contents: write
     uses: ./.github/workflows/save_ledger.yml
     with:
-      create_branch: ${{ inputs.create_data_branch }}
+      create_branch: ${{ inputs.create_data_branch || github.event_name == 'push' }}
