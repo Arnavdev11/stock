@@ -50,5 +50,5 @@ jobs:
       - name: Update historical prices
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
-          HISTORICAL_SYMBOLS: "${{ github.event_name == 'push' && 'TCS' || inputs.symbols }}"
+          HISTORICAL_SYMBOLS: ""
         run: python historical_updater.py
