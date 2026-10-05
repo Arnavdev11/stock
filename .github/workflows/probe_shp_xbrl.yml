@@ -1,0 +1,23 @@
+name: TEMP probe NSE shareholding XBRL (5H.2B)
+on:
+  push:
+    branches: [probe-5h2b]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sym: [RELIANCE, TCS, INFY, HDFCBANK, ICICIBANK, SBIN, ITC, BHARTIARTL, LT, MARUTI]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: Probe
+        env:
+          SYM: ${{ matrix.sym }}
+        run: python probe_shp_xbrl.py
