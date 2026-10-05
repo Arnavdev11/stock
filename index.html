@@ -1662,7 +1662,182 @@ function detailLink(){
 if(typeof MutationObserver!=="undefined"){var d0=$("detail");if(d0)new MutationObserver(function(){detailLink()}).observe(d0,{childList:true})}
 window.addEventListener("hashchange",function(){route();detailLink()});
 addNavLink();route();detailLink();
-window.SLCompare={parseHash:parseHash,resolve:resolve,toggle:toggle,canApply:canApply,hashFor:hashFor,knownOf:knownOf,build:build,performance:performance,performanceHtml:performanceHtml,realDate:realDate,route:route,detailLink:detailLink,addNavLink:addNavLink,MIN:MIN,MAX:MAX};
+window.SLCompare={priceFor:priceFor,parseHash:parseHash,resolve:resolve,toggle:toggle,canApply:canApply,hashFor:hashFor,knownOf:knownOf,build:build,performance:performance,performanceHtml:performanceHtml,realDate:realDate,route:route,detailLink:detailLink,addNavLink:addNavLink,MIN:MIN,MAX:MAX};
+})();
+</script>
+<script type="module" id="stocklens-snapshot">
+/* StockLens Phase 5E - Investor Snapshot (a compact summary placed in the Stock Detail view, directly before its Overview section).
+   A separate module script on purpose: the classic script blocks, the Financial History module and the comparison module keep their own behaviour.
+   It only ARRANGES values that already exist and calculates nothing new:
+     price, day change ....... the comparison page's priceFor (the same rule as the Stock Detail price tiles)
+     1M / 3M / 6M / 1Y / 3Y / 5Y  the Phase 5D performance rule
+     business, ratios, balance sheet, cash flow, valuation ... the Stock Research items (window.SLResearch.sections)
+     growth, CAGR, EPS ........ the Financial History model (window.SLFinHistory), Total income for banks and Revenue for everything else
+   It reads the files the page already uses (fundamentals, financials, financial_history, historical, company_profiles): no new file, no scans.json, and each file at most once.
+   A missing value shows "-", a data source that is not on file shows "Unavailable", a value the source does not provide shows "N/A". Nothing is estimated, carried forward or set to zero.
+   Not calculated here, on purpose: EPS growth, any margin, free cash flow, debt / equity. No advice, rating, score or signal. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var PERIODS=["1M","3M","6M","1Y","3Y","5Y"];
+var r2=function(v){return isn(v)?N2.format(v):"-"};
+function pc(v){if(!isn(v))return"-";var s=v.toFixed(2);if(s==="-0.00")s="0.00";return(v>0?"+":"")+s+"%"}
+function tone(v){return isn(v)&&v>0?"up":isn(v)&&v<0?"dn":""}
+function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
+function obj(v){return v&&typeof v==="object"?v:{}}
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+
+var STYLE='#detailSnapshot .snap{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:10px;margin-top:10px;align-items:start}'
+ +'#detailSnapshot .snap-g{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}'
+ +'#detailSnapshot .snap-g.wide{grid-column:1/-1}'
+ +'#detailSnapshot .snap-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 8px}'
+ +'#detailSnapshot .snap-h h4{margin:0;font-size:.95rem}'
+ +'#detailSnapshot .snap-h .lk{font-size:.8rem;white-space:nowrap}'
+ +'#detailSnapshot .snap-kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(92px,100%),1fr));gap:8px 10px}'
+ +'#detailSnapshot .snap-i{min-width:0}'
+ +'#detailSnapshot .snap-i span{display:block;color:var(--mute);font-size:.74rem;line-height:1.25}'
+ +'#detailSnapshot .snap-i b{display:block;font-size:.95rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}'
+ +'#detailSnapshot .snap-r{padding-top:8px;margin-top:8px;border-top:1px solid var(--line)}#detailSnapshot .snap-r:first-of-type{border-top:0;margin-top:0;padding-top:0}'
+ +'#detailSnapshot .snap-rl{font-size:.82rem;font-weight:600;margin:0 0 4px}'
+ +'#detailSnapshot .snap-n{color:var(--mute);font-size:.76rem;margin:8px 0 0;overflow-wrap:anywhere}'
+ +'#detailSnapshot .snap-t{margin:0;font-size:.88rem;overflow-wrap:anywhere}'
+ +'#detailSnapshot .snap-kv.two{grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))}#detailSnapshot .snap-prof p,#detailSnapshot .snap-prof ul{font-size:.88rem;overflow-wrap:anywhere;margin:.3em 0}#detailSnapshot .snap-prof ul{display:flex;flex-wrap:wrap;gap:2px 16px;list-style:none;padding:0}#detailSnapshot .snap-prof h5{display:none}#detailSnapshot .snap-prof>div{margin-top:8px!important}';
+function addStyle(){
+  if(typeof document==="undefined"||!document.head||!document.createElement)return;
+  if(document.getElementById&&document.getElementById("snapshotStyle"))return;
+  var st=document.createElement("style");st.id="snapshotStyle";st.textContent=STYLE;document.head.appendChild(st)}
+
+/* ---------- pieces ---------- */
+function kv(label,value,cls){return'<div class="snap-i"><span>'+esc(label)+'</span><b'+(cls?' class="'+cls+'"':"")+'>'+value+'</b></div>'}
+function grp(id,title,body,go,wide){
+  return'<div class="snap-g'+(wide?" wide":"")+'" data-snap="'+id+'"><div class="snap-h"><h4>'+esc(title)+'</h4>'
+   +(go?'<button type="button" class="lk" data-snap-go="'+go+'">View details</button>':"")+'</div>'+body+'</div>'}
+function note(t){return'<p class="snap-n">'+t+'</p>'}
+
+function secItem(secs,title,label){
+  if(!secs)return"Unavailable";
+  var sec=secs.filter(function(x){return x.title===title})[0],it=sec?sec.items.filter(function(x){return x.l===label})[0]:null;
+  return it?it.v:"-"}
+
+function priceGroup(s,d){
+  var C=window.SLCompare,px=null,pf=null,why="";
+  if(!C||typeof C.priceFor!=="function"||typeof C.performance!=="function")why="Price calculations are unavailable.";
+  else if(!d.prices||typeof d.prices!=="object")why="Historical price data: Unavailable.";
+  else{try{px=C.priceFor(d.prices,s);pf=C.performance(d.prices,s)}catch(e){px=null;pf=null;why="Historical price data: Unavailable."}}
+  var ret=pf&&pf.ret?pf.ret:{};
+  var h='<div class="snap-kv">'+kv("Latest Price (last close, ₹)",px?r2(px.price):"-")+kv("Day change vs previous close",px?pc(px.change):"-",px?tone(px.change):"");
+  PERIODS.forEach(function(p){h+=kv(p+" return",pc(ret[p]),tone(ret[p]))});
+  h+="</div>";
+  if(!why){
+    if(px&&px.date){
+      h+=note("Last daily close as of "+esc(px.date)+" (not a live price)."+(pf&&pf.asOf&&pf.asOf!==px.date?" Returns are measured to "+esc(pf.asOf)+".":"")
+        +" Returns compare that close with the close on or before the same calendar date 1, 3, 6, 12, 36 and 60 months earlier; \"-\" means the history on file does not reach back that far.")}
+    else if(pf&&pf.asOf)h+=note("Fewer than two valid daily candles are on file, so the day change is \"-\". Latest valid close as of "+esc(pf.asOf)+".");
+    else h+=note("No valid daily candles are on file for this stock.")}
+  else h+=note(esc(why));
+  return grp("price","Price & Performance",h,"detailTech",true)}
+
+function businessGroup(s,d,secs){
+  var pf=null;
+  if(secs){var b=secs.filter(function(x){return x.title==="Business"})[0];pf=b||null}
+  var desc=pf?pf.items.filter(function(x){return x.l==="Business description"})[0]:null;
+  var h='<div class="snap-kv two">'+kv("Company",secItem(secs,"Business","Company name"))+kv("Sector",secItem(secs,"Business","Sector"))+"</div>";
+  if(pf&&pf.extra)h+='<div class="snap-prof">'+pf.extra+"</div>";
+  else h+=note("Business description: "+(desc&&desc.v==="Needs review"?"Unavailable (a profile is on file but its source details need review).":"Unavailable."));
+  return grp("business","Business",h,"detailResearch",true)}
+
+function growthGroup(s,d){
+  var F=window.SLFinHistory,m=null;
+  try{m=F&&typeof F.model==="function"?F.model(d.fh,s):null}catch(e){m=null}
+  if(!m||m.state!=="ok")return grp("growth","Growth",note("Financial history: Unavailable"+(m&&m.state==="none"?" for this stock.":".")),"detailFinancialHistory");
+  var last=m.cols.length-1,lc=m.cols[last],h="";
+  m.metrics.slice(0,4).forEach(function(x){
+    var v=lc&&isn(lc.v[x.key])?lc.v[x.key]:null,cells=kv(lc.label,v===null?"-":x.fmt(v));
+    if(x.growth){
+      var ch=F.change(m,last,x.key),cg=F.cagr(m,x.key);
+      cells+=kv("vs previous year",pc(ch),tone(ch))+kv(cg?cg.label:"CAGR",cg?pc(cg.pct):"-",cg?tone(cg.pct):"")}
+    h+='<div class="snap-r"><p class="snap-rl">'+esc(x.label)+'</p><div class="snap-kv">'+cells+"</div></div>"});
+  h+=note("Latest fiscal year on file: "+esc(lc.label)+" ("+esc(m.basis)+"). "+(m.bank?"Banks report Total income, not Revenue. ":"")
+    +"Change is against the previous fiscal year when both are on file; CAGR uses the fixed window shown. EPS is shown as reported; EPS growth is not calculated.");
+  return grp("growth","Growth",h,"detailFinancialHistory")}
+
+function ratiosGroup(secs){
+  var h='<div class="snap-kv">'+kv("ROE %",secItem(secs,"Fundamental Quality","ROE %"))+kv("ROCE %",secItem(secs,"Fundamental Quality","ROCE %"))+kv("ROA %",secItem(secs,"Fundamental Quality","ROA %"))+kv("Margin","Unavailable")+"</div>";
+  return grp("profitability","Profitability",h+note("No margin field exists in the current data files, so none is shown or calculated."),"detailResearch")}
+
+function healthGroup(s,d,secs){
+  var bal=obj(obj(find(d.fin,s)).balance_sheet),de=isn(bal.debt_to_equity)?r2(bal.debt_to_equity):"N/A";
+  var h='<div class="snap-kv">'+kv("Total assets (₹ cr)",secItem(secs,"Financial Health","Total assets"))+kv("Total liabilities (₹ cr)",secItem(secs,"Financial Health","Total liabilities"))
+   +kv("Total equity (₹ cr)",secItem(secs,"Financial Health","Total equity"))+kv("Liabilities / Equity",secItem(secs,"Financial Health","Liabilities / Equity"))+kv("Debt / Equity",de)+"</div>";
+  return grp("health","Financial Health",h+note("Debt / Equity appears only where a stored value exists; it is never derived from liabilities."),"detailResearch")}
+
+function cashGroup(secs){
+  var fcf=secItem(secs,"Cash Flow","Free cash flow");
+  var h='<div class="snap-kv">'+kv("Operating (₹ cr)",secItem(secs,"Cash Flow","Operating cash flow"))+kv("Investing (₹ cr)",secItem(secs,"Cash Flow","Investing cash flow"))
+   +kv("Financing (₹ cr)",secItem(secs,"Cash Flow","Financing cash flow"))+kv("Free cash flow (₹ cr)",fcf)+"</div>";
+  return grp("cash","Cash Flow",h+note("Free cash flow is shown only where the source gave an explicit value."),"detailResearch")}
+
+function valuationGroup(secs){
+  var h='<div class="snap-kv">'+kv("P/E",secItem(secs,"Valuation","P/E"))+kv("P/B",secItem(secs,"Valuation","P/B"))+kv("EV/EBITDA",secItem(secs,"Valuation","EV/EBITDA"))+"</div>";
+  return grp("valuation","Valuation",h,"detailResearch")}
+
+function build(s,d){
+  d=d||{};
+  var R=window.SLResearch,secs=null;
+  try{secs=R&&typeof R.sections==="function"?R.sections(s,{val:d.val||null,fin:d.fin||null,hist:d.prices||null,prof:d.prof||null}):null}catch(e){secs=null}
+  var h='<h3 style="margin:1.4em 0 .4em">Investor Snapshot</h3>'
+   +'<p class="note" style="padding-left:0">Facts already on this page, summarised; the detailed sections follow below. "-" is a missing value, "Unavailable" is data not on file, "N/A" is a value the source does not provide.</p>';
+  h+='<div class="snap">'+priceGroup(s,d)+businessGroup(s,d,secs)+growthGroup(s,d)+ratiosGroup(secs)+healthGroup(s,d,secs)+cashGroup(secs)+valuationGroup(secs)
+   +grp("future","Future Growth Evidence",'<p class="snap-t">Detailed orders, capex, capacity expansion and management guidance will be added through the News &amp; Announcements research layer.</p>',null,true)
+   +grp("ownership","Ownership",'<p class="snap-t">Shareholding history will be added in the Shareholding Pattern phase.</p>')
+   +grp("developments","Recent Developments",'<p class="snap-t">Orders, capex, acquisitions and other corporate developments will be added through the News &amp; Announcements layer.</p>')
+   +"</div>";
+  return h}
+
+/* ---------- loading: the files the page already uses, each once; no other request ---------- */
+var DATA=null;
+function loadAll(){
+  if(DATA)return DATA;
+  var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/financial_history.json"),j("out/historical.json"),j("out/company_profiles.json")])
+    .then(function(a){return{val:a[0],fin:a[1],fh:a[2],prices:a[3],prof:a[4]}});
+  return DATA}
+
+/* ---------- placement: directly before the Overview heading of the Stock Detail view ---------- */
+var node=null,nodeSym=null;
+function overviewHeading(box){
+  var kids=box.children||[];
+  for(var i=0;i<kids.length;i++){var k=kids[i];if(k&&String(k.tagName||"").toUpperCase()==="H3"&&String(k.textContent||"").trim()==="Overview")return k}
+  return null}
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box)return;
+  if(String(box.innerHTML||"").indexOf('id="detailChart"')<0)return;        /* the detail view has not finished rendering */
+  var ov=overviewHeading(box);if(!ov)return;
+  if(node&&node.parentNode===box&&nodeSym===s)return;                        /* already placed for this render */
+  addStyle();
+  var el=document.createElement("section");
+  el.id="detailSnapshot";
+  el.innerHTML='<h3 style="margin:1.4em 0 .4em">Investor Snapshot</h3><p class="note" style="padding-left:0">Loading…</p>';
+  box.insertBefore(el,ov);node=el;nodeSym=s;
+  loadAll().then(function(d){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=build(s,d)
+  }).catch(function(){if(node===el&&routeSymbol()===s)el.innerHTML=build(s,null)})}
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true})}
+/* "View details" scrolls to a section that is already on the page; it never changes the address (the address is the Stock Detail route) */
+document.addEventListener("click",function(e){
+  var b=e.target&&e.target.closest?e.target.closest("[data-snap-go]"):null;if(!b)return;
+  var t=$(b.getAttribute("data-snap-go"));if(t&&t.scrollIntoView)t.scrollIntoView({block:"start"})});
+check();
+window.SLSnapshot={build:build,check:check,overviewHeading:overviewHeading,PERIODS:PERIODS};
 })();
 </script>
 <script>
