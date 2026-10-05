@@ -1168,6 +1168,63 @@ function cagr(m,key){
   var n=to-from,s=vals[0],e=vals[vals.length-1];
   return{n:n,from:from,to:to,pct:(Math.pow(e/s,1/n)-1)*100,label:n+"-yr CAGR (FY"+yy(from)+"–FY"+yy(to)+")"}}
 
+/* ---------- Phase 5A: bar charts (inline SVG, a separate presentation layer; they only READ the model above) ----------
+   One chart per metric, the same values and the same strings as the table. Bars start at zero; negatives hang below the zero line; every fiscal year
+   between the first and last on file gets a slot, so a missing year stays an empty slot (never bridged, never zero). Fewer than two values: no chart.
+   Official-annual-report years are hatched. Where a presentation boundary exists (ITC FY2022/FY2023) a divider is drawn and the pair is not compared.
+   No growth figures, trend lines, projections, colours that imply good or bad. */
+var CH_W=320,CH_H=196,CH_TOP=30,CH_BOT=28,CH_RIGHT=8;
+function chartTitle(m,x){return x.key==="eps_basic"?"EPS, basic (₹ per share)":x.label+" (₹ crore)"}
+function chartSlots(m,key){
+  if(!m.cols.length)return[];
+  var by={},out=[];m.cols.forEach(function(c){by[c.fy]=c});
+  var lo=m.cols[0].fy,hi=m.cols[m.cols.length-1].fy;
+  for(var fy=lo;fy<=hi;fy++){var c=by[fy];out.push({fy:fy,v:c?val(c,key):null,official:!!(c&&c.official)})}
+  return out}
+function niceAxis(lo,hi){
+  lo=Math.min(0,lo);hi=Math.max(0,hi);
+  if(lo===0&&hi===0)return{min:0,max:1,ticks:[0,1]};
+  var raw=(hi-lo)/4,mag=Math.pow(10,Math.floor(Math.log10(raw))),f=raw/mag,step=(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*mag;
+  var min=Math.floor(lo/step+1e-9)*step,max=Math.ceil(hi/step-1e-9)*step,t=[];
+  for(var v=min;v<=max+step/1e6;v+=step)t.push(+v.toFixed(10));
+  return{min:t[0],max:t[t.length-1],ticks:t}}
+function chartSvg(m,x,uid){
+  var slots=chartSlots(m,x.key),vals=slots.filter(function(s){return s.v!==null}).map(function(s){return s.v});
+  var title=chartTitle(m,x);
+  if(vals.length<2)return{ok:false,html:'<figure data-chart="'+x.key+'" data-state="unavailable" style="margin:0"><figcaption><b>'+esc(title)+'</b></figcaption><p class="note" style="padding:6px 0 0">Not enough years on file to chart this (needs at least two years with a value).</p></figure>'};
+  var ax=niceAxis(Math.min.apply(null,vals),Math.max.apply(null,vals)),tl=ax.ticks.map(function(t){return N0.format(t)});
+  var ml=Math.max(34,10+5.6*Math.max.apply(null,tl.map(function(s){return s.length}))),pw=CH_W-ml-CH_RIGHT,ph=CH_H-CH_TOP-CH_BOT,n=slots.length,sw=pw/n,bw=sw*0.6;
+  var Y=function(v){return CH_TOP+(ax.max-v)/(ax.max-ax.min)*ph},y0=Y(0),f1=function(v){return v.toFixed(1)};
+  var anyOff=slots.some(function(s){return s.official}),hid="fhHatch-"+uid+"-"+x.key;
+  var longest=Math.max.apply(null,slots.map(function(s){return s.v===null?1:x.fmt(s.v).length})),stagger=longest*5>sw*0.95,showLab=n<=8;
+  var g='<svg viewBox="0 0 '+CH_W+' '+CH_H+'" role="img" aria-label="__ARIA__" style="display:block;width:100%;height:auto" font-size="9">';
+  if(anyOff)g+='<defs><pattern id="'+hid+'" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="none"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--ac)" stroke-width="2"/></pattern></defs>';
+  ax.ticks.forEach(function(t){var y=Y(t);
+    g+='<line x1="'+f1(ml)+'" x2="'+f1(CH_W-CH_RIGHT)+'" y1="'+f1(y)+'" y2="'+f1(y)+'" style="stroke:var(--line)" stroke-width="'+(t===0?0:1)+'"/>';
+    g+='<text x="'+f1(ml-4)+'" y="'+f1(y+3)+'" text-anchor="end" style="fill:var(--mute)">'+esc(N0.format(t))+'</text>'});
+  g+='<line x1="'+f1(ml)+'" x2="'+f1(CH_W-CH_RIGHT)+'" y1="'+f1(y0)+'" y2="'+f1(y0)+'" data-zero="1" style="stroke:var(--mute)" stroke-width="1.2"/>';
+  var aria=[];
+  slots.forEach(function(s,i){
+    var cx=ml+sw*i+sw/2,lab=s.v===null?"-":x.fmt(s.v);
+    aria.push("FY"+s.fy+" "+(s.v===null?"not available":lab));
+    if(s.v!==null){var y=Y(s.v),top=Math.min(y,y0),h=Math.abs(y0-y);
+      g+='<rect data-fy="'+s.fy+'" x="'+f1(cx-bw/2)+'" y="'+f1(top)+'" width="'+f1(bw)+'" height="'+f1(h)+'" '+(s.official?'fill="url(#'+hid+')" style="stroke:var(--ac)" stroke-width="1" data-official="1"':'style="fill:var(--ac)"')+'><title>FY'+s.fy+': '+esc(lab)+'</title></rect>'}
+    if(showLab){var off=stagger&&i%2?11:0,ly=s.v===null?y0-3:(s.v<0?Y(s.v)+10+off:Y(s.v)-3-off);
+      g+='<text data-label="'+s.fy+'" x="'+f1(cx)+'" y="'+f1(ly)+'" text-anchor="middle" style="fill:var(--ink)">'+esc(lab)+'</text>'}
+    g+='<text x="'+f1(cx)+'" y="'+f1(CH_H-CH_BOT+14)+'" text-anchor="middle" style="fill:var(--mute)">FY'+esc(yy(s.fy))+'</text>'});
+  var B=Object.prototype.hasOwnProperty.call(BOUNDARY,m.sym)?BOUNDARY[m.sym]:null,div=false;
+  if(B!==null){slots.forEach(function(s,i){if(s.fy===B-1&&slots[i+1]&&slots[i+1].fy===B){div=true;var dx=ml+sw*(i+1);
+    g+='<line data-boundary="1" x1="'+f1(dx)+'" x2="'+f1(dx)+'" y1="'+f1(CH_TOP-6)+'" y2="'+f1(CH_H-CH_BOT+2)+'" style="stroke:var(--mute)" stroke-width="1" stroke-dasharray="3 3"/>'}})}
+  g=g.replace("__ARIA__",esc(title+". "+aria.join("; ")+"."))+'</svg>';
+  var cap=div?'<p class="note" style="padding:2px 0 0;margin:0">Not compared across FY'+(B-1)+' to FY'+B+'.</p>':"";
+  var eps=x.key==="eps_basic"?'<p class="note" style="padding:2px 0 0;margin:0">Per-share values are shown as reported for each year, without adjustment for splits or bonus issues.</p>':"";
+  return{ok:true,official:anyOff,html:'<figure data-chart="'+x.key+'" style="margin:0"><figcaption><b>'+esc(title)+'</b></figcaption>'+g+cap+eps+'</figure>'}}
+function chartsHtml(m,uid){
+  var parts=m.metrics.map(function(x){return chartSvg(m,x,uid)});
+  var h='<h5 style="margin:16px 0 4px">Charts</h5><p class="note" style="padding:0 0 6px">The same values as the table, one chart per measure. Bars start at zero; a missing year is left empty.'+(parts.some(function(p){return p.official})?" Hatched bars are from the official annual report.":"")+'</p>';
+  return h+'<div data-charts="1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">'+parts.map(function(p){return p.html}).join("")+'</div>'}
+var CH_N=0;
+
 /* ---------- rendering ---------- */
 function head(){return '<h4 style="margin:0 0 .2em">Financial History</h4>'}
 function wrap(inner){return '<div class="panel" style="padding:16px;margin-top:14px">'+inner+'</div>'}
@@ -1186,6 +1243,7 @@ function build(s,doc){
   h+='<div style="margin-top:10px">'+m.metrics.filter(function(x){return x.growth}).map(function(x){
     var c=cagr(m,x.key);
     return'<p style="margin:.2em 0" data-cagr="'+x.key+'"><b>'+esc(x.label)+'</b> · '+(c?esc(c.label)+": "+pc(c.pct):"CAGR: -")+"</p>"}).join("")+"</div>";
+  h+=chartsHtml(m,++CH_N);
   var notes=[];
   if(m.cols.some(function(c){return c.official}))notes.push("Official annual report: the figures for that year were taken from the company's annual report, not from Upstox.");
   if(m.cols.some(function(c){return c.differs}))notes.push("Source summary differs: the source's own summary lines did not agree with its statement lines for that year. The stored values are shown as they are.");
@@ -1219,7 +1277,7 @@ function check(){
   }).catch(function(){if(node===el)el.innerHTML=build(s,null)})}
 if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true})}
 check();
-window.SLFinHistory={model:model,cagr:cagr,change:change,build:build,check:check};
+window.SLFinHistory={model:model,cagr:cagr,change:change,build:build,check:check,chartSlots:chartSlots,niceAxis:niceAxis,chartSvg:chartSvg};
 })();
 </script>
 <script>
