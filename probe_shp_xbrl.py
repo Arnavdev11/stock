@@ -9,15 +9,29 @@ HEAD = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537
         "Accept-Language": "en-US,en;q=0.9", "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.nseindia.com/companies-listing/corporate-filings-shareholding-pattern"}
 IDX = "https://www.nseindia.com/api/corporate-share-holdings-master?index=equities&symbol=" + SYM
-notes = []
+CH = []   # chunks of <= 3800 chars, written to a file and printed as annotations by later steps (the API shows only 4096 chars)
 
 
 def emit(title, text):
-    if len(notes) >= 9:
-        print("annotation budget exhausted:", title, flush=True); return
-    notes.append(title)
-    t = text[:60000].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    print("::notice title=" + (SYM + " " + title)[:200] + "::" + t, flush=True)
+    text = str(text)
+    parts, cur = [], ""
+    for line in text.split("\n"):
+        while len(line) > 3700:
+            if cur: parts.append(cur); cur = ""
+            parts.append(line[:3700]); line = line[3700:]
+        if len(cur) + len(line) + 1 > 3700 and cur: parts.append(cur); cur = ""
+        cur += line + "\n"
+    if cur: parts.append(cur)
+    for i, ptxt in enumerate(parts, 1):
+        CH.append({"t": "%s %s %d/%d" % (SYM, title, i, len(parts)), "m": ptxt})
+    json.dump(CH, open("/tmp/chunks_" + SYM + ".json", "w"))
+
+
+if len(sys.argv) > 1:   # emit mode: print chunks [9k, 9k+9) as notices
+    k = int(sys.argv[1]); CHK = json.load(open("/tmp/chunks_" + SYM + ".json"))
+    for c in CHK[9 * k:9 * k + 9]:
+        print("::notice title=" + c["t"][:200] + "::" + c["m"].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+    sys.exit(0)
 
 
 s = requests.Session(); s.headers.update(HEAD)
@@ -60,7 +74,8 @@ except ValueError:
 recs = [x for x in records_of(j) if isinstance(x, dict)]
 dates = sorted(d for d in (pdate(x.get("date")) for x in recs) if d)
 head = "records=%d oldest=%s newest=%s keys=%s\n" % (len(recs), dates[0] if dates else None, dates[-1] if dates else None, sorted(recs[0].keys()) if recs else None)
-emit("INDEX", head + "\n".join(json.dumps(x, ensure_ascii=False, separators=(",", ":")) for x in recs))
+KEEP = ("date", "broadcastDate", "submissionDate", "desc", "format", "recordId", "pr_and_prgrp", "public_val", "employeeTrusts", "underlyingDrs", "revisedData", "revisedDate", "revisedRemark", "revisedStatus", "revisionDate", "revisionRemark", "typeOfSubmission", "xbrl", "xbrlFileSize")
+emit("INDEX", head + "\n".join(json.dumps({k: (str(x.get(k))[:260] if x.get(k) is not None else None) for k in KEEP}, ensure_ascii=False, separators=(",", ":")) for x in recs))
 
 # deeper history? try date-range variants (counts only)
 var = []
@@ -81,6 +96,8 @@ want = [dates[-1]] if dates else []
 for d in (dt.date(2026, 3, 31), dt.date(2025, 6, 30), dt.date(2025, 12, 31), dt.date(2024, 3, 31), dt.date(2023, 9, 30)):
     if d in by: want.append(d)
 if dates: want += [dates[0], dates[1] if len(dates) > 1 else dates[0]]
+rev = [pdate(x.get("date")) for x in recs if pdate(x.get("date")) and any(x.get(k) not in (None, "", "-", False) for k in ("revisedDate", "revisionDate", "revisedStatus", "revisedData"))]
+want += rev[:3]
 if SYM == "ICICIBANK": want = list(dates)
 want = sorted(set(want), reverse=True)
 
@@ -131,15 +148,19 @@ for d in want:
         nd, rows, names = parse(r3.content)
     except ET.ParseError as e:
         chunks.append("FILING %s: XML parse error %s" % (d, e)); continue
-    out = ["FILING %s url=%s bytes=%d" % (d, url, len(r3.content)), "LEGEND " + "; ".join(k2 + "=" + v2 for v2, k2 in names.items()), "ND " + " | ".join(nd[:70])]
+    ndk = [z for z in nd if re.match(r"(ScripCode|Symbol|ISIN|DateOfReport|NameOfTheCompany|WhetherTheListedEntityHasAnySharesAgainstWhichDepositoryReceiptsAreIssued=|WhetherTheListedEntityHasGrantedAnyESOPWhichAreOutstanding=)", z)]
+    pc = names.get("ShareholdingAsAPercentageOfTotalNumberOfShares")
+    sc = names.get("NumberOfFullyPaidUpEquityShares")
+    out = ["FILING %s url=%s bytes=%d" % (d, url, len(r3.content)), "LEGEND shares=" + str(sc) + " pctOfTotal=" + str(pc), "ND " + " | ".join(ndk)]
+    zero = 0
     for (mem, per), vals in sorted(rows.items(), key=lambda kv: (kv[0][1] or "", kv[0][0])):
-        out.append("%s @%s: %s" % ("/".join(re.sub(r"Member$", "", m) for m in mem), per, ",".join(vals)))
+        dv = dict(z.split("=", 1) for z in vals)
+        a, b = dv.get(sc), dv.get(pc)
+        if (a in (None, "0") or a == "0.0") and (b in (None, "0", "0.0")): zero += 1; continue
+        out.append("%s @%s: sh=%s pct=%s" % ("/".join(re.sub(r"^.*Axis=|Member$", "", m) for m in mem), (per or "")[2:], a, b))
+    out.append("(%d all-zero rows omitted)" % zero)
     chunks.append("\n".join(out))
 
-buf, k = "", 1
 for c in chunks:
-    if len(buf) + len(c) > 58000 and buf:
-        emit("XBRL part %d" % k, buf); k += 1; buf = ""
-    buf += c + "\n\n"
-if buf: emit("XBRL part %d" % k, buf)
-print("done", SYM, len(chunks), "filings")
+    emit("XBRL", c)
+print("done", SYM, len(chunks), "filings,", len(CH), "chunks")

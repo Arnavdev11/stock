@@ -21,3 +21,23 @@ jobs:
         env:
           SYM: ${{ matrix.sym }}
         run: python probe_shp_xbrl.py
+      - name: Emit 1
+        if: always()
+        env: {SYM: "${{ matrix.sym }}"}
+        run: python probe_shp_xbrl.py 0
+      - name: Emit 2
+        if: always()
+        env: {SYM: "${{ matrix.sym }}"}
+        run: python probe_shp_xbrl.py 1
+      - name: Emit 3
+        if: always()
+        env: {SYM: "${{ matrix.sym }}"}
+        run: python probe_shp_xbrl.py 2
+      - name: Emit 4
+        if: always()
+        env: {SYM: "${{ matrix.sym }}"}
+        run: python probe_shp_xbrl.py 3
+      - name: Emit 5
+        if: always()
+        env: {SYM: "${{ matrix.sym }}"}
+        run: python probe_shp_xbrl.py 4
