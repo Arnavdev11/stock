@@ -123,7 +123,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
 (async () => {
   // ================= 1. structure: the page is protected, the snapshot is a separate module =================
   eq(blocks.length, 7, "still exactly seven classic script blocks"); eq(html.split(FHTAG).length, 2, "one Financial History module"); eq(html.split(CMPTAG).length, 2, "one compare module"); eq(html.split(SNAPTAG).length, 2, "one snapshot module, with its own tag");
-  eq((html.match(/<script/g) || []).length, 10, "ten script elements in all");
+  eq((html.match(/<script/g) || []).length, 11, "eleven script elements in all (Phase 5F adds the search module)");
   ok(html.indexOf(CMPTAG) < html.indexOf(SNAPTAG), "the snapshot module comes after the modules it reads (Financial History, comparison)");
   let base = ""; try { base = cp.execSync("git show f7e8d14:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
@@ -131,7 +131,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
     eq(blocks.map(sha), ob.map(sha), "the seven classic blocks are byte-identical to f7e8d14 (Phase 5D.1), Stock Detail included");
     eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical to f7e8d14");
     eq(cmpCode.replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={"), modOf(base, CMPTAG), "the comparison module differs from f7e8d14 only by one added export name, priceFor");
-    const rest = html.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={");
+    const rest = html.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={");
     eq(rest, base, "the page without the snapshot module (and that one export) is identical to f7e8d14: dashboard, Stock Detail, comparison all untouched");
   }
 
