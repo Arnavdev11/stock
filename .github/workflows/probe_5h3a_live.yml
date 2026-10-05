@@ -1,0 +1,29 @@
+name: TEMP probe-5h3a-live
+on:
+  push:
+    branches: [probe-5h3a-live]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: Run the updater read-only (nothing is saved anywhere)
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          SHAREHOLDING_LEDGER_DIR: ledger-branch
+          SHAREHOLDING_INIT: "false"
+          SHAREHOLDING_LEDGER_OUT: ledger-out/shareholding_ledger.json
+        run: python shareholding_updater.py
+      - name: Compare and report (notices only)
+        run: python probe_5h3a_check.py

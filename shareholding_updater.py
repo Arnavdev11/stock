@@ -47,7 +47,7 @@ from pathlib import Path
 import requests
 
 import shareholding_ledger as sl
-from upstox_common import ROOT, SYMBOLS, Upstox, log, write_json
+from upstox_common import ROOT, SYMBOLS, Upstox, load_instruments, log, write_json
 
 SCHEMA_VERSION = 1
 LEDGER_FILE = ROOT / "data" / sl.LEDGER_NAME
@@ -594,9 +594,10 @@ def process_stock(nse, ledger, symbol, day, budget, refresh_all=False):
     if not keep:
         return {}, skipped, "the NSE filing index held no quarter-end filings from Sep 2021"
     sample = next(iter(keep.values()))
-    st = ledger["stocks"].setdefault(symbol, new_stock(symbol, sample.get("isin"), sample.get("name")))
-    if sample.get("isin") and not st.get("isin"):
-        st["isin"] = sample["isin"]
+    isin = next((str(r["isin"]).strip() for r in list(keep.values()) + list(recs) if isinstance(r.get("isin"), str) and r["isin"].strip()), None)
+    st = ledger["stocks"].setdefault(symbol, new_stock(symbol, isin, sample.get("name")))
+    if isin and not st.get("isin"):
+        st["isin"] = isin
     have = {r["quarter_end"]: r for r in st["quarters"]}
     events = {}
     for d in sorted(keep, reverse=True):
@@ -630,15 +631,25 @@ UPSTOX_CAT = {"promoters": "promoters", "fii": "fii", "other_dii": "other_dii", 
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
-def cross_check(api, stock):
+def upstox_isins():
+    """symbol -> equity ISIN from the official Upstox NSE instrument file (no token). NSE's filing index can carry a legacy or partly-paid ISIN (or none),
+    which Upstox does not know, so the cross-check asks Upstox about the ISIN Upstox itself lists for the symbol. Never used for any stored value."""
+    try:
+        return {k: v.get("isin") for k, v in load_instruments().items() if v.get("isin")}
+    except SystemExit:
+        return {}
+
+
+def cross_check(api, stock, isin=None):
     latest = next((r for r in stock["quarters"] if r.get("status") == "available"), None)
     if latest is None:
         return {"status": "unavailable", "reason": "no available quarter to compare"}
     if api is None:
         return {"status": "skipped", "quarter_end": latest["quarter_end"], "reason": "no Upstox token in this run"}
-    body, err = api.get(stock["isin"] + "/share-holdings") if stock.get("isin") else (None, "no ISIN")
+    use = isin or stock.get("isin")
+    body, err = api.get(use + "/share-holdings") if use else (None, "no ISIN (neither Upstox's instrument list nor the NSE filing gives one)")
     if err:
-        return {"status": "unavailable", "quarter_end": latest["quarter_end"], "reason": "Upstox: " + err}
+        return {"status": "unavailable", "quarter_end": latest["quarter_end"], "reason": "Upstox: " + err, "upstox_isin": use}
     d = dt.date.fromisoformat(latest["quarter_end"])
     label = "%s %d" % (MONTH_NAMES[d.month - 1], d.year)
     up = {}
@@ -647,14 +658,14 @@ def cross_check(api, stock):
             if isinstance(h, dict) and h.get("period") == label and isnum(h.get("value")):
                 up[item.get("category")] = float(h["value"])
     if not up:
-        return {"status": "unavailable", "quarter_end": latest["quarter_end"], "reason": "Upstox does not return %s" % label}
+        return {"status": "unavailable", "quarter_end": latest["quarter_end"], "reason": "Upstox does not return %s" % label, "upstox_isin": use}
     diffs = {}
     for c in CATEGORIES:
         o, u = latest["values"].get(c), up.get(UPSTOX_CAT[c])
         diffs[c] = {"official": o, "upstox": u, "diff": None if (o is None or u is None) else round(o - u, 2)}
     nums = [abs(v["diff"]) for v in diffs.values() if v["diff"] is not None]
     ok = bool(nums) and max(nums) <= CROSS_TOLERANCE and len(nums) == len(CATEGORIES)
-    return {"status": "match" if ok else "mismatch", "quarter_end": latest["quarter_end"], "max_abs_diff": max(nums) if nums else None, "categories": diffs}
+    return {"status": "match" if ok else "mismatch", "quarter_end": latest["quarter_end"], "max_abs_diff": max(nums) if nums else None, "categories": diffs, "upstox_isin": use}
 
 
 # ---------------------------------------------------------------- the published file
@@ -783,6 +794,7 @@ def main():
     if token:
         api = Upstox(token, 20)
     rejected = False
+    isins = upstox_isins() if api else {}
     for sym in wanted:
         st = ledger["stocks"].get(sym)
         if not st:
@@ -791,7 +803,7 @@ def main():
             extra[sym]["cross_check"] = {"status": "unavailable", "reason": "Upstox rejected the token earlier in this run"}
             continue
         try:
-            extra[sym]["cross_check"] = cross_check(api, st)
+            extra[sym]["cross_check"] = cross_check(api, st, isins.get(sym))
         except SystemExit:
             extra[sym]["cross_check"] = {"status": "unavailable", "reason": "Upstox rejected the token"}
             rejected = True
