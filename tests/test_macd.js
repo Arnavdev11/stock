@@ -138,7 +138,7 @@ const last = (t, id) => t.charts.filter((c) => c.el.id === id).pop();
   // redraw / timeframe changes
   const n1 = t.charts.length; await t.click("1M"); const m2 = last(t, "slMacd"), p2 = last(t, "slPrice"); ok(t.charts.length > n1 && m2 !== mp && mp.removed, "timeframe change redraws and removes the old MACD chart");
   eq(m2.series[1].data.map((p) => p.time), p2.series[0].data.map((p) => p.time), "1M: MACD dates = price dates"); ok(m2.series[1].data.length >= 20 && m2.series[1].data.length <= 23, "1M: ~21 MACD points"); ok(m2.series[1].data[0].value !== undefined, "1M: MACD already defined at the first bar (full-history warm-up)");
-  await t.click("6M"); eq(last(t, "slMacd").series[1].data.length, last(t, "slPrice").series[0].data.length, "6M: MACD length = price length"); eq(t.fetched.filter((u) => u.includes("historical")).length, 1, "timeframe changes make no new request");
+  await t.click("6M"); eq(last(t, "slMacd").series[1].data.length, last(t, "slPrice").series[0].data.length, "6M: MACD length = price length"); eq(t.fetched.filter((u) => u.includes("historical")).length, 2, "timeframe changes make no new request (the chart and the Stock Detail price tiles each fetched once on open)");
   // 5Y page
   t = await boot("#stock=TCS", doc5); await t.click("5Y"); eq(last(t, "slMacd").series[1].data.length, last(t, "slPrice").series[0].data.length, "5Y: MACD length = price length"); await t.click("3Y"); eq(last(t, "slMacd").series[1].data.length, last(t, "slPrice").series[0].data.length, "3Y: MACD length = price length");
   // short histories on the page
@@ -153,7 +153,7 @@ const last = (t, id) => t.charts.filter((c) => c.el.id === id).pop();
   // ---------- security / scope / untouched blocks ----------
   no(html, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization/i, "no token or auth header in the page"); no(html, /api\.upstox\.com/, "no Upstox call in the browser"); no(chartCode, /WebSocket|EventSource|setInterval|XMLHttpRequest/, "no live data in the chart module");
   eq((chartCode.match(/fetch\(/g) || []).length, 1, "the chart module still makes exactly one fetch"); re(chartCode, /fetch\("out\/historical\.json"/, "...of out/historical.json");
-  eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block unchanged (byte-identical)"); eq(sha(detailCode), "ec1d3d5d5791202fea1aa3d77e1189bb7fce41533ed529d98e35998ec8a1de77", "Stock Detail block unchanged (byte-identical)");
+  eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block unchanged (byte-identical)"); eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block is the Phase 5D.1 version (byte-identical to it)");
   eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block unchanged (byte-identical)");
   console.log("MACD tests passed (" + checks + " checks)");
 })().catch((e) => { console.error(e); process.exit(1); });

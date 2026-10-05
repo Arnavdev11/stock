@@ -86,7 +86,7 @@ const liOf = (h, title) => { const m = h.match(new RegExp("<li[^>]*><b>" + esc(t
   eq(blocks.indexOf(researchCode), 4, "research block sits after the Technical Snapshot block");
   eq(blocks.indexOf(techCode), 3, "Technical Snapshot block is just before it"); ok(blocks.indexOf(researchCode) < blocks.length - 1, "research block is before the final Phase 2B block");
   eq(sha(blocks[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
-  eq(sha(detailCode), "ec1d3d5d5791202fea1aa3d77e1189bb7fce41533ed529d98e35998ec8a1de77", "Stock Detail block byte-identical (not modified)");
+  eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical (not modified)");
   eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
   eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");

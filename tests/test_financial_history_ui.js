@@ -257,9 +257,9 @@ async function boot(hash, { fh = DOC(), delay = 0, settle = null, extra = true }
   eq(blocks.length, 7, "the page still has exactly the seven classic script blocks the other suites pin"); eq(html.split(MOD).length, 2, "the new code is exactly one separate module script");
   let headHtml = ""; try { headHtml = cp.execSync("git show HEAD:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { headHtml = ""; }
   if (headHtml) { const hb = headHtml.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
-    eq(blocks.map(sha), hb.map(sha), "every classic script block is byte-for-byte identical to the committed page");
+    eq(blocks.filter((b) => !b.includes("Stock Detail view")).map(sha), hb.filter((b) => !b.includes("Stock Detail view")).map(sha), "every classic script block except the Stock Detail block (Phase 5D.1) is byte-for-byte identical to the committed page");
     const strip = (x) => x.replace(/<script type="module" id="stocklens-compare">[\s\S]*?<\/script>\n/, "").replace(/<script type="module">\n\/\* StockLens Phase 4 Step 4E[\s\S]*?<\/script>\n/, "");
-    eq(strip(html), strip(headHtml), "everything outside the new module script is identical to the committed page"); }
+    const ND = ((x) => x.split("<script>").map((q, i) => (i && q.split("</script>")[0].includes("Stock Detail view") ? "</script>" + q.split("</script>").slice(1).join("</script>") : q)).join("<script>")); eq(ND(strip(html)), ND(strip(headHtml)), "everything outside the new module script (and the Stock Detail block, Phase 5D.1) is identical to the committed page"); }
   eq((fhCode.match(/fetch\(/g) || []).length, 1, "the new code makes exactly one fetch call"); eq([...new Set(fhCode.match(/out\/[a-z_]+\.json/g))], ["out/financial_history.json"], "and reads only the history file");
   no(fhCode, /localStorage|sessionStorage|indexedDB|XMLHttpRequest|eval\(|innerHTML\s*\+=/, "no storage, no eval, no unsafe patterns");
   console.log("Financial history UI tests passed (" + checks + " checks)");

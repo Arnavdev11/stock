@@ -63,7 +63,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   eq(blocks.indexOf(researchCode), 4, "Stock Research block is 5th, unchanged position"); eq(blocks.indexOf(checkCode), 5, "Investment Checklist block is 6th, right after Stock Research");
   ok(blocks.indexOf(checkCode) < blocks.length - 1, "checklist block is before the final Phase 2B block");
   eq(sha(blocks[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
-  eq(sha(detailCode), "ec1d3d5d5791202fea1aa3d77e1189bb7fce41533ed529d98e35998ec8a1de77", "Stock Detail block byte-identical");
+  eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical");
   eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
   eq(sha(researchCode), "575598c575493f0d587c2c531e576f8c1ba85c1fffb183e079732f66e93682f9", "Stock Research block pinned (re-pinned in Phase 4 Step 3: Business Profile)");
@@ -244,7 +244,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   ok(t.research().innerHTML.includes("<h4 style=\"margin:0 0 .2em\">Research Checklist</h4>"), "Step 1 Research Checklist panel is still rendered unchanged");
   ok(t.check().innerHTML.includes("Investment Checklist") && t.check().innerHTML.includes("Descriptive only — this checklist does not provide investment advice."), "the checklist section shows its title and descriptive line");
   eq(t.fetched.filter((u) => u.includes("fundamentals")).length, 3, "fundamentals.json: one fetch each by Stock Detail, Stock Research and the checklist (the checklist adds exactly one)");
-  eq(t.fetched.filter((u) => u.includes("historical")).length, 4, "historical.json: chart, snapshot, research and the checklist each fetch it once");
+  eq(t.fetched.filter((u) => u.includes("historical")).length, 5, "historical.json: chart, snapshot, research, the checklist and (5D.1, in place of scans.json) the Stock Detail price tiles each fetch it once");
   eq([...new Set(t.fetched.map((u) => u.replace(/\?.*$/, "")))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json", "out/scans.json"].filter((u) => t.fetched.some((f) => f.startsWith(u))).sort(), "no URL beyond the existing data files is requested");
   ok(t.fetched.every((u) => /^out\/[a-z_]+\.json$/.test(u)), "every request is a relative out/*.json file");
   const page = t.check().innerHTML;

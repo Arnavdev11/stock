@@ -147,7 +147,7 @@ const titles = (t) => t.charts.flatMap((c) => c.series.map((s) => s.opts.title |
   // 2 + 16. TCS routing and data loading
   let t = await boot("#stock=TCS");
   ok(t.fetched.includes("out/historical.json"), "historical.json requested when a detail view opens");
-  ok(t.fetched.filter((u) => u.includes("historical")).length === 1, "requested once");
+  ok(t.fetched.filter((u) => u.includes("historical")).length === 2, "requested once by the chart and once by the Stock Detail price tiles (5D.1, in place of scans.json)");
   eq(candleData(t).length, n("1Y"), "TCS candles drawn"); eq(candleData(t)[candleData(t).length - 1].close, all[DAYS - 1].close, "TCS last close drawn");
   re(t.box().innerHTML, /data-tf="1Y"/, "timeframe controls rendered"); no(t.box().innerHTML, /Coming in Phase 3 Step 2/, "placeholder replaced by the chart");
   // 17. INFY routing: INFY data, not TCS

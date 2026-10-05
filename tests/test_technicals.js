@@ -123,7 +123,7 @@ const tile = (h, label) => text((h.match(new RegExp('<div class="tile"><b[^>]*>(
   const d = t.detail(), pos = (s) => d.indexOf(s);
   ok(pos("Financial Health") > 0 && pos("Overview") > 0 && pos("Cash Flow") > pos("Financial Health"), "Overview, Financial Health and Cash Flow sections remain");
   ok(pos('id="detailTech"') > pos("Cash Flow") && pos('id="detailTech"') < pos("Price chart") && pos("Price chart") < pos('id="detailChart"'), "Technical Snapshot sits between Cash Flow and the Price chart");
-  re(d, /Historical Price Chart — Coming in Phase 3 Step 2/, "chart container (Step 1 placeholder) still rendered for the chart module"); re(d, /LTP \(last close, ₹\)/, "existing LTP tile untouched"); re(d, /Today's change/, "existing Today's change tile untouched");
+  re(d, /Historical Price Chart — Coming in Phase 3 Step 2/, "chart container (Step 1 placeholder) still rendered for the chart module"); re(d, /Latest Price \(last close, ₹\)/, "existing price tile untouched (renamed in 5D.1)"); re(d, /Day change vs previous close/, "existing day-change tile untouched (renamed in 5D.1)");
   ok(t.fetched.includes("out/historical.json") && !t.fetched.some((u) => /upstox/i.test(u)), "only out/historical.json is fetched for history");
   // no signal wording anywhere in the snapshot output or code
   const visible = text(t.tech()) + " " + techCode.replace(/\/\*[\s\S]*?\*\//g, "");

@@ -343,18 +343,23 @@ function routeSymbol(){
 function loadData(){
   if(DATA)return DATA;
   var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
-  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/scans.json")]).then(function(a){return{val:a[0],fin:a[1],scans:a[2]}});
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2]}});
   return DATA}
 
 function findStock(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
 
-function priceFor(scans,s){
-  var out={price:null,change:null};if(!scans)return out;
-  ["gainers","losers","volume_gainers","high_52w","delivery","dma"].forEach(function(k){
-    (Array.isArray(scans[k])?scans[k]:[]).forEach(function(r){
-      if(!r||r.symbol!==s)return;
-      if(out.price==null&&isn(r.price))out.price=r.price;
-      if(out.change==null&&isn(r.change_pct))out.change=r.change_pct})});
+/* Latest price = the close of the latest valid daily candle in out/historical.json; day change = that close against the close of the valid candle immediately before it.
+   A valid candle has a YYYY-MM-DD date and a finite close; the rest are ignored before the candles are put in date order. Fewer than two valid candles: both "-".
+   A previous close of 0 or less keeps the price and gives no change. This is the last close on file, never a live price. (Same rule as the comparison page.) */
+function priceFor(prices,s){
+  var out={price:null,change:null,date:null};
+  var st=prices&&prices.stocks&&typeof prices.stocks==="object"&&!Array.isArray(prices.stocks)&&Object.prototype.hasOwnProperty.call(prices.stocks,s)?prices.stocks[s]:null;
+  if(!st||!Array.isArray(st.candles))return out;
+  var c=st.candles.filter(function(x){return x&&typeof x==="object"&&typeof x.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x.date)&&isn(x.close)}).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0});
+  if(c.length<2)return out;
+  var last=c[c.length-1],prev=c[c.length-2];
+  out.price=last.close;out.date=last.date;
+  if(prev.close>0)out.change=(last.close/prev.close-1)*100;
   return out}
 
 function tile(label,value,cls){return '<div class="tile"><b style="font-size:1.1rem" class="'+(cls||"")+'">'+value+'</b><span>'+esc(label)+'</span></div>'}
@@ -362,13 +367,13 @@ function per(g){return g&&g.period?esc(g.period)+(g.basis==="standalone"?" · st
 
 function view(s,d){
   var v=findStock(d.val,s)||{},f=findStock(d.fin,s)||{},inc=f.income||{},bal=f.balance_sheet||{},cf=f.cash_flow||{};
-  var p=priceFor(d.scans,s),has=!!(findStock(d.val,s)||findStock(d.fin,s));
+  var p=priceFor(d.prices,s),has=!!(findStock(d.val,s)||findStock(d.fin,s));
   var company=v.company_name||f.company_name,sector=v.sector;
   var h='<p><button class="lk" id="detailBack" type="button">← Back to StockLens</button></p>';
   h+='<h2 style="margin-top:.6em">Stock Detail: '+esc(s)+'</h2>';
   if(!has)h+='<p class="note" style="padding-left:0">No fundamentals or financial statements were found for '+esc(s)+' in the current data. Missing values show "-".</p>';
-  h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Sector",sector?esc(sector):"-")+tile("LTP (last close, ₹)",r2(p.price))+tile("Today's change",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
-  h+='<p class="note" style="padding-left:0">LTP and change come from the latest end-of-day scan'+(d.scans&&d.scans.as_of?" ("+esc(d.scans.as_of)+")":"")+' and appear only when the stock is in that scan; otherwise "-".</p>';
+  h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Sector",sector?esc(sector):"-")+tile("Latest Price (last close, ₹)",r2(p.price))+tile("Day change vs previous close",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
+  h+='<p class="note" style="padding-left:0">Latest price and day change are the last daily close in the historical data'+(p.date?", as of "+esc(p.date):"")+' (not a live price). They show "-" when the stock has fewer than two valid daily candles.</p>';
   h+='<h3 style="margin:1.4em 0 .4em">Overview</h3><div class="tiles">'+tile("P/E",r2(v.pe))+tile("P/B",r2(v.pb))+tile("ROE %",r2(v.roe))+tile("ROCE %",r2(v.roce))+tile("ROA %",r2(v.roa))+tile("EV/EBITDA",r2(v.ev_ebitda))+'</div>';
   h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of):"Fundamentals not loaded yet.")+'</p>';
   h+='<h3 style="margin:1.4em 0 .4em">Financial Health <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';

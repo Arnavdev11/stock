@@ -272,10 +272,10 @@ const DETAILHTML = (s) => '<p><button id="detailBack">Back</button></p><h2>Stock
   const BASE = "7748874"; let old = ""; try { old = cp.execSync("git show " + BASE + ":index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { old = ""; }
   if (old) {
     const ob = old.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
-    eq(blocks.map(sha), ob.map(sha), "every classic script block is byte-for-byte identical to Phase 5A (" + BASE + ")");
+    eq(blocks.filter((b) => !b.includes("Stock Detail view")).map(sha), ob.filter((b) => !b.includes("Stock Detail view")).map(sha), "every classic script block except the Stock Detail block (Phase 5D.1) is byte-for-byte identical to Phase 5A (" + BASE + ")");
     eq(sha(fhCode), sha((old.split(FHTAG)[1] || "").split("</script>")[0]), "the Financial History module is byte-for-byte identical to Phase 5A");
     const strip = (x) => x.replace(/<script type="module" id="stocklens-compare">[\s\S]*?<\/script>\n/, "");
-    eq(strip(html), old, "removing the compare module gives back the Phase 5A page exactly: nothing else in index.html changed");
+    const ND = ((x) => x.split("<script>").map((q, i) => (i && q.split("</script>")[0].includes("Stock Detail view") ? "</script>" + q.split("</script>").slice(1).join("</script>") : q)).join("<script>")); eq(ND(strip(html)), ND(old), "removing the compare module gives back the Phase 5A page exactly, apart from the Stock Detail block (Phase 5D.1): nothing else in index.html changed");
   }
   eq((cmpCode.match(/fetch\(/g) || []).length, 1, "the compare module makes one fetch call (in one helper)"); eq([...new Set(cmpCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/financial_history.json", "out/fundamentals.json", "out/historical.json"], "reading exactly three files");
   no(cmpCode, /localStorage|sessionStorage|indexedDB|XMLHttpRequest|eval\(|document\.write|<script|https?:|scans\.json|financials\.json|innerHTML\s*\+=|Function\(/, "no storage, no outside address, no scans file, no statements file, no eval");
