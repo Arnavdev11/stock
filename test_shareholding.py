@@ -493,6 +493,25 @@ class Process(unittest.TestCase):
         self.assertIn("no XBRL", r["reason"])
 
 
+class UpstoxIsins(unittest.TestCase):
+    def test_list_from_the_instrument_file_and_failure_is_not_fatal(self):
+        with mock.patch.object(su, "load_instruments", lambda: {"INFY": {"isin": "INE009A01021", "name": "x"}, "BAD": {"isin": None}}):
+            self.assertEqual(su.upstox_isins(), {"INFY": "INE009A01021"})
+        def boom():
+            raise SystemExit(1)
+        with mock.patch.object(su, "load_instruments", boom):
+            self.assertEqual(su.upstox_isins(), {})
+
+    def test_isin_comes_from_any_index_record(self):
+        recs = [index_rec("30-JUN-2026", "1", isin=None), index_rec("31-MAR-2026", "2", isin="INE002A01018")]
+        led = sl.new_ledger()
+        su.process_stock(FakeNse({"RELIANCE": recs}, {}), led, "RELIANCE", "d", [0])
+        self.assertEqual(led["stocks"]["RELIANCE"]["isin"], "INE002A01018")
+        led2 = sl.new_ledger()
+        su.process_stock(FakeNse({"RELIANCE": [index_rec("30-JUN-2026", "1", isin=None)]}, {}), led2, "RELIANCE", "d", [0])
+        self.assertIsNone(led2["stocks"]["RELIANCE"]["isin"])
+
+
 class Merge(unittest.TestCase):
     def rec(self, **kw):
         r = su.build_record(index_rec("31-DEC-2025", "1"), dt.date(2025, 12, 31), make_xbrl(new_rows()), None, None, "2026-01-01")
@@ -557,9 +576,39 @@ class CrossCheck(unittest.TestCase):
         self.assertEqual(su.cross_check(None, self.stock())["status"], "skipped")
         a = mock.Mock()
         a.get.return_value = (None, "HTTP 500")
-        self.assertEqual(su.cross_check(a, self.stock())["status"], "unavailable")
+        r = su.cross_check(a, self.stock(), "INE154A01025")
+        self.assertEqual((r["status"], r["upstox_isin"]), ("unavailable", "INE154A01025"))
+        self.assertEqual(su.cross_check(self.api(self.GOOD, "Mar 2026"), self.stock(), "INE154A01025")["upstox_isin"], "INE154A01025")
         self.assertEqual(su.cross_check(self.api(self.GOOD, "Mar 2026"), self.stock())["status"], "unavailable")
         self.assertEqual(su.cross_check(None, {"symbol": "X", "isin": None, "quarters": []})["status"], "unavailable")
+
+    def test_the_upstox_isin_is_asked_for_not_the_nse_one(self):
+        st = self.stock()
+        st["isin"] = "IN9009A01011"                      # what NSE's filing index carried for INFY: Upstox does not know it
+        a = self.api(self.GOOD)
+        r = su.cross_check(a, st, "INE009A01021")
+        a.get.assert_called_once_with("INE009A01021/share-holdings")
+        self.assertEqual((r["status"], r["upstox_isin"]), ("match", "INE009A01021"))
+        self.assertEqual(st["isin"], "IN9009A01011")      # the stored value is never replaced
+        a2 = self.api(self.GOOD)
+        su.cross_check(a2, st)
+        a2.get.assert_called_once_with("IN9009A01011/share-holdings")      # without an Upstox ISIN the NSE one is the fallback
+
+    def test_no_isin_anywhere_is_reported_not_guessed(self):
+        st = self.stock()
+        st["isin"] = None
+        a = self.api(self.GOOD)
+        r = su.cross_check(a, st)
+        self.assertEqual(r["status"], "unavailable")
+        self.assertIn("no ISIN", r["reason"])
+        a.get.assert_not_called()
+        self.assertEqual(su.cross_check(a, st, "INE002A01018")["status"], "match")      # RELIANCE: NSE gives none, Upstox's list does
+
+    def test_the_upstox_label_for_every_quarter_end(self):
+        for q, label in (("2025-03-31", "Mar 2025"), ("2025-06-30", "Jun 2025"), ("2025-09-30", "Sep 2025"), ("2025-12-31", "Dec 2025")):
+            st = self.stock()
+            st["quarters"][0]["quarter_end"] = q
+            self.assertEqual(su.cross_check(self.api(self.GOOD, label), st)["status"], "match", label)
 
     def test_partial_upstox_categories_are_not_a_match(self):
         r = su.cross_check(self.api({"promoters": 50.0}), self.stock())
@@ -572,8 +621,8 @@ class OutputAndMain(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.t = Path(self.tmp.name)
         (self.t / "branch").mkdir()
-        recs = {"ITC": [index_rec("31-DEC-2025", "1", isin="INE154A01025", name="ITC Ltd"), index_rec("30-SEP-2021", "2", isin="INE154A01025", name="ITC Ltd"),
-                        index_rec("08-DEC-2021", "3", isin="INE154A01025", name="ITC Ltd")],
+        recs = {"ITC": [index_rec("31-DEC-2025", "1", isin="INE154A01017", name="ITC Ltd"), index_rec("30-SEP-2021", "2", isin="INE154A01017", name="ITC Ltd"),
+                        index_rec("08-DEC-2021", "3", isin="INE154A01017", name="ITC Ltd")],
                 "TCS": [index_rec("31-DEC-2025", "4", isin="INE467B01029", name="TCS")]}
         u = lambda r: "https://nsearchives.nseindia.com/corporate/x_%s.xml" % r
         files = {u("1"): make_xbrl(new_rows()), u("4"): make_xbrl(new_rows())}
@@ -581,13 +630,14 @@ class OutputAndMain(unittest.TestCase):
         self.env = {"SHAREHOLDING_LEDGER_DIR": str(self.t / "branch"), "SHAREHOLDING_INIT": "true", "SHAREHOLDING_SYMBOLS": "ITC,TCS",
                     "SHAREHOLDING_LEDGER_OUT": str(self.t / "ledger-out" / "shareholding_ledger.json")}
 
-    def run_main(self, env=None, nse=None, upstox=None):
+    def run_main(self, env=None, nse=None, upstox=None, isins=None):
         e = dict(self.env, **(env or {}))
         out, err = io.StringIO(), io.StringIO()
         patches = [mock.patch.dict(os.environ, e, clear=False), mock.patch.object(su, "Nse", lambda: nse or self.nse),
                    mock.patch.object(su, "OUT_FILE", self.t / "out" / "shareholding.json"), mock.patch.object(su, "log", lambda *a: print(*a))]
         if upstox is not None:
             patches.append(mock.patch.object(su, "Upstox", upstox))
+        patches.append(mock.patch.object(su, "upstox_isins", isins or (lambda: {"ITC": "INE154A01025", "TCS": "INE467B01029"})))
         with contextlib.ExitStack() as st:
             for p in patches:
                 st.enter_context(p)
@@ -663,6 +713,25 @@ class OutputAndMain(unittest.TestCase):
         fake.assert_called_once_with(SECRET, 20)
         doc = json.loads((self.t / "out" / "shareholding.json").read_text())
         self.assertEqual(doc["stocks"]["ITC"]["cross_check"]["status"], "unavailable")
+
+    def test_main_asks_upstox_about_its_own_isin_and_never_stores_it(self):
+        fake = mock.Mock()
+        fake.return_value.get.return_value = ({"data": []}, None)
+        rc, text = self.run_main({"UPSTOX_ANALYTICS_TOKEN": SECRET}, upstox=fake)
+        self.assertEqual(rc, 0, text)
+        paths = sorted(c.args[0] for c in fake.return_value.get.call_args_list)
+        self.assertEqual(paths, ["INE154A01025/share-holdings", "INE467B01029/share-holdings"])
+        led = json.loads((self.t / "ledger-out" / "shareholding_ledger.json").read_text())
+        self.assertEqual(led["stocks"]["ITC"]["isin"], "INE154A01017")      # the NSE index value (as filed) stays in the ledger
+        self.assertEqual(led["stocks"]["TCS"]["isin"], "INE467B01029")
+        doc = json.loads((self.t / "out" / "shareholding.json").read_text())
+        self.assertEqual(doc["stocks"]["ITC"]["cross_check"]["upstox_isin"], "INE154A01025")
+
+    def test_without_a_token_the_instrument_list_is_not_even_requested(self):
+        called = mock.Mock(side_effect=AssertionError("must not be called"))
+        rc, text = self.run_main(isins=called)
+        self.assertEqual(rc, 0, text)
+        called.assert_not_called()
 
     def test_rejected_token_does_not_lose_the_run(self):
         fake = mock.Mock()
