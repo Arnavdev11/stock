@@ -1280,6 +1280,247 @@ check();
 window.SLFinHistory={model:model,cagr:cagr,change:change,build:build,check:check,chartSlots:chartSlots,niceAxis:niceAxis,chartSvg:chartSvg};
 })();
 </script>
+<script type="module" id="stocklens-compare">
+/* StockLens Phase 5B - Compare stocks (2 to 5 at a time). A separate module script: the seven classic blocks and the Financial History module are not touched.
+   Routes:  #compare=TCS,ITC,INFY   the comparison (2 to 5 unique stocks; extra symbols beyond the first five are ignored and a notice says so)
+            #compare-pick           the picker;  #compare-pick=TCS  the picker with that stock already ticked. Neither is a comparison, so a one-stock comparison URL is never made.
+   Reads ONLY out/fundamentals.json, out/financial_history.json and out/scans.json (one request each, made when the compare view opens). Nothing is stored in the browser.
+   Fiscal-year, change and CAGR figures come from the Financial History module's own functions (window.SLFinHistory), so the rules are the same as on the Stock Detail page.
+   Missing values show "-" and are never estimated. Banks report "Total income", not "Revenue", so banks and other companies are shown in separate tables. Descriptive data only:
+   no ranking, winner, rating, score, signal or advice. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var N0=new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}),N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+var cr=function(v){return isn(v)?N0.format(v):"-"},r2=function(v){return isn(v)?N2.format(v):"-"};
+function pc(v){if(!isn(v))return"-";var s=v.toFixed(2);if(s==="-0.00")s="0.00";return(v>0?"+":"")+s+"%"}
+function yy(fy){return String(fy%100).length<2?"0"+(fy%100):String(fy%100)}
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var MIN=2,MAX=5;
+var has=function(o,k){return Object.prototype.hasOwnProperty.call(o,k)};
+
+/* ---------- routing and selection (pure) ---------- */
+function parseHash(hash){
+  hash=String(hash||"");
+  var m=/^#compare=([^&]*)$/.exec(hash),mode="compare";
+  if(!m){m=/^#compare-pick(?:=([^&]*))?$/.exec(hash);mode="pick"}
+  if(!m)return{mode:null,symbols:[],invalid:[]};
+  var raw;try{raw=decodeURIComponent(m[1]||"")}catch(e){return{mode:mode,symbols:[],invalid:["(unreadable)"]}}
+  var seen={},symbols=[],invalid=[];
+  raw.split(",").forEach(function(t){
+    t=t.trim().toUpperCase();if(!t)return;
+    if(!SYM.test(t)){if(invalid.indexOf(t)<0)invalid.push(t);return}
+    if(seen[t])return;seen[t]=1;symbols.push(t)});
+  return{mode:mode,symbols:symbols,invalid:invalid}}
+/* keep the symbols that are in the data, in the order given, at most MAX; report what was left out */
+function resolve(symbols,known){
+  var ok=[],unknown=[],extra=[];
+  symbols.forEach(function(s){
+    if(!has(known,s)){unknown.push(s);return}
+    if(ok.length<MAX)ok.push(s);else extra.push(s)});
+  return{symbols:ok,unknown:unknown,extra:extra}}
+function toggle(sel,sym,on){
+  var i=sel.indexOf(sym);
+  if(on){if(i<0&&sel.length<MAX)return sel.concat([sym]);return sel.slice()}
+  return i<0?sel.slice():sel.filter(function(s){return s!==sym})}
+function canApply(sel){return sel.length>=MIN&&sel.length<=MAX}
+function hashFor(sel){return canApply(sel)?"#compare="+sel.map(encodeURIComponent).join(","):null}
+
+/* ---------- data ---------- */
+function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
+function priceFor(scans,s){
+  var out={price:null,change:null};if(!scans)return out;
+  ["gainers","losers","volume_gainers","high_52w","delivery","dma"].forEach(function(k){
+    (Array.isArray(scans[k])?scans[k]:[]).forEach(function(r){
+      if(!r||r.symbol!==s)return;
+      if(out.price===null&&isn(r.price))out.price=r.price;
+      if(out.change===null&&isn(r.change_pct))out.change=r.change_pct})});
+  return out}
+/* the symbols that have data on file: fundamentals and financial history */
+function knownOf(d){
+  var k={};
+  if(d&&d.val&&Array.isArray(d.val.stocks))d.val.stocks.forEach(function(x){if(x&&typeof x.symbol==="string"&&SYM.test(x.symbol))k[x.symbol]=1});
+  if(d&&d.hist&&d.hist.stocks&&typeof d.hist.stocks==="object"&&!Array.isArray(d.hist.stocks))Object.keys(d.hist.stocks).forEach(function(s){if(SYM.test(s))k[s]=1});
+  return k}
+function nameOf(d,s){var v=find(d.val,s);return v&&typeof v.company_name==="string"?v.company_name:""}
+
+/* ---------- the comparison ---------- */
+function fh(){return typeof window!=="undefined"&&window.SLFinHistory&&typeof window.SLFinHistory.model==="function"?window.SLFinHistory:null}
+function models(d,syms){
+  var F=fh();
+  return syms.map(function(s){return F?F.model(d.hist,s):{state:"unavailable"}})}
+function headCols(syms){return syms.map(function(s){return'<th scope="col"><a href="#stock='+encodeURIComponent(s)+'">'+esc(s)+'</a></th>'}).join("")}
+function overview(d,syms,ms){
+  var rows=[
+    ["company","Company",function(s){var n=nameOf(d,s);return n?esc(n):"-"}],
+    ["sector","Sector",function(s){var v=find(d.val,s);return v&&v.sector?esc(v.sector):"-"}],
+    ["basis","Statements basis",function(s,i){return ms[i].state==="ok"?esc(ms[i].basis):"-"}],
+    ["ltp","LTP (last close, ₹)",function(s){return r2(priceFor(d.scans,s).price)}],
+    ["change","Today's change",function(s){return pc(priceFor(d.scans,s).change)}],
+    ["pe","P/E",function(s){var v=find(d.val,s);return r2(v&&v.pe)}],
+    ["pb","P/B",function(s){var v=find(d.val,s);return r2(v&&v.pb)}],
+    ["roe","ROE %",function(s){var v=find(d.val,s);return r2(v&&v.roe)}],
+    ["roce","ROCE %",function(s){var v=find(d.val,s);return r2(v&&v.roce)}],
+    ["roa","ROA %",function(s){var v=find(d.val,s);return r2(v&&v.roa)}],
+    ["ev_ebitda","EV/EBITDA",function(s){var v=find(d.val,s);return r2(v&&v.ev_ebitda)}]];
+  var h='<h3 style="margin:1.2em 0 .4em">Overview</h3><div class="panel"><div class="scroll"><table data-ctable="overview"><thead><tr><th scope="col"><span class="note" style="padding:0">Measure</span></th>'+headCols(syms)+'</tr></thead><tbody>';
+  rows.forEach(function(r){h+='<tr data-crow="'+r[0]+'"><th scope="row">'+esc(r[1])+'</th>'+syms.map(function(s,i){return'<td class="n">'+r[2](s,i)+'</td>'}).join("")+'</tr>'});
+  h+='</tbody></table></div></div>';
+  h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of)+". ":"Fundamentals not loaded. ")+(d.scans&&d.scans.as_of?"LTP and change are from the end-of-day scan of "+esc(d.scans.as_of)+" and appear only for a stock in that scan. ":"")+'"-" means the value is not available.</p>';
+  return h}
+function histTable(d,syms,ms,key,title,growth,idx){
+  /* idx: the positions in syms/ms that belong in this table */
+  var fys={};idx.forEach(function(i){ms[i].cols.forEach(function(c){fys[c.fy]=1})});
+  var years=Object.keys(fys).map(Number).sort(function(a,b){return a-b});
+  var fmt=key==="eps_basic"?r2:cr,F=fh();
+  var h='<h4 style="margin:1.2em 0 .3em" data-ctitle="'+key+'">'+esc(title)+'</h4><div class="panel"><div class="scroll"><table data-ctable="'+key+'"><thead><tr><th scope="col"><span class="note" style="padding:0">Fiscal year</span></th>'+idx.map(function(i){return'<th scope="col"><a href="#stock='+encodeURIComponent(syms[i])+'">'+esc(syms[i])+'</a></th>'}).join("")+'</tr></thead><tbody>';
+  years.forEach(function(fy){
+    h+='<tr data-fy="'+fy+'"><th scope="row">FY'+fy+'</th>'+idx.map(function(i){
+      var c=null;ms[i].cols.forEach(function(x){if(x.fy===fy)c=x});
+      if(!c)return'<td class="n">-</td>';
+      var v=c.v[key],mk=(c.official?'<sup title="Official annual report" data-mark="official">AR</sup>':"")+(c.differs?'<sup title="Source summary differs" data-mark="differs">SD</sup>':"");
+      return'<td class="n">'+fmt(isn(v)?v:null)+mk+'</td>'}).join("")+'</tr>'});
+  if(growth){
+    h+='<tr data-cchg="'+key+'"><th scope="row">Change, latest year vs previous</th>'+idx.map(function(i){
+      var m=ms[i],last=m.cols.length-1,v=last>=1?F.change(m,last,key):null;
+      return'<td class="n">'+(v===null||v===undefined?"-":pc(v)+' <small>FY'+yy(m.cols[last].fy)+' vs FY'+yy(m.cols[last-1].fy)+'</small>')+'</td>'}).join("")+'</tr>';
+    h+='<tr data-ccagr="'+key+'"><th scope="row">CAGR, fixed window</th>'+idx.map(function(i){
+      var c=F.cagr(ms[i],key);return'<td class="n">'+(c?pc(c.pct)+' <small>'+esc(c.label)+'</small>':"-")+'</td>'}).join("")+'</tr>'}
+  h+='</tbody></table></div></div>';
+  return h}
+function history(d,syms,ms){
+  var h='<h3 style="margin:1.6em 0 .2em">Financial history</h3>';
+  var okIdx=[],missing=[];
+  ms.forEach(function(m,i){if(m.state==="ok")okIdx.push(i);else missing.push(syms[i])});
+  if(!fh()||(d.hist===null||d.hist===undefined)||!okIdx.length){
+    return h+'<p class="note" style="padding-left:0" data-cstate="history">'+(!d.hist||!fh()||ms.every(function(m){return m.state==="unavailable"})?"Financial history unavailable.":"No financial history is on file for "+esc(missing.join(", "))+".")+'</p>'}
+  h+='<p class="note" style="padding-left:0">₹ crore (EPS in ₹). Each table lists the fiscal years on file for the stocks in it; "-" means the year or value is not available, and nothing is estimated.'+(d.hist.as_of?" Updated: "+esc(d.hist.as_of)+".":"")+'</p>';
+  var bank=okIdx.filter(function(i){return ms[i].bank}),non=okIdx.filter(function(i){return!ms[i].bank});
+  if(non.length&&bank.length){
+    h+=histTable(d,syms,ms,"revenue","Revenue (non-bank companies)",true,non);
+    h+=histTable(d,syms,ms,"total_revenue","Total income (banks)",true,bank)}
+  else if(bank.length)h+=histTable(d,syms,ms,"total_revenue","Total income",true,bank);
+  else h+=histTable(d,syms,ms,"revenue","Revenue",true,non);
+  h+=histTable(d,syms,ms,"profit_before_tax","Profit before tax",true,okIdx);
+  h+=histTable(d,syms,ms,"profit_after_tax","Profit after tax",true,okIdx);
+  h+=histTable(d,syms,ms,"eps_basic","EPS, basic (₹)",false,okIdx);
+  h+=histTable(d,syms,ms,"operating_cash_flow","Operating cash flow",false,okIdx);
+  var notes=[];
+  if(missing.length)notes.push("No financial history is on file for "+missing.join(", ")+".");
+  if(non.length&&bank.length)notes.push("Banks report total income, which is not the same measure as revenue, so the two are shown in separate tables and are not compared. Bank operating cash flow includes deposit and lending movements and is not comparable with other companies.");
+  else if(bank.length)notes.push("Bank operating cash flow includes deposit and lending movements and is not comparable with other companies.");
+  if(okIdx.some(function(i){return ms[i].cols.some(function(c){return c.official})}))notes.push("AR: the figure for that year was taken from the company's annual report, not from Upstox.");
+  if(okIdx.some(function(i){return ms[i].cols.some(function(c){return c.differs})}))notes.push("SD: the source's own summary lines did not agree with its statement lines for that year. The stored value is shown as it is.");
+  var itc=okIdx.filter(function(i){return syms[i]==="ITC"&&ms[i].cols.some(function(c){return c.fy<2023})&&ms[i].cols.some(function(c){return c.fy>=2023})});
+  if(itc.length)notes.push("Change and CAGR are not calculated across FY2022 to FY2023 for ITC.");
+  notes.push("Change uses the stock's latest fiscal year and the year before it, when both have a value. CAGR uses a fixed window per stock (TCS FY2022–FY2026, all others FY2023–FY2026) and needs every year in it to have a positive value. EPS is shown as reported for each year, without adjustment for splits or bonus issues, and is not directly comparable across companies. Cash flow gets no growth figure. Descriptive data only.");
+  h+=notes.map(function(n){return'<p class="note" style="padding:6px 0 0" data-cnote="1">'+esc(n)+'</p>'}).join("");
+  return h}
+
+/* ---------- the picker ---------- */
+function picker(d,known,sel){
+  var syms=Object.keys(known).sort();
+  var h='<div class="panel" style="padding:16px;margin-top:14px" data-picker="1"><b>Choose 2 to 5 stocks</b><p class="note" style="padding:2px 0 8px">Only stocks with data on file are listed. Tick between 2 and 5, then press Compare.</p><div role="group" aria-label="Stocks to compare" style="display:flex;flex-wrap:wrap;gap:8px">';
+  syms.forEach(function(s){
+    var on=sel.indexOf(s)>=0,dis=!on&&sel.length>=MAX,n=nameOf(d,s);
+    h+='<label style="display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--card)"><input type="checkbox" data-sym="'+esc(s)+'"'+(on?" checked":"")+(dis?" disabled":"")+'> <span><b>'+esc(s)+'</b>'+(n?' <small style="color:var(--mute)">'+esc(n)+'</small>':"")+'</span></label>'});
+  h+='</div><p class="note" style="padding:8px 0 0" data-picker-status="1" aria-live="polite">'+statusText(sel)+'</p><p style="margin:8px 0 0"><button type="button" class="btn" data-apply="1" style="border:0;cursor:pointer"'+(canApply(sel)?"":" disabled")+'>Compare</button></p></div>';
+  return h}
+function statusText(sel){return sel.length+" selected. "+(sel.length<MIN?"Choose at least "+MIN+".":sel.length>=MAX?"The maximum of "+MAX+" is selected.":"You can add up to "+(MAX-sel.length)+" more.")}
+
+/* ---------- the whole view ---------- */
+function notices(info,res){
+  var n=[];
+  if(info.invalid.length)n.push(["invalid","Not a valid stock symbol: "+info.invalid.join(", ")+"."]);
+  if(res.unknown.length)n.push(["unknown","Not in the current data: "+res.unknown.join(", ")+"."]);
+  if(res.extra.length)n.push(["extra","Only "+MAX+" stocks can be compared. The first "+MAX+" are shown; not included: "+res.extra.join(", ")+"."]);
+  return n.map(function(x){return'<p class="note" role="status" style="padding:4px 0;margin:0" data-cnotice="'+x[0]+'">'+esc(x[1])+'</p>'}).join("")}
+function build(hash,d){
+  var info=parseHash(hash);
+  var back='<p><button class="lk" type="button" data-back="1">← Back to StockLens</button></p><h2 style="margin-top:.6em">Compare stocks</h2>';
+  if(!info.mode)return back;
+  var known=knownOf(d);
+  if(!Object.keys(known).length)return back+'<p class="note" style="padding-left:0" data-cstate="unavailable">Comparison data is unavailable right now.</p>';
+  var res=resolve(info.symbols,known),sel=res.symbols;
+  var h=back+notices(info,res);
+  if(info.mode==="compare"&&sel.length<MIN)h+='<p class="note" role="status" style="padding:4px 0;margin:0" data-cnotice="count">Choose 2 to 5 stocks to compare.</p>';
+  h+=picker(d,known,sel);
+  if(info.mode==="compare"&&sel.length>=MIN){
+    var ms=models(d,sel);
+    h+='<div data-compare="'+esc(sel.join(","))+'">'+overview(d,sel,ms)+history(d,sel,ms)+'</div>'+'<p class="note" style="padding-left:0">Side-by-side data only. It is not a ranking, rating, recommendation or advice.</p>'}
+  return h}
+
+/* ---------- loading and placement ---------- */
+var DATA=null;
+function loadAll(){
+  if(DATA)return DATA;
+  var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financial_history.json"),j("out/scans.json")]).then(function(a){return{val:a[0],hist:a[1],scans:a[2]}});
+  return DATA}
+var box=null,SEL=[],KNOWN={},TOKEN=0,STYLED=false;
+var CSS="#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}"+
+  "#compareView th[scope=row]{color:var(--ink);font-weight:600;white-space:nowrap}#compareView td.n{font-variant-numeric:tabular-nums}#compareView thead th a{color:var(--ac);font-weight:700;text-decoration:none}"+
+  "#compareView sup{font-size:.62rem;color:var(--mute);margin-left:3px}#compareView td small{color:var(--mute);display:block;white-space:nowrap}#compareView input:disabled+span{opacity:.55}"+
+  "#compareView table{min-width:0}#compareView .scroll{overflow-x:auto}@media(max-width:640px){#compareView th,#compareView td{padding:9px 10px;font-size:.85rem}}";
+function ensure(){
+  var detail=$("detail");
+  if(!detail||!detail.parentNode)return null;
+  if(!STYLED&&document.head&&document.createElement){var st=document.createElement("style");st.id="compareStyle";st.textContent=CSS;document.head.appendChild(st);STYLED=true}
+  if(box&&box.parentNode)return box;
+  box=document.createElement("section");box.id="compareView";box.setAttribute("aria-live","polite");
+  detail.parentNode.insertBefore(box,detail);
+  if(box.addEventListener){
+    box.addEventListener("change",function(e){
+      var t=e.target;if(!t||!t.getAttribute)return;var s=t.getAttribute("data-sym");if(!s)return;
+      SEL=toggle(SEL,s,!!t.checked);sync()});
+    box.addEventListener("click",function(e){
+      var t=e.target&&e.target.closest?e.target:null;if(!t)return;
+      if(t.closest("[data-back]")){window.location.hash="";return}
+      if(t.closest("[data-apply]")){var hh=hashFor(SEL);if(hh)window.location.hash=hh.slice(1)}})}
+  return box}
+/* keep the checkboxes, the status line and the button in step with the selection */
+function sync(){
+  if(!box||!box.querySelectorAll)return;
+  var on=function(s){return SEL.indexOf(s)>=0};
+  [].forEach.call(box.querySelectorAll("input[data-sym]"),function(i){var s=i.getAttribute("data-sym");i.checked=on(s);i.disabled=!on(s)&&SEL.length>=MAX});
+  var st=box.querySelector("[data-picker-status]");if(st)st.textContent=statusText(SEL);
+  var b=box.querySelector("[data-apply]");if(b)b.disabled=!canApply(SEL)}
+function route(){
+  var info=parseHash(window.location.hash||""),b=document.body;
+  if(!info.mode){if(b&&b.classList)b.classList.remove("compare-mode");return}
+  var el=ensure();if(!el)return;
+  if(b&&b.classList)b.classList.add("compare-mode");
+  var tok=++TOKEN,hash=window.location.hash;
+  el.innerHTML='<p class="note">Loading…</p>';
+  if(window.scrollTo)window.scrollTo(0,0);
+  loadAll().then(function(d){
+    if(tok!==TOKEN)return;
+    var res=resolve(info.symbols,knownOf(d));SEL=res.symbols.slice();KNOWN=knownOf(d);
+    el.innerHTML=build(hash,d)}).catch(function(){if(tok===TOKEN)el.innerHTML=build(hash,{val:null,hist:null,scans:null})})}
+/* entry points: a header link and a "Compare with…" link on Stock Detail. Both are added here, so the pages' own scripts are untouched. */
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+function addNavLink(){
+  var nav=document.querySelector&&document.querySelector('nav[aria-label="Main"]');
+  if(!nav||(nav.querySelector&&nav.querySelector("#navCompare")))return;
+  var a=document.createElement("a");a.id="navCompare";a.setAttribute("href","#compare-pick");a.textContent="Compare Stocks";nav.appendChild(a)}
+function detailLink(){
+  var s=routeSymbol(),d=$("detail");
+  if(!s||!d||String(d.innerHTML||"").indexOf('id="detailChart"')<0)return;
+  if(String(d.innerHTML).indexOf('id="detailCompare"')>=0)return;
+  var p=document.createElement("p");p.id="detailCompare";
+  p.innerHTML='<a href="#compare-pick='+encodeURIComponent(s)+'" data-compare-with="'+esc(s)+'">Compare with…</a>';
+  var first=d.firstElementChild||null;d.insertBefore(p,first?first.nextSibling:d.firstChild||null)}
+if(typeof MutationObserver!=="undefined"){var d0=$("detail");if(d0)new MutationObserver(function(){detailLink()}).observe(d0,{childList:true})}
+window.addEventListener("hashchange",function(){route();detailLink()});
+addNavLink();route();detailLink();
+window.SLCompare={parseHash:parseHash,resolve:resolve,toggle:toggle,canApply:canApply,hashFor:hashFor,knownOf:knownOf,build:build,route:route,detailLink:detailLink,addNavLink:addNavLink,MIN:MIN,MAX:MAX};
+})();
+</script>
 <script>
 /* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
 (function(){
