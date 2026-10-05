@@ -1507,6 +1507,57 @@ function chartsHtml(d,syms,ms){
   else h+=cgroup("growth","Growth",note,[]);
   return h}
 
+/* ---------- Phase 5D: price performance (historical returns) ----------
+   Reads ONLY d.prices (out/historical.json, already loaded) and the Stock Detail snapshot code (window.SLTech). Same method as Stock Detail: invalid candles are dropped before the
+   dates are ordered, the latest valid close is the starting point, and each return compares it with the latest close ON OR BEFORE the calendar cutoff (n months earlier, day clamped
+   to the month's end). Nothing is interpolated or estimated; a history that does not reach the cutoff gives "-". 1M, 3M, 6M and 1Y are the values Stock Detail already computes
+   (SLTech.compute); 3Y and 5Y use the very same rule with the same cleaning and the same calendar function. Stocks stay in the order chosen: nothing is sorted or ranked. */
+var PERIODS=[["1M",1],["3M",3],["6M",6],["1Y",12],["3Y",36],["5Y",60]];
+function realDate(d){
+  if(typeof d!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(d))return false;
+  var y=+d.slice(0,4),m=+d.slice(5,7),k=+d.slice(8,10);
+  if(m<1||m>12||k<1)return false;
+  return k<=[31,(y%4===0&&y%100!==0)||y%400===0?29:28,31,30,31,30,31,31,30,31,30,31][m-1]}
+function performance(prices,s){
+  var out={asOf:null,ret:{}},T=typeof window!=="undefined"?window.SLTech:null;
+  PERIODS.forEach(function(p){out.ret[p[0]]=null});
+  if(!T||typeof T.compute!=="function"||typeof T.cleanCandles!=="function"||typeof T.minusMonths!=="function")return out;
+  var st=prices&&prices.stocks&&typeof prices.stocks==="object"&&!Array.isArray(prices.stocks)&&has(prices.stocks,s)?prices.stocks[s]:null;
+  /* A date such as 2026-13-45 has the right shape but is not on the calendar. Stock Detail's cleaner only checks the shape, so such a row is removed here first,
+     BEFORE the candles are ordered; otherwise it would sort last and be taken as the latest day. */
+  var good=(st&&Array.isArray(st.candles)?st.candles:[]).filter(function(c){return c&&typeof c==="object"&&realDate(c.date)});
+  var cs=T.cleanCandles(good);
+  if(!cs.length)return out;
+  var last=cs[cs.length-1],base=null,one={};
+  one[s]={candles:good};
+  try{base=T.compute({stocks:one},s)}catch(e){base=null}
+  out.asOf=last.date;
+  PERIODS.forEach(function(p){
+    var v=null;
+    if(p[1]<=12){v=base&&base.returns&&isn(base.returns[p[0]])?base.returns[p[0]]:null}
+    else{
+      var cut=T.minusMonths(last.date,p[1]),ref=null;
+      for(var i=cs.length-1;i>=0;i--)if(cs[i].date<=cut){ref=cs[i];break}
+      v=ref&&isn(ref.close)&&ref.close>0?(last.close/ref.close-1)*100:null}
+    out.ret[p[0]]=isn(v)?v:null});
+  return out}
+function performanceHtml(d,syms){
+  var h='<h3 style="margin:1.6em 0 .2em" data-cperf-title="1">Price performance</h3>';
+  var ps=syms.map(function(s){return performance(d.prices,s)});
+  if(!d.prices||typeof window==="undefined"||!window.SLTech||typeof window.SLTech.compute!=="function")return h+'<p class="note" style="padding-left:0" data-cstate="performance">Historical price data is unavailable.</p>';
+  if(!ps.some(function(p){return p.asOf}))return h+'<p class="note" style="padding-left:0" data-cstate="performance">No historical prices are on file for the selected stocks.</p>';
+  h+='<p class="note" style="padding-left:0">Price change from each stock\'s latest daily close back to its close on or before the calendar date 1, 3, 6, 12, 36 or 60 months earlier. These are historical closes, not live prices. "-" means the history on file does not reach back far enough, or has no valid close for it; nothing is estimated or interpolated. Stocks are in the order chosen.</p>';
+  h+='<div class="panel"><div class="scroll"><table data-ctable="performance"><thead><tr><th scope="col"><span class="note" style="padding:0">Period</span></th>'+headCols(syms)+'</tr></thead><tbody>';
+  h+='<tr data-perf="asof"><th scope="row">Latest daily close</th>'+ps.map(function(p){return'<td class="n">'+(p.asOf?esc(p.asOf):"-")+'</td>'}).join("")+'</tr>';
+  PERIODS.forEach(function(p){h+='<tr data-perf="'+p[0]+'"><th scope="row">'+p[0]+'</th>'+ps.map(function(x){return'<td class="n">'+pc(x.ret[p[0]])+'</td>'}).join("")+'</tr>'});
+  h+='</tbody></table></div></div>';
+  var figs=PERIODS.map(function(p){
+    var slots=syms.map(function(s,i){return{sym:s,v:ps[i].ret[p[0]]}});
+    return barChart("perf-"+p[0],p[0]+" price change (%)",slots,pc,"").replace('<figure data-cchart="','<figure data-pchart="')});
+  h+='<div class="panel" style="padding:16px;margin-top:14px" data-cperf="chart"><h4 style="margin:0 0 .2em">Price change by period</h4><p class="note" style="padding:0 0 8px">One bar per stock, in the order chosen. Bars start at zero and a negative change hangs below it. An empty slot means the value is not available. Each period has its own scale.</p>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:14px">'+figs.join("")+'</div></div>';
+  return h}
+
 /* ---------- the picker ---------- */
 function picker(d,known,sel){
   var syms=Object.keys(known).sort();
@@ -1537,7 +1588,7 @@ function build(hash,d){
   h+=picker(d,known,sel);
   if(info.mode==="compare"&&sel.length>=MIN){
     var ms=models(d,sel);
-    h+='<div data-compare="'+esc(sel.join(","))+'">'+overview(d,sel,ms)+chartsHtml(d,sel,ms)+history(d,sel,ms)+'</div>'+'<p class="note" style="padding-left:0">Side-by-side data only. It is not a ranking, rating, recommendation or advice.</p>'}
+    h+='<div data-compare="'+esc(sel.join(","))+'">'+overview(d,sel,ms)+chartsHtml(d,sel,ms)+performanceHtml(d,sel)+history(d,sel,ms)+'</div>'+'<p class="note" style="padding-left:0">Side-by-side data only. It is not a ranking, rating, recommendation or advice.</p>'}
   return h}
 
 /* ---------- loading and placement ---------- */
@@ -1606,7 +1657,7 @@ function detailLink(){
 if(typeof MutationObserver!=="undefined"){var d0=$("detail");if(d0)new MutationObserver(function(){detailLink()}).observe(d0,{childList:true})}
 window.addEventListener("hashchange",function(){route();detailLink()});
 addNavLink();route();detailLink();
-window.SLCompare={parseHash:parseHash,resolve:resolve,toggle:toggle,canApply:canApply,hashFor:hashFor,knownOf:knownOf,build:build,route:route,detailLink:detailLink,addNavLink:addNavLink,MIN:MIN,MAX:MAX};
+window.SLCompare={parseHash:parseHash,resolve:resolve,toggle:toggle,canApply:canApply,hashFor:hashFor,knownOf:knownOf,build:build,performance:performance,performanceHtml:performanceHtml,realDate:realDate,route:route,detailLink:detailLink,addNavLink:addNavLink,MIN:MIN,MAX:MAX};
 })();
 </script>
 <script>
