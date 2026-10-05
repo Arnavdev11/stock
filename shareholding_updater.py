@@ -1,0 +1,815 @@
+"""
+shareholding_updater.py - StockLens Phase 5H.3: the quarterly SHAREHOLDING-PATTERN ledger (data layer only; no UI).
+
+Source: the official NSE shareholding-pattern filings (the filing index and the XBRL file of every quarter), reached with the same
+cookie-session pattern as nse_updater.py (which is not touched). Upstox is used ONLY as a latest-quarter cross-check; it never supplies a value.
+
+What it does
+  * Reads the NSE filing index of each development stock and keeps the quarter-end filings from Sep 2021 on (off-cycle filings, such as the
+    one after a merger or an allotment, are listed as skipped and never stored as quarters).
+  * Downloads the XBRL of every quarter it does not already hold, parses the ownership categories, and keeps the quarters in a persistent,
+    append-only ledger:  shareholding_ledger.json (on the `stocklens-data` branch)  and publishes lean per-stock records as out/shareholding.json.
+  * Five StockLens categories (percent of shares):
+        promoters     = promoter and promoter group
+        fii           = foreign institutions (new format: InstitutionsForeign = FPI Category I + II + other foreign;
+                        old format: the single foreign portfolio investor row)
+        mutual_funds  = mutual funds / UTI
+        other_dii     = domestic institutions minus mutual funds (new format);  institutions minus foreign portfolio investors minus
+                        mutual funds (old format)
+        retail_other  = non-institutions + governments (+ employee benefit trusts when the filing reports them separately)
+    Employee trusts are inside retail_other for the investor-facing value; their own percentage is kept in diagnostics.
+
+Rules (all enforced by test_shareholding.py and test_shareholding_storage.py)
+  * One record per (stock, quarter end). A quarter the index does not list is never invented; a quarter that is listed but whose XBRL cannot be
+    obtained is stored as status "unavailable" with the reason. Nothing is interpolated, carried forward or supplemented from another site.
+  * The percentage unit is DETECTED per filing (0-100 or 0-1 fractions) from the total row, and only then normalised to percent. Totals are never forced to 100.
+  * format_version says which structure the filing used: "old-institutions-fpi" (single Institutions subtotal, one FPI row) or
+    "new-domestic-foreign" (InstitutionsDomestic / InstitutionsForeign, FPI Category I and II). The two are never claimed to be identical.
+  * The official REPORTED percentage column is what is stored. Where it conflicts with the filing's own share counts (more than 1 percentage
+    point on any category) the quarter gets the quality flag "reported-pct-conflicts-with-share-counts" and the share-count-derived percentages
+    are kept only as diagnostics. They never replace the reported values.
+  * The latest NSE version of a quarter is the production version. When a later fetch brings a different NSE record id or different values, the
+    previous version is appended to that record's revisions. An existing value never becomes null; an available quarter never becomes unavailable.
+  * The NSE record id, XBRL URL, broadcast / submission date, revised flag, revision date and revision remark are kept for every quarter.
+
+No token is needed for NSE. The optional Upstox cross-check reads the token from the environment only and never prints, logs or writes it.
+"""
+import copy
+import datetime as dt
+import json
+import os
+import re
+import sys
+import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import requests
+
+import shareholding_ledger as sl
+from upstox_common import ROOT, SYMBOLS, Upstox, log, write_json
+
+SCHEMA_VERSION = 1
+LEDGER_FILE = ROOT / "data" / sl.LEDGER_NAME
+OUT_FILE = ROOT / "out" / "shareholding.json"
+INDEX_URL = "https://www.nseindia.com/api/corporate-share-holdings-master?index=equities&symbol="
+START_QUARTER = dt.date(2021, 9, 30)
+QUARTER_ENDS = {(3, 31), (6, 30), (9, 30), (12, 31)}
+WAIT = 1.5
+DEFAULT_MAX_DOWNLOADS = 320
+CONFLICT_PP = 1.0            # a reported category may differ this much from its share-count value before the quarter is flagged
+SUM_TOLERANCE = 0.25         # the five categories may differ this much from 100 before the quarter is flagged (never forced to 100)
+CROSS_TOLERANCE = 0.05
+CATEGORIES = list(sl.CATEGORIES)
+FORMAT_OLD, FORMAT_NEW = "old-institutions-fpi", "new-domestic-foreign"
+FLAG_CONFLICT = "reported-pct-conflicts-with-share-counts"
+FLAG_SUM = "five-categories-do-not-sum-to-100"
+FLAG_OTHER_INST = "old-format-other-institutions-in-other-dii"
+FLAG_ROW_MISSING = "category-row-missing"
+FLAG_DUPLICATE = "duplicate-member-conflict"
+FLAG_REPORT_DATE = "report-date-differs-from-quarter-end"
+FLAG_KEPT = "kept-previous-value"
+STATUS = ("available", "unavailable")
+
+HEADERS = {   # the same browser-like headers nse_updater.py uses; the home page is visited first for the cookies NSE expects
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.nseindia.com/companies-listing/corporate-filings-shareholding-pattern",
+}
+
+NOTES = {
+    "units": "Percent of shares, two decimals. employee_trusts_pct and every share-count figure are diagnostics.",
+    "source": "Official NSE shareholding-pattern filings (index and XBRL). Upstox is only a latest-quarter cross-check and never supplies a value.",
+    "categories": "promoters = promoter and promoter group; fii = foreign institutions / FPI; mutual_funds = mutual funds and UTI; other_dii = domestic institutions minus mutual funds; "
+                  "retail_other = non-institutions + governments (+ employee benefit trusts when reported separately).",
+    "format_version": "old-institutions-fpi = single Institutions subtotal and one FPI row (other_dii = institutions - FPI - mutual funds, so it also holds 'other institutions'); "
+                      "new-domestic-foreign = InstitutionsDomestic / InstitutionsForeign with FPI Category I and II. The two definitions are not identical.",
+    "null": "null means unavailable. Never zero as a substitute, never carried forward, never interpolated. A missing quarter has no record (see coverage).",
+    "unavailable": "A quarter that NSE lists but whose XBRL could not be obtained is status 'unavailable' with the reason. No other site is used to fill it.",
+    "totals": "The five categories are never forced to 100. A quarter whose total is off by more than %.2f is flagged." % SUM_TOLERANCE,
+    "quality": "flagged = a data-quality warning applies. reported-pct-conflicts-with-share-counts means the filing's own percentage column disagrees with its own share counts; "
+               "the reported percentages are shown and the share-count percentages are diagnostics only.",
+    "revisions": "The latest NSE version of a quarter is the production version. Earlier versions are kept in revisions.",
+    "scope": "Data layer only. No Stock Detail UI, chart or comparison is built from this file in this phase.",
+}
+
+
+# ---------------------------------------------------------------- small helpers
+def isnum(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def fnum(text):
+    try:
+        x = float(str(text).strip().replace(",", ""))
+    except (ValueError, TypeError):
+        return None
+    return x if x == x and x not in (float("inf"), float("-inf")) else None
+
+
+def r2(x):
+    return None if x is None else round(x + 0.0, 2)
+
+
+def today():
+    return dt.date.today().isoformat()
+
+
+def pdate(text):
+    """NSE date 'dd-MON-yyyy' (optionally followed by a time) -> date, else None."""
+    try:
+        return dt.datetime.strptime(str(text).strip().upper()[:11], "%d-%b-%Y").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def iso(text):
+    d = pdate(text)
+    return d.isoformat() if d else None
+
+
+def local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def norm_name(text):
+    """'in-bse-shp:MutualFundsOrUtiMember' -> 'mutualfundsoruti'. The spelling and capitalisation of members changed between years."""
+    s = re.sub(r"[^A-Za-z0-9]", "", re.sub(r"^.*:", "", text or "")).lower()
+    return s[:-6] if s.endswith("member") else s
+
+
+def display_name(text):
+    s = re.sub(r"^.*:", "", (text or "").strip())
+    return s[:-6] if s.endswith("Member") else s
+
+
+# ---------------------------------------------------------------- the NSE connection
+class Nse:
+    """The NSE filing index and XBRL downloads. Retries a few times; a 404 is final (the file is not there)."""
+
+    def __init__(self, session=None, wait=WAIT):
+        self.s, self.wait, self.downloads = session, wait, 0
+
+    def _session(self):
+        if self.s is None:
+            s = requests.Session()
+            s.headers.update(HEADERS)
+            try:
+                s.get("https://www.nseindia.com", timeout=30)
+            except requests.RequestException as e:
+                log("warning: could not open nseindia.com:", type(e).__name__)
+            self.s = s
+        return self.s
+
+    def _get(self, url):
+        err = "unknown error"
+        for attempt in range(3):
+            try:
+                r = self._session().get(url, timeout=60)
+            except requests.RequestException as e:
+                err = "network error: " + type(e).__name__
+                time.sleep(self.wait * (attempt + 2))
+                self.s = None
+                continue
+            time.sleep(self.wait)
+            if r.status_code == 200:
+                return r, None
+            err = "HTTP %d" % r.status_code
+            if r.status_code in (401, 403, 429) or r.status_code >= 500:
+                self.s = None                       # a fresh session gets fresh cookies
+                time.sleep(self.wait * (attempt + 2))
+                continue
+            break
+        return None, err
+
+    def index(self, symbol):
+        r, err = self._get(INDEX_URL + symbol)
+        if err:
+            return None, err
+        try:
+            body = r.json()
+        except ValueError:
+            return None, "the filing index was not JSON"
+        recs = body if isinstance(body, list) else (body.get("data") if isinstance(body, dict) else None)
+        if not isinstance(recs, list):
+            return None, "the filing index had an unexpected shape"
+        return [x for x in recs if isinstance(x, dict)], None
+
+    def xbrl(self, url):
+        self.downloads += 1
+        r, err = self._get(url)
+        return (r.content, None) if not err else (None, err)
+
+
+def xbrl_candidates(url):
+    """The listed URL first; if it is not there, the same file on the other official NSE archive hosts."""
+    out = [url]
+    for a, b in (("nsearchives.nseindia.com", "archives.nseindia.com"), ("nsearchives.nseindia.com", "www.nseindia.com")):
+        if a in url:
+            out.append(url.replace(a, b))
+    return out
+
+
+def fetch_xbrl(nse, url):
+    """(bytes, url_used, None) or (None, None, reason). Only a 404 is retried on the other official hosts."""
+    last = "no URL"
+    for u in xbrl_candidates(url):
+        data, err = nse.xbrl(u)
+        if data is not None:
+            return data, u, None
+        last = err
+        if err != "HTTP 404":
+            break
+    return None, None, last
+
+
+# ---------------------------------------------------------------- the XBRL
+def parse_xbrl(data):
+    """XBRL bytes -> {'report_date': 'YYYY-MM-DD'|None, 'rows': {(norm, period): row}, 'duplicates': [..]}.
+    A row is {'member', 'shares', 'pct'}; only contexts with exactly one CategoryOfShareholdersAxis member count, and the per-holder detail
+    members (names ending _ContextNN or starting Details) are ignored."""
+    root = ET.fromstring(data)
+    ctx = {}
+    for el in root.iter():
+        if local(el.tag) == "context":
+            members, per = [], None
+            for c in el.iter():
+                lt = local(c.tag)
+                if lt in ("explicitMember", "typedMember"):
+                    members.append((c.get("dimension", ""), (c.text or "").strip() or "".join(c.itertext()).strip()))
+                elif lt in ("instant", "endDate"):
+                    per = (c.text or "").strip()
+            ctx[el.get("id")] = (members, per)
+    report_date, rows, dups = None, {}, []
+    for el in root:
+        cr = el.get("contextRef")
+        if cr is None or cr not in ctx:
+            continue
+        name, text = local(el.tag), (el.text or "").strip()
+        members, per = ctx[cr]
+        if not members:
+            if name == "DateOfReport" and re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+                report_date = text
+            continue
+        if len(members) != 1 or not members[0][0].endswith("CategoryOfShareholdersAxis"):
+            continue
+        mem = re.sub(r"^.*:", "", members[0][1])
+        if "_Context" in mem or mem.startswith("Details"):
+            continue
+        if name not in ("NumberOfFullyPaidUpEquityShares", "ShareholdingAsAPercentageOfTotalNumberOfShares"):
+            continue
+        v = fnum(text)
+        row = rows.setdefault((norm_name(mem), per), {"member": display_name(mem), "shares": None, "pct": None})
+        key = "shares" if name == "NumberOfFullyPaidUpEquityShares" else "pct"
+        if row[key] is not None and v is not None and row[key] != v:
+            dups.append(row["member"] + ":" + key)
+        elif row[key] is None:
+            row[key] = v
+    return {"report_date": report_date, "rows": rows, "duplicates": sorted(set(dups))}
+
+
+PROM = ("shareholdingofpromoterandpromotergroup",)
+MF = ("mutualfundsoruti",)
+DOM, FOR_NEW = ("institutionsdomestic",), ("institutionsforeign",)
+OLD_INST, OLD_FPI = ("institutions",), ("institutionsforeignportfolioinvestor",)
+FII_OLD = ("foreigninstitutionalinvestors", "foreigninstitutionalinvestor")
+OLD_OTHER = ("otherinstitutions",)
+NONINST = ("noninstitutions",)
+GOV = ("governments", "goverments")
+TRUSTS = ("employeebenefitstrusts", "employeetrusts")
+TOTAL, PUBLIC, CUSTODIAN = ("shareholdingpattern",), ("publicshareholding",), ("custodianordrholder",)
+NPNP = ("sharesheldbynonpromoternonpublicshareholders",)
+
+
+def first(rows, names):
+    for n in names:
+        if n in rows:
+            return rows[n]
+    return None
+
+
+def detect_format(rows):
+    if first(rows, DOM) or first(rows, FOR_NEW):      # one missing row is a flagged gap later, not an unknown structure
+        return FORMAT_NEW
+    if first(rows, OLD_INST) or first(rows, OLD_FPI):
+        return FORMAT_OLD
+    return None
+
+
+def detect_unit(rows):
+    """'percent' (0-100) or 'fraction' (0-1) from the total row; None when it cannot be told."""
+    t = first(rows, TOTAL)
+    p = t["pct"] if t else None
+    if p is None:
+        return None
+    if 0.99 <= p <= 1.01:
+        return "fraction"
+    if 99 <= p <= 101:
+        return "percent"
+    return None
+
+
+def map_categories(rows):
+    """rows (one quarter, {norm: row}) -> dict(values, format_version, percent_unit, diagnostics, flags, problem).
+    Never forces a total to 100, never fills a missing category row with a made-up number."""
+    flags, unit, fmt = [], detect_unit(rows), detect_format(rows)
+    if unit is None:
+        return {"problem": "the percentage unit (0-100 or 0-1) could not be detected from the total row", "flags": flags}
+    if fmt is None:
+        return {"problem": "the category structure is not one of the two known formats", "flags": flags}
+    k = 100.0 if unit == "fraction" else 1.0
+
+    def pct(names):
+        r = first(rows, names)
+        return None if (r is None or r["pct"] is None) else r["pct"] * k
+
+    def sh(names):
+        r = first(rows, names)
+        return None if r is None else r["shares"]
+
+    def missing(label):
+        flags.append({"code": FLAG_ROW_MISSING, "detail": label})
+
+    pub = pct(PUBLIC)
+    if first(rows, PROM) is None:
+        if pub is not None and pub >= 99.5:
+            prom, prom_absent = 0.0, True            # the public holds everything: there is no promoter group (not a parse miss)
+        else:
+            prom, prom_absent = None, False
+            missing("promoters")
+    else:
+        prom, prom_absent = pct(PROM), False
+        if prom is None:
+            missing("promoters")
+    mf, ni = pct(MF), pct(NONINST)
+    if mf is None:
+        missing("mutual_funds")
+    if ni is None:
+        missing("retail_other (non-institutions)")
+    gov = pct(GOV) or 0.0
+    trusts = pct(TRUSTS)
+    if fmt == FORMAT_NEW:
+        fii, dom = pct(FOR_NEW), pct(DOM)
+        other = None if (dom is None or mf is None) else dom - mf
+        s0 = None if None in (prom, fii, dom, ni) else prom + fii + dom + ni + gov
+    else:
+        fpi, inst = pct(OLD_FPI), pct(OLD_INST)
+        old_fii = pct(FII_OLD) or 0.0
+        fii = None if fpi is None else fpi + old_fii
+        other = None if (inst is None or fpi is None or mf is None) else inst - fpi - old_fii - mf
+        dom = inst
+        s0 = None if None in (prom, inst, ni) else prom + inst + ni + gov
+        oi = first(rows, OLD_OTHER)
+        if oi and oi["pct"]:
+            flags.append({"code": FLAG_OTHER_INST, "detail": "the filing has an 'Other Institutions' row (%.2f%%); it cannot be split between foreign and domestic, so it sits in other_dii" % (oi["pct"] * k)})
+    if fii is None:
+        missing("fii")
+    if dom is None:
+        missing("institutions")
+    # employee trusts: a separate holder outside Public (new filings) or nested inside non-institutions (some old ones). The sum tells which.
+    mode = "none"
+    if trusts:
+        mode = "separate" if (s0 is not None and abs(s0 + trusts - 100) < abs(s0 - 100)) else "nested"
+        if s0 is None:
+            mode = "separate"
+    retail = None if ni is None else ni + gov + (trusts if mode == "separate" else 0.0)
+    values = {"promoters": r2(prom), "fii": r2(fii), "other_dii": r2(other), "mutual_funds": r2(mf), "retail_other": r2(retail)}
+    total = None if None in values.values() else round(sum(values.values()), 2)
+    if total is not None and abs(total - 100) > SUM_TOLERANCE:
+        flags.append({"code": FLAG_SUM, "detail": "the five categories add up to %.2f" % total})
+    # share counts, on the basis the percentages use (the total without the shares underlying depository receipts)
+    tot_sh = sh(TOTAL)
+    dr = sh(CUSTODIAN)
+    basis = None if tot_sh is None else tot_sh - (dr or 0.0)
+    derived = None
+    conflict = None
+    if basis:
+        def d(x):
+            return None if x is None else round(x / basis * 100, 2)
+        ps = 0.0 if prom_absent else sh(PROM)
+        mfs, nis, govs, trs = sh(MF), sh(NONINST), sh(GOV) or 0.0, sh(TRUSTS)
+        if fmt == FORMAT_NEW:
+            fs, ds = sh(FOR_NEW), sh(DOM)
+            os_ = None if (ds is None or mfs is None) else ds - mfs
+        else:
+            fs, ins = sh(OLD_FPI), sh(OLD_INST)
+            os_ = None if (ins is None or fs is None or mfs is None) else ins - fs - mfs
+        rs = None if nis is None else nis + govs + ((trs or 0.0) if mode == "separate" else 0.0)
+        derived = {"promoters": d(ps), "fii": d(fs), "other_dii": d(os_), "mutual_funds": d(mfs), "retail_other": d(rs)}
+        diffs = {c: round(abs(values[c] - derived[c]), 2) for c in CATEGORIES if values[c] is not None and derived[c] is not None}
+        if diffs and max(diffs.values()) > CONFLICT_PP:
+            conflict = {"max_abs_diff_pp": max(diffs.values()), "diff_pp": diffs}
+            flags.append({"code": FLAG_CONFLICT, "detail": "the reported percentages differ from the filing's own share counts by up to %.2f percentage points" % max(diffs.values())})
+    diagnostics = {
+        "total_reported_pct": total,
+        "employee_trusts_pct": r2(trusts),
+        "employee_trusts_mode": mode,
+        "retail_other_excl_trusts": None if retail is None else r2(retail - (trusts if mode == "separate" else 0.0)),
+        "governments_pct": r2(gov),
+        "promoter_row_absent": prom_absent,
+        "share_basis_total": basis,
+        "dr_custodian_shares": dr,
+        "non_promoter_non_public_shares": sh(NPNP),
+        "share_derived_pct": derived,
+        "conflict": conflict,
+    }
+    return {"values": values, "format_version": fmt, "percent_unit": unit, "diagnostics": diagnostics, "flags": flags, "problem": None}
+
+
+# ---------------------------------------------------------------- one quarter
+def source_meta(rec, url):
+    revised = any(str(rec.get(k) or "").strip().lower() == "revised" for k in ("revisedStatus", "revisedData"))
+    remark = str(rec.get("revisionRemark") or rec.get("revisedRemark") or "").strip()
+    return {
+        "provider": "NSE",
+        "record_id": str(rec.get("recordId")) if rec.get("recordId") not in (None, "") else None,
+        "xbrl_url": url,
+        "broadcast_date": iso(rec.get("broadcastDate")),
+        "submission_date": iso(rec.get("submissionDate")),
+        "revised": revised,
+        "revision_date": iso(rec.get("revisionDate") or rec.get("revisedDate")) if revised else None,
+        "revision_remark": (remark[:600] or None) if revised else None,
+    }
+
+
+def empty_values():
+    return {c: None for c in CATEGORIES}
+
+
+def build_record(rec, qdate, data, used_url, err, day):
+    """The new ledger record for one quarter. data is the XBRL bytes, or None with err saying why not."""
+    listed = rec.get("xbrl") if isinstance(rec.get("xbrl"), str) else None
+    src = source_meta(rec, used_url or listed)
+    if used_url and listed and used_url != listed:
+        src["xbrl_url_listed"] = listed
+    base = {"quarter_end": qdate.isoformat(), "status": "unavailable", "reason": None, "values": empty_values(), "format_version": None,
+            "percent_unit": None, "diagnostics": None, "quality": {"status": "ok", "flags": []}, "raw": None, "source": src, "fetched": day, "revisions": []}
+    if data is None:
+        base["reason"] = "the XBRL file could not be obtained (%s)" % (err or "no URL listed")
+        base["quality"] = {"status": "flagged", "flags": [{"code": "xbrl-unavailable", "detail": base["reason"]}]}
+        return base
+    try:
+        parsed = parse_xbrl(data)
+    except ET.ParseError as e:
+        base["reason"] = "the XBRL file could not be parsed (%s)" % type(e).__name__
+        base["quality"] = {"status": "flagged", "flags": [{"code": "xbrl-unparsable", "detail": base["reason"]}]}
+        return base
+    flags = []
+    want = parsed["report_date"] or qdate.isoformat()
+    if parsed["report_date"] and parsed["report_date"] != qdate.isoformat():
+        flags.append({"code": FLAG_REPORT_DATE, "detail": "the filing says %s; the index says %s; the filing's own date is used" % (parsed["report_date"], qdate.isoformat())})
+    rows = {n: r for (n, per), r in parsed["rows"].items() if per == want}
+    if not rows:
+        base["reason"] = "the XBRL holds no category rows for %s" % want
+        base["quality"] = {"status": "flagged", "flags": [{"code": "xbrl-no-rows", "detail": base["reason"]}]}
+        return base
+    if parsed["duplicates"]:
+        flags.append({"code": FLAG_DUPLICATE, "detail": "the same member appears with different values: " + ", ".join(parsed["duplicates"][:6])})
+    m = map_categories(rows)
+    base["raw"] = {"total_shares": (first(rows, TOTAL) or {}).get("shares"),
+                   "rows": {r["member"]: [r["shares"], r["pct"]] for r in sorted(rows.values(), key=lambda x: x["member"])}}
+    if m["problem"]:
+        base["reason"] = m["problem"]
+        base["quality"] = {"status": "flagged", "flags": flags + [{"code": "xbrl-unmappable", "detail": m["problem"]}]}
+        return base
+    base.update(status="available", values=m["values"], format_version=m["format_version"], percent_unit=m["percent_unit"], diagnostics=m["diagnostics"])
+    flags += m["flags"]
+    base["quality"] = {"status": "flagged" if flags else "ok", "flags": flags}
+    return base
+
+
+# ---------------------------------------------------------------- the index
+def select_filings(records):
+    """(keep: {date: record}, skipped: [..]). Only quarter-end filings from START_QUARTER on are quarters; the latest broadcast wins a duplicate."""
+    keep, skipped = {}, []
+    for r in records:
+        d = pdate(r.get("date"))
+        info = {"date": d.isoformat() if d else None, "record_id": str(r.get("recordId")) if r.get("recordId") not in (None, "") else None,
+                "broadcast_date": iso(r.get("broadcastDate"))}
+        if d is None:
+            skipped.append(dict(info, reason="unparsable date"))
+        elif (d.month, d.day) not in QUARTER_ENDS:
+            skipped.append(dict(info, reason="off-cycle filing (not a quarter end)"))
+        elif d < START_QUARTER:
+            skipped.append(dict(info, reason="before Sep 2021 (outside the verified window)"))
+        elif d in keep:
+            a, b = keep[d], r
+            if _newer(b, a):
+                skipped.append(dict(info_of(a), reason="superseded duplicate"))
+                keep[d] = b
+            else:
+                skipped.append(dict(info, reason="superseded duplicate"))
+        else:
+            keep[d] = r
+    return keep, skipped
+
+
+def info_of(r):
+    d = pdate(r.get("date"))
+    return {"date": d.isoformat() if d else None, "record_id": str(r.get("recordId")), "broadcast_date": iso(r.get("broadcastDate"))}
+
+
+def _stamp(r):
+    try:
+        return dt.datetime.strptime(str(r.get("broadcastDate")).strip().upper(), "%d-%b-%Y %H:%M:%S")
+    except ValueError:
+        d = pdate(r.get("broadcastDate"))
+        return dt.datetime.combine(d, dt.time()) if d else dt.datetime.min
+
+
+def _newer(a, b):
+    return (_stamp(a), fnum(a.get("recordId")) or 0) > (_stamp(b), fnum(b.get("recordId")) or 0)
+
+
+# ---------------------------------------------------------------- the ledger
+def new_stock(symbol, isin, name):
+    return {"symbol": symbol, "isin": isin, "name": name, "quarters": []}
+
+
+def sort_quarters(stock):
+    stock["quarters"].sort(key=lambda r: r["quarter_end"], reverse=True)
+
+
+def _snapshot(rec, day):
+    return {"recorded": day, "status": rec.get("status"), "reason": rec.get("reason"), "values": copy.deepcopy(rec.get("values")),
+            "format_version": rec.get("format_version"), "source": copy.deepcopy(rec.get("source")), "quality": copy.deepcopy(rec.get("quality"))}
+
+
+def _core(rec):
+    return (rec.get("status"), json.dumps(rec.get("values"), sort_keys=True), (rec.get("source") or {}).get("record_id"))
+
+
+def merge_record(old, new, day):
+    """(record, event). Events: added, unchanged, revised, refreshed, resurrected, kept-existing. Never loses a value or a quarter."""
+    if old is None:
+        return new, "added"
+    if old.get("status") == "available" and new.get("status") != "available":
+        return old, "kept-existing"                      # a failed re-fetch never erases a quarter that was read
+    if old.get("status") != "available" and new.get("status") == "available":
+        new["revisions"] = list(old.get("revisions") or []) + [_snapshot(old, day)]
+        return new, "resurrected"
+    if old.get("status") != "available":                 # unavailable both times: the latest attempt describes it; history is kept
+        new["revisions"] = list(old.get("revisions") or [])
+        if _core(old) == _core(new) and old.get("reason") == new.get("reason") and old.get("source") == new.get("source"):
+            return old, "unchanged"
+        return new, "refreshed"
+    kept = []
+    for c in CATEGORIES:
+        if new["values"].get(c) is None and old["values"].get(c) is not None:
+            new["values"][c] = old["values"][c]          # an existing non-null value never silently becomes null
+            kept.append(c)
+    if kept:
+        new["quality"]["flags"].append({"code": FLAG_KEPT, "detail": "the new filing gave no value for " + ", ".join(kept) + "; the previous value is kept"})
+        new["quality"]["status"] = "flagged"
+    if _core(old) == _core(new):
+        same_rest = all(old.get(k) == new.get(k) for k in ("format_version", "percent_unit", "diagnostics", "quality", "raw", "source"))
+        if same_rest:
+            return old, "unchanged"
+        new["revisions"], new["fetched"] = list(old.get("revisions") or []), old.get("fetched")
+        return new, "refreshed"                          # same values and same NSE version: only the explanation changed
+    new["revisions"] = list(old.get("revisions") or []) + [_snapshot(old, day)]
+    return new, "revised"
+
+
+def expected_quarters(newest):
+    """Every quarter end from START_QUARTER to newest (a date)."""
+    out, y, m = [], START_QUARTER.year, START_QUARTER.month
+    while (y, m) <= (newest.year, newest.month):
+        out.append(dt.date(y, m, {3: 31, 6: 30, 9: 30, 12: 31}[m]).isoformat())
+        m += 3
+        if m > 12:
+            m, y = m - 12, y + 1
+    return out
+
+
+def process_stock(nse, ledger, symbol, day, budget, refresh_all=False):
+    """Fetch the index and every quarter that is new, revised or not yet read. Returns (events, skipped, error)."""
+    recs, err = nse.index(symbol)
+    if err:
+        return {}, [], "the NSE filing index could not be read (%s)" % err
+    if not recs:
+        return {}, [], "the NSE filing index was empty"
+    keep, skipped = select_filings(recs)
+    if not keep:
+        return {}, skipped, "the NSE filing index held no quarter-end filings from Sep 2021"
+    sample = next(iter(keep.values()))
+    st = ledger["stocks"].setdefault(symbol, new_stock(symbol, sample.get("isin"), sample.get("name")))
+    if sample.get("isin") and not st.get("isin"):
+        st["isin"] = sample["isin"]
+    have = {r["quarter_end"]: r for r in st["quarters"]}
+    events = {}
+    for d in sorted(keep, reverse=True):
+        rec, q = keep[d], d.isoformat()
+        old = have.get(q)
+        rid = str(rec.get("recordId")) if rec.get("recordId") not in (None, "") else None
+        if old and old.get("status") == "available" and (old.get("source") or {}).get("record_id") == rid and not refresh_all:
+            events[q] = "unchanged"
+            continue
+        listed = rec.get("xbrl") if isinstance(rec.get("xbrl"), str) and rec.get("xbrl", "").startswith("https://") else None
+        if budget[0] <= 0:
+            events[q] = "not-attempted"
+            continue
+        data, used, e = (None, None, "the index lists no XBRL file") if not listed else fetch_xbrl(nse, listed)
+        if listed:
+            budget[0] -= 1
+        new = build_record(rec, d, data, used, e, day)
+        merged, ev = merge_record(old, new, day)
+        events[q] = ev
+        if old is None:
+            st["quarters"].append(merged)
+        else:
+            st["quarters"][st["quarters"].index(old)] = merged
+        have[q] = merged
+    sort_quarters(st)
+    return events, skipped, None
+
+
+# ---------------------------------------------------------------- the Upstox cross-check (latest quarter only; never changes a value)
+UPSTOX_CAT = {"promoters": "promoters", "fii": "fii", "other_dii": "other_dii", "mutual_funds": "mutual_funds", "retail_other": "retail_and_other"}
+MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def cross_check(api, stock):
+    latest = next((r for r in stock["quarters"] if r.get("status") == "available"), None)
+    if latest is None:
+        return {"status": "unavailable", "reason": "no available quarter to compare"}
+    if api is None:
+        return {"status": "skipped", "quarter_end": latest["quarter_end"], "reason": "no Upstox token in this run"}
+    body, err = api.get(stock["isin"] + "/share-holdings") if stock.get("isin") else (None, "no ISIN")
+    if err:
+        return {"status": "unavailable", "quarter_end": latest["quarter_end"], "reason": "Upstox: " + err}
+    d = dt.date.fromisoformat(latest["quarter_end"])
+    label = "%s %d" % (MONTH_NAMES[d.month - 1], d.year)
+    up = {}
+    for item in (body.get("data") or []) if isinstance(body, dict) else []:
+        for h in (item.get("history") or []) if isinstance(item, dict) else []:
+            if isinstance(h, dict) and h.get("period") == label and isnum(h.get("value")):
+                up[item.get("category")] = float(h["value"])
+    if not up:
+        return {"status": "unavailable", "quarter_end": latest["quarter_end"], "reason": "Upstox does not return %s" % label}
+    diffs = {}
+    for c in CATEGORIES:
+        o, u = latest["values"].get(c), up.get(UPSTOX_CAT[c])
+        diffs[c] = {"official": o, "upstox": u, "diff": None if (o is None or u is None) else round(o - u, 2)}
+    nums = [abs(v["diff"]) for v in diffs.values() if v["diff"] is not None]
+    ok = bool(nums) and max(nums) <= CROSS_TOLERANCE and len(nums) == len(CATEGORIES)
+    return {"status": "match" if ok else "mismatch", "quarter_end": latest["quarter_end"], "max_abs_diff": max(nums) if nums else None, "categories": diffs}
+
+
+# ---------------------------------------------------------------- the published file
+def public_quarter(r):
+    out = {k: copy.deepcopy(r.get(k)) for k in ("quarter_end", "status", "reason", "values", "format_version", "percent_unit", "diagnostics", "quality", "source", "fetched", "revisions")}
+    return out
+
+
+def build_output(ledger, extra, day):
+    """out/shareholding.json from the ledger. extra[symbol] = {'skipped', 'cross_check', 'error'}."""
+    stocks, total, avail, flagged = {}, 0, 0, 0
+    for sym in SYMBOLS:
+        st = ledger["stocks"].get(sym)
+        if not st:
+            continue
+        qs = [public_quarter(r) for r in st["quarters"]]
+        have = {r["quarter_end"] for r in qs}
+        newest = max(have) if have else None
+        exp = expected_quarters(dt.date.fromisoformat(newest)) if newest else []
+        e = extra.get(sym) or {}
+        stocks[sym] = {
+            "symbol": sym, "isin": st.get("isin"), "name": st.get("name"), "quarters": qs,
+            "coverage": {"count": len(qs), "available": sum(1 for r in qs if r["status"] == "available"), "oldest": min(have) if have else None, "newest": newest,
+                         "missing_quarters": [q for q in exp if q not in have], "unavailable_quarters": [r["quarter_end"] for r in qs if r["status"] != "available"]},
+            "off_cycle_filings": e.get("skipped") or [],
+            "cross_check": e.get("cross_check"),
+            "error": e.get("error"),
+        }
+        total += len(qs)
+        avail += stocks[sym]["coverage"]["available"]
+        flagged += sum(1 for r in qs if (r.get("quality") or {}).get("status") == "flagged")
+    return {"schema": SCHEMA_VERSION, "as_of": day, "categories": CATEGORIES, "notes": NOTES, "stocks": stocks,
+            "summary": {"stocks": len(stocks), "quarter_records": total, "available": avail, "unavailable": total - avail, "flagged": flagged}}
+
+
+def validate_doc(doc):
+    p = []
+    if not isinstance(doc, dict) or doc.get("schema") != SCHEMA_VERSION or not isinstance(doc.get("stocks"), dict):
+        return ["wrong shape or schema"]
+    if doc.get("categories") != CATEGORIES:
+        p.append("categories changed")
+    for sym, st in doc["stocks"].items():
+        seen = set()
+        qs = st.get("quarters")
+        if not isinstance(qs, list):
+            p.append(sym + ": quarters is not a list")
+            continue
+        if [r.get("quarter_end") for r in qs] != sorted((r.get("quarter_end") for r in qs), reverse=True):
+            p.append(sym + ": quarters are not newest first")
+        for r in qs:
+            w = "%s %s: " % (sym, r.get("quarter_end"))
+            q = r.get("quarter_end")
+            if not (isinstance(q, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", q) and (int(q[5:7]), int(q[8:])) in QUARTER_ENDS):
+                p.append(w + "not a quarter end")
+            if q in seen:
+                p.append(w + "duplicate quarter")
+            seen.add(q)
+            if r.get("status") not in STATUS:
+                p.append(w + "bad status")
+            vals = r.get("values")
+            if not isinstance(vals, dict) or list(vals) != CATEGORIES:
+                p.append(w + "values must hold exactly the five categories")
+                continue
+            for c, v in vals.items():
+                if v is not None and not (isnum(v) and 0 <= v <= 100.5):
+                    p.append(w + "%s is not a percentage" % c)
+            src = r.get("source") or {}
+            if r.get("status") == "available":
+                if r.get("format_version") not in (FORMAT_OLD, FORMAT_NEW) or r.get("percent_unit") not in ("percent", "fraction"):
+                    p.append(w + "available quarter without format_version / percent_unit")
+                if not src.get("record_id") or not str(src.get("xbrl_url") or "").startswith("https://"):
+                    p.append(w + "available quarter without record id / https XBRL URL")
+                if any(v is None for v in vals.values()) and not any(f.get("code") == FLAG_ROW_MISSING for f in (r.get("quality") or {}).get("flags", [])):
+                    p.append(w + "a null category without a flag")
+            else:
+                if any(v is not None for v in vals.values()):
+                    p.append(w + "an unavailable quarter must hold no values")
+                if not r.get("reason"):
+                    p.append(w + "an unavailable quarter must say why")
+            q_ = r.get("quality") or {}
+            if q_.get("status") not in ("ok", "flagged") or (q_.get("status") == "ok") != (not q_.get("flags")):
+                p.append(w + "quality status does not match its flags")
+    return p
+
+
+def count_values(ledger):
+    return sum(1 for s in ledger["stocks"].values() for r in s.get("quarters", []) for v in (r.get("values") or {}).values() if v is not None)
+
+
+# ---------------------------------------------------------------- main
+def main():
+    day = today()
+    try:
+        source, kind = sl.choose_source(os.environ.get("SHAREHOLDING_LEDGER_DIR", "").strip(), os.environ.get("SHAREHOLDING_INIT", "").strip().lower() == "true")
+        old = sl.load_ledger(source) if source else sl.new_ledger()
+    except sl.StorageError as e:
+        print("::error::" + str(e))
+        return 1
+    ledger = copy.deepcopy(old)
+    wanted = [s.strip().upper() for s in os.environ.get("SHAREHOLDING_SYMBOLS", "").split(",") if s.strip()] or list(SYMBOLS)
+    bad = [s for s in wanted if s not in SYMBOLS]
+    if bad:
+        print("::error::Unknown symbols: " + ", ".join(bad))
+        return 1
+    refresh_all = os.environ.get("SHAREHOLDING_REFRESH", "").strip().lower() == "all"
+    budget = [int(os.environ.get("SHAREHOLDING_MAX_DOWNLOADS", "") or DEFAULT_MAX_DOWNLOADS)]
+    nse = Nse()
+    extra, failed = {}, 0
+    log("Ledger source:", kind, "- symbols:", ",".join(wanted))
+    for sym in wanted:
+        events, skipped, err = process_stock(nse, ledger, sym, day, budget, refresh_all)
+        extra[sym] = {"skipped": skipped, "error": err}
+        if err:
+            failed += 1
+            log(sym, "- PROBLEM:", err)
+            continue
+        counts = {}
+        for ev in events.values():
+            counts[ev] = counts.get(ev, 0) + 1
+        log(sym, "-", ", ".join("%s %d" % (k, v) for k, v in sorted(counts.items())), "| skipped filings:", len(skipped))
+    if failed == len(wanted):
+        print("::error::No stock could be processed; nothing is written.")
+        return 1
+    api = None
+    token = os.environ.get("UPSTOX_ANALYTICS_TOKEN", "").strip()
+    if token:
+        api = Upstox(token, 20)
+    rejected = False
+    for sym in wanted:
+        st = ledger["stocks"].get(sym)
+        if not st:
+            continue
+        if rejected:
+            extra[sym]["cross_check"] = {"status": "unavailable", "reason": "Upstox rejected the token earlier in this run"}
+            continue
+        try:
+            extra[sym]["cross_check"] = cross_check(api, st)
+        except SystemExit:
+            extra[sym]["cross_check"] = {"status": "unavailable", "reason": "Upstox rejected the token"}
+            rejected = True
+    problems = sl.no_loss_problems(old, ledger)
+    doc = build_output(ledger, extra, day)
+    problems += ["output: " + x for x in validate_doc(doc)]
+    if problems:
+        for x in problems[:30]:
+            print("::error::" + x)
+        return 1
+    out_ledger = Path(os.environ.get("SHAREHOLDING_LEDGER_OUT", "").strip() or LEDGER_FILE)
+    out_ledger.parent.mkdir(parents=True, exist_ok=True)
+    out_ledger.write_text(json.dumps(ledger, indent=1, allow_nan=False, sort_keys=False) + "\n", encoding="utf-8")
+    write_json(OUT_FILE, doc)
+    s = doc["summary"]
+    log("Wrote", OUT_FILE, "-", s["stocks"], "stocks,", s["quarter_records"], "quarter records,", s["unavailable"], "unavailable,", s["flagged"], "flagged; downloads:", nse.downloads)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
