@@ -124,7 +124,7 @@ re(h, /Change and CAGR are not calculated across FY2022 to FY2023 for ITC\./, "I
 h = C.build("#compare=HDFCBANK,TCS,SBIN", D());
 eq(tables(h), ["overview", "revenue", "total_revenue", "profit_before_tax", "profit_after_tax", "eps_basic", "operating_cash_flow"], "a mixed set has a separate Revenue table and Total income table");
 eq(heads(h, "revenue"), ["TCS"], "Revenue lists only the non-bank"); eq(heads(h, "total_revenue"), ["HDFCBANK", "SBIN"], "Total income lists only the banks");
-re(h, /Revenue \(non-bank companies\)/, "labelled"); re(h, /Total income \(banks\)/, "labelled");
+re(h, /<h4[^>]*data-ctitle="revenue">Revenue \(non-bank companies\)<\/h4>/, "the history table is titled Revenue (non-bank companies)"); re(h, /<h4[^>]*data-ctitle="total_revenue">Total income \(banks\)<\/h4>/, "and the bank table Total income (banks)");
 re(text(h), /Banks report total income, which is not the same measure as revenue, so the two are shown in separate tables and are not compared/, "and explained");
 eq(heads(h, "profit_after_tax"), ["HDFCBANK", "TCS", "SBIN"], "other tables keep the requested order");
 const bankTbl = h.match(/<table data-ctable="total_revenue">.*?<\/table>/s)[0]; no(text(bankTbl), /Revenue/i, "the word Revenue never appears in the bank table");
@@ -155,7 +155,7 @@ q = px(["LT", "TCS"]); re(text(q.h), /as of 2026-10-02 \(not a live price\)/, "a
 for (const bad of [{}, { stocks: [] }, { stocks: { TCS: null } }, { stocks: { TCS: { candles: "x" } } }, { stocks: { TCS: { candles: [cd("2026-10-02", NaN), cd("2026-10-01", Infinity)] } } }, { stocks: { TCS: { candles: [cd("2026-10-02", "100"), cd("2026-10-01", 90)] } } }]) eq(row(C.build("#compare=TCS,ITC", D({ prices: bad })), "overview", "crow", "ltp").slice(1, 2), ["-"], "malformed price file " + JSON.stringify(bad).slice(0, 50) + ": dash, no error");
 { const rr = row(C.build("#compare=TCS,ITC", D({ prices: { stocks: { TCS: { candles: [cd("2026-10-01", -50), cd("2026-10-02", 100)] } } } })), "overview", "crow", "change"); eq(rr[1], "-", "a previous close of zero or less gives no change figure"); }
 const dd0 = D(), snap0 = JSON.stringify(dd0.prices); C.build("#compare=SBIN,TCS", dd0); eq(JSON.stringify(dd0.prices), snap0, "reading prices never reorders or changes the candles in the data");
-no(C.build("#compare=TCS,INFY", D()), /Price returns|1M|6M|1Y|<svg/, "no price returns and no chart");
+no(C.build("#compare=TCS,INFY", D()), /Price returns|1M|6M|1Y/, "no price returns");
 h = C.build("#compare=TCS,ITC", D({ hist: null })); re(h, /data-cstate="history">Financial history unavailable\./, "history file unavailable: stated"); eq(tables(h), ["overview"], "overview still shown"); eq(row(h, "overview", "crow", "pe").slice(1).length, 2, "with the fundamentals");
 h = C.build("#compare=TCS,ITC", D({ hist: { stocks: [] } })); re(h, /Financial history unavailable\./, "a malformed history file is unavailable, not an error");
 h = C.build("#compare=TCS,ITC", { val: null, hist: null, prices: null }); re(h, /data-cstate="unavailable">Comparison data is unavailable right now\./, "no data at all: one clear message"); no(h, /data-picker/, "and no picker");
@@ -279,7 +279,7 @@ const DETAILHTML = (s) => '<p><button id="detailBack">Back</button></p><h2>Stock
   }
   eq((cmpCode.match(/fetch\(/g) || []).length, 1, "the compare module makes one fetch call (in one helper)"); eq([...new Set(cmpCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/financial_history.json", "out/fundamentals.json", "out/historical.json"], "reading exactly three files");
   no(cmpCode, /localStorage|sessionStorage|indexedDB|XMLHttpRequest|eval\(|document\.write|<script|https?:|scans\.json|financials\.json|innerHTML\s*\+=|Function\(/, "no storage, no outside address, no scans file, no statements file, no eval");
-  no(cmpCode, /createChart|LightweightCharts|<svg|<canvas/i, "no chart in Phase 5B");
+  no(cmpCode, /createChart|LightweightCharts|<canvas/i, "no chart library and no canvas (Phase 5C charts are inline SVG)");
   no(cmpCode, /Phase 4 Step 4E/, "the module does not copy the history module"); ok(!/getElementById\("detail(Research|Checklist|Tech|Chart)"\)/.test(cmpCode), "and does not reach into the other detail sections");
   re(html, /<style>[\s\S]*?<\/style><\/head>/, "the page's own stylesheet is still where it was"); no(html.split(CMPTAG)[0].split("<style>")[1].split("</style>")[0], /compare/i, "and has no compare rules: they are injected by the module");
   console.log("Financial history compare tests passed (" + checks + " checks)");

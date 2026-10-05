@@ -1431,6 +1431,82 @@ function history(d,syms,ms){
   h+=notes.map(function(n){return'<p class="note" style="padding:6px 0 0" data-cnote="1">'+esc(n)+'</p>'}).join("");
   return h}
 
+/* ---------- Phase 5C: charts (inline SVG; they only READ the same data and the same functions as the tables above) ----------
+   One bar per stock, in the order the stocks were chosen. Bars start at zero; negatives hang below the zero line; a stock with no value gets an empty slot (never zero, never carried
+   forward). Fewer than two stocks with a value: no chart, a plain message instead. Banks report Total income, so in a mixed set banks and other companies are charted separately.
+   One colour for every bar, so nothing is shown as better or worse. Level and change charts use ONE fiscal year per chart (the latest one on file among the charted stocks);
+   a stock without that year is left empty. CAGR uses each stock's fixed window from the Financial History rules. No ranking, no advice. */
+var CW=320,CH=196,CT=30,CB=48,CR=8;
+function niceAxis(lo,hi){
+  lo=Math.min(0,lo);hi=Math.max(0,hi);
+  if(lo===0&&hi===0)return{min:0,max:1,ticks:[0,1]};
+  var raw=(hi-lo)/4,mag=Math.pow(10,Math.floor(Math.log10(raw))),f=raw/mag,step=(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*mag;
+  var min=Math.floor(lo/step+1e-9)*step,max=Math.ceil(hi/step-1e-9)*step,t=[];
+  for(var v=min;v<=max+step/1e6;v+=step)t.push(+v.toFixed(10));
+  return{min:t[0],max:t[t.length-1],ticks:t}}
+function barChart(key,title,slots,fmt,cap){
+  var vals=slots.filter(function(s){return s.v!==null}).map(function(s){return s.v});
+  var capHtml=cap?'<p class="note" style="padding:2px 0 0;margin:0">'+esc(cap)+'</p>':"";
+  if(vals.length<2)return'<figure data-cchart="'+esc(key)+'" data-state="unavailable" style="margin:0"><figcaption><b>'+esc(title)+'</b></figcaption><p class="note" style="padding:6px 0 0">Not enough values on file to chart this (needs at least two stocks with a value).</p></figure>';
+  var ax=niceAxis(Math.min.apply(null,vals),Math.max.apply(null,vals)),tl=ax.ticks.map(function(t){return N0.format(t)});
+  var ml=Math.max(34,10+5.6*Math.max.apply(null,tl.map(function(s){return s.length}))),pw=CW-ml-CR,ph=CH-CT-CB,n=slots.length,sw=pw/n,bw=Math.min(sw*0.6,48);
+  var Y=function(v){return CT+(ax.max-v)/(ax.max-ax.min)*ph},y0=Y(0),f1=function(v){return v.toFixed(1)};
+  var vLong=Math.max.apply(null,slots.map(function(s){return s.v===null?1:fmt(s.v).length})),sLong=Math.max.apply(null,slots.map(function(s){return s.sym.length}));
+  var vStag=vLong*5>sw*0.95,sStag=sLong*5.4>sw*0.95;
+  var g='<svg viewBox="0 0 '+CW+' '+CH+'" role="img" aria-label="__ARIA__" style="display:block;width:100%;height:auto" font-size="9">';
+  ax.ticks.forEach(function(t,i){var y=Y(t);
+    g+='<line x1="'+f1(ml)+'" x2="'+f1(CW-CR)+'" y1="'+f1(y)+'" y2="'+f1(y)+'" style="stroke:var(--line)" stroke-width="1"/><text x="'+f1(ml-4)+'" y="'+f1(y+3)+'" text-anchor="end" style="fill:var(--mute)">'+esc(tl[i])+'</text>'});
+  g+='<line x1="'+f1(ml)+'" x2="'+f1(CW-CR)+'" y1="'+f1(y0)+'" y2="'+f1(y0)+'" data-zero="1" style="stroke:var(--mute)" stroke-width="1.2"/>';
+  var aria=[];
+  slots.forEach(function(s,i){
+    var cx=ml+sw*i+sw/2,lab=s.v===null?"-":fmt(s.v);
+    aria.push(s.sym+" "+(s.v===null?"not available":lab));
+    if(s.v!==null){var y=Y(s.v),top=Math.min(y,y0),h=Math.abs(y0-y);
+      g+='<rect data-sym="'+esc(s.sym)+'" x="'+f1(cx-bw/2)+'" y="'+f1(top)+'" width="'+f1(bw)+'" height="'+f1(h)+'" style="fill:var(--ac)"><title>'+esc(s.sym)+': '+esc(lab)+'</title></rect>'}
+    var off=vStag&&i%2?11:0,ly=s.v===null?y0-3:(s.v<0?Y(s.v)+10+off:Y(s.v)-3-off);
+    g+='<text data-label="'+esc(s.sym)+'" x="'+f1(cx)+'" y="'+f1(ly)+'" text-anchor="middle" style="fill:var(--ink)">'+esc(lab)+'</text>';
+    g+='<text data-name="'+esc(s.sym)+'" x="'+f1(cx)+'" y="'+f1(CH-CB+28+(sStag&&i%2?11:0))+'" text-anchor="middle" style="fill:var(--mute)">'+esc(s.sym)+'</text>'});
+  g=g.replace("__ARIA__",esc(title+". "+aria.join("; ")+"."))+'</svg>';
+  return'<figure data-cchart="'+esc(key)+'" style="margin:0"><figcaption><b>'+esc(title)+'</b></figcaption>'+g+capHtml+'</figure>'}
+function cgroup(id,title,intro,figs){
+  return'<div class="panel" style="padding:16px;margin-top:14px" data-cgroup="'+id+'"><h4 style="margin:0 0 .2em">'+esc(title)+'</h4><p class="note" style="padding:0 0 8px">'+esc(intro)+'</p>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:14px">'+figs.join("")+'</div></div>'}
+function chartsHtml(d,syms,ms){
+  var F=fh(),h='<h3 style="margin:1.6em 0 .2em" data-ccharts-title="1">Charts</h3><p class="note" style="padding-left:0">One bar per stock, in the order the stocks were chosen. Bars start at zero; an empty slot means the value is not available, and nothing is estimated. Descriptive data only.</p>';
+  var ratio=function(key){return syms.map(function(s){var v=find(d.val,s),x=v?v[key]:null;return{sym:s,v:isn(x)?x:null}})};
+  h+=cgroup("valuation","Valuation","Ratios from the fundamentals data.",[barChart("pe","P/E",ratio("pe"),r2),barChart("pb","P/B",ratio("pb"),r2),barChart("ev_ebitda","EV/EBITDA",ratio("ev_ebitda"),r2)]);
+  h+=cgroup("profitability","Profitability","Percentages from the fundamentals data.",[barChart("roe","ROE (%)",ratio("roe"),r2),barChart("roce","ROCE (%)",ratio("roce"),r2),barChart("roa","ROA (%)",ratio("roa"),r2)]);
+  var okIdx=[];ms.forEach(function(m,i){if(m.state==="ok")okIdx.push(i)});
+  var unavailable=!F||!d.hist||!okIdx.length,bank=okIdx.filter(function(i){return ms[i].bank}),non=okIdx.filter(function(i){return!ms[i].bank});
+  var note=unavailable?"Financial history unavailable for the selected stocks.":"";
+  /* the metrics to chart: revenue (split into banks and others when both are present), then profit before tax, profit after tax, operating cash flow */
+  var rev=[];
+  if(non.length&&bank.length){rev.push({key:"revenue",label:"Revenue",title:"Revenue (non-bank companies)",idx:non});rev.push({key:"total_revenue",label:"Total income",title:"Total income (banks)",idx:bank})}
+  else if(bank.length)rev.push({key:"total_revenue",label:"Total income",title:"Total income",idx:bank});
+  else if(non.length)rev.push({key:"revenue",label:"Revenue",title:"Revenue",idx:non});
+  var lvl=rev.concat([{key:"profit_before_tax",label:"Profit before tax",title:"Profit before tax",idx:okIdx},{key:"profit_after_tax",label:"Profit after tax",title:"Profit after tax",idx:okIdx},{key:"operating_cash_flow",label:"Operating cash flow",title:"Operating cash flow",idx:okIdx,nogrowth:true}]);
+  var refOf=function(idx){var r=null;idx.forEach(function(i){var c=ms[i].cols;if(c.length&&(r===null||c[c.length-1].fy>r))r=c[c.length-1].fy});return r};
+  var colAt=function(i,fy){var out=null,c=ms[i].cols;for(var k=0;k<c.length;k++)if(c[k].fy===fy){out=k;break}return out};
+  var intro="₹ crore. One fiscal year per chart: the latest on file among the charted stocks. A stock with no value for that year is left empty and nothing is carried forward.";
+  if(!unavailable){
+    var figs=lvl.map(function(x){var ref=refOf(x.idx);
+      var slots=x.idx.map(function(i){var k=colAt(i,ref),v=k===null?null:ms[i].cols[k].v[x.key];return{sym:syms[i],v:isn(v)?v:null}});
+      return barChart("level-"+x.key,x.title+", FY"+ref+" (₹ crore)",slots,cr)});
+    var gnote=(non.length&&bank.length?"Banks report total income, which is not the same measure as revenue, so the two are charted separately and are not compared. ":"")+(bank.length?"Bank operating cash flow includes deposit and lending movements and is not comparable with other companies. ":"");
+    h+=cgroup("latest","Latest financials",(gnote+intro).trim(),figs)}
+  else h+=cgroup("latest","Latest financials",note,[]);
+  var gr=lvl.filter(function(x){return!x.nogrowth});
+  if(!unavailable){
+    var cf=gr.map(function(x){var ref=refOf(x.idx);
+      var slots=x.idx.map(function(i){var k=colAt(i,ref),v=k===null?null:F.change(ms[i],k,x.key);return{sym:syms[i],v:isn(v)?v:null}});
+      return barChart("change-"+x.key,x.title+" change, FY"+ref+" vs FY"+(ref-1)+" (%)",slots,pc)});
+    var cg=gr.map(function(x){var wins=[];
+      var slots=x.idx.map(function(i){var c=F.cagr(ms[i],x.key);if(c)wins.push(syms[i]+" FY"+yy(c.from)+"–FY"+yy(c.to));return{sym:syms[i],v:c&&isn(c.pct)?c.pct:null}});
+      return barChart("cagr-"+x.key,x.title+", CAGR over a fixed window (%)",slots,pc,wins.length?"Windows: "+wins.join(", ")+".":"")});
+    h+=cgroup("growth","Growth","Change is the stock's fiscal year against the year just before it, when both have a value. CAGR uses a fixed window per stock (TCS FY2022–FY2026, all others FY2023–FY2026) and needs every year in it to have a positive value; the windows are not the same length for every stock. Operating cash flow gets no growth figure.",cf.concat(cg))}
+  else h+=cgroup("growth","Growth",note,[]);
+  return h}
+
 /* ---------- the picker ---------- */
 function picker(d,known,sel){
   var syms=Object.keys(known).sort();
@@ -1461,7 +1537,7 @@ function build(hash,d){
   h+=picker(d,known,sel);
   if(info.mode==="compare"&&sel.length>=MIN){
     var ms=models(d,sel);
-    h+='<div data-compare="'+esc(sel.join(","))+'">'+overview(d,sel,ms)+history(d,sel,ms)+'</div>'+'<p class="note" style="padding-left:0">Side-by-side data only. It is not a ranking, rating, recommendation or advice.</p>'}
+    h+='<div data-compare="'+esc(sel.join(","))+'">'+overview(d,sel,ms)+chartsHtml(d,sel,ms)+history(d,sel,ms)+'</div>'+'<p class="note" style="padding-left:0">Side-by-side data only. It is not a ranking, rating, recommendation or advice.</p>'}
   return h}
 
 /* ---------- loading and placement ---------- */
