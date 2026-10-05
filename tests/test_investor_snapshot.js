@@ -123,7 +123,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
 (async () => {
   // ================= 1. structure: the page is protected, the snapshot is a separate module =================
   eq(blocks.length, 7, "still exactly seven classic script blocks"); eq(html.split(FHTAG).length, 2, "one Financial History module"); eq(html.split(CMPTAG).length, 2, "one compare module"); eq(html.split(SNAPTAG).length, 2, "one snapshot module, with its own tag");
-  eq((html.match(/<script/g) || []).length, 11, "eleven script elements in all (Phase 5F adds the search module)");
+  eq((html.match(/<script/g) || []).length, 12, "twelve script elements in all (Phase 5F adds the search module, Phase 5G.2 the growth module)");
   ok(html.indexOf(CMPTAG) < html.indexOf(SNAPTAG), "the snapshot module comes after the modules it reads (Financial History, comparison)");
   let base = ""; try { base = cp.execSync("git show f7e8d14:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
@@ -131,7 +131,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
     eq(blocks.map(sha), ob.map(sha), "the seven classic blocks are byte-identical to f7e8d14 (Phase 5D.1), Stock Detail included");
     eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical to f7e8d14");
     eq(cmpCode.replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={"), modOf(base, CMPTAG), "the comparison module differs from f7e8d14 only by one added export name, priceFor");
-    const rest = html.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={");
+    const rest = html.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={");
     eq(rest, base, "the page without the snapshot module (and that one export) is identical to f7e8d14: dashboard, Stock Detail, comparison all untouched");
   }
 
@@ -185,7 +185,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
   // --- valuation
   eq([val(h, "valuation", "P/E"), val(h, "valuation", "P/B"), val(h, "valuation", "EV/EBITDA")], [f2(25.5), f2(12), f2(18)], "valuation from fundamentals");
   // --- placeholders
-  eq(un(grp(h, "future")).replace(/^.*?Future Growth Evidence\s*/, ""), "Detailed orders, capex, capacity expansion and management guidance will be added through the News & Announcements research layer.", "future growth evidence: only the placeholder");
+  eq(un(grp(h, "future")).replace(/^.*?Future Growth Evidence\s*/, ""), "Unavailable", "future growth evidence: only the empty spot that the growth module (Phase 5G.2) fills, saying Unavailable until it does"); re(grp(h, "future"), /<div data-growth-for="TCS"><p class="snap-t">Unavailable<\/p><\/div>/, "and that spot names the stock it belongs to");
   eq(un(grp(h, "ownership")).replace(/^.*?Ownership\s*/, ""), "Shareholding history will be added in the Shareholding Pattern phase.", "ownership: only the placeholder");
   eq(un(grp(h, "developments")).replace(/^.*?Recent Developments\s*/, ""), "Orders, capex, acquisitions and other corporate developments will be added through the News & Announcements layer.", "recent developments: only the placeholder");
   for (const g of ["future", "ownership", "developments"]) { no(un(grp(h, g)), /\d/, g + ": no number at all"); no(grp(h, g), /class="snap-i"/, g + ": no value cell"); }

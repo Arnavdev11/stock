@@ -202,7 +202,7 @@ const GOLDEN = "cdae1bbf378a2b58e10028459f12e9e277819819d0784bbd150ec8cf76bf8710
   eq([...new Set(researchCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json"], "research reads only the four static files");
   no(html, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization/i, "no token or auth header in the page"); no(html, /api\.upstox\.com/, "no Upstox call in the page");
   no(researchCode + checkCode, /\b(buy|sell|bullish|bearish|undervalued|overvalued|recommend\w*)\b/i, "no advice wording in the two changed blocks (the existing Step 1 / Step 2 suites check the rest)");
-  ok(!fs.existsSync(path.join(ROOT, "out")), "no generated out/ folder is shipped");
+  ok(!fs.existsSync(path.join(ROOT, "out")) || JSON.stringify(fs.readdirSync(path.join(ROOT, "out"))) === JSON.stringify(["growth_events.json"]), "no generated out/ folder is shipped (the only file under out/ is the curated growth_events.json of Phase 5G.2)");
 
   console.log("Profile tests passed (" + checks + " checks)");
 })().catch((e) => { console.error(e); process.exit(1); });

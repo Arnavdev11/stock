@@ -1795,7 +1795,7 @@ function build(s,d){
   var h='<h3 style="margin:1.4em 0 .4em">Investor Snapshot</h3>'
    +'<p class="note" style="padding-left:0">Facts already on this page, summarised; the detailed sections follow below. "-" is a missing value, "Unavailable" is data not on file, "N/A" is a value the source does not provide.</p>';
   h+='<div class="snap">'+priceGroup(s,d)+businessGroup(s,d,secs)+growthGroup(s,d)+ratiosGroup(secs)+healthGroup(s,d,secs)+cashGroup(secs)+valuationGroup(secs)
-   +grp("future","Future Growth Evidence",'<p class="snap-t">Detailed orders, capex, capacity expansion and management guidance will be added through the News &amp; Announcements research layer.</p>',null,true)
+   +grp("future","Future Growth Evidence",'<div data-growth-for="'+esc(s)+'"><p class="snap-t">Unavailable</p></div>',null,true)
    +grp("ownership","Ownership",'<p class="snap-t">Shareholding history will be added in the Shareholding Pattern phase.</p>')
    +grp("developments","Recent Developments",'<p class="snap-t">Orders, capex, acquisitions and other corporate developments will be added through the News &amp; Announcements layer.</p>')
    +"</div>";
@@ -2001,6 +2001,134 @@ function init(){
   return sec}
 init();
 window.SLSearch={entries:entries,search:search,clear:clear,norm:norm,tier:tier,MAX:MAX,init:init};
+})();
+</script>
+<script type="module" id="stocklens-growth">
+/* StockLens Phase 5G.2 - Future Growth Evidence: curated facts about orders, order book, capex, capacity, acquisitions and new businesses, shown inside the Investor Snapshot on Stock Detail only.
+   A separate module on purpose: the classic script blocks and the Financial History, comparison and search modules are untouched. The Investor Snapshot only provides the empty spot (data-growth-for) this module fills.
+   Data: out/growth_events.json, a static file of events taken by hand from primary official documents (company investor-relations pages, press releases, presentations, filings). The file is requested once, and only
+   when a Stock Detail page has the spot to fill; there is no other request, no API, no token. Every event carries its source name, its exact source URL and the quote that supports it. A value the source does not give is null.
+   Kinds are never mixed: order announced, order inflow, deal value (TCV) and order book are different measures; capex actual, approved and planned are different measures; capacity planned and operational are different
+   measures; an acquisition is announced unless the source says completed. An entry that breaks these rules is not shown. A category with no entry says "Unavailable", which is not a statement that nothing happened. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var TYPES=["order","order_book","capex","capacity","acquisition","business"];
+var MEASURES=["order_announced","order_inflow","deal_value_tcv","order_book","capex_actual","capex_approved","capex_planned","capacity_planned","capacity_operational"];
+var STATUSES=["announced","completed","approved","planned"];
+/* which measure each kind may carry: orders, order book, capex and capacity must say which measure they are; acquisitions and new businesses carry none */
+var MEASURE_OF={order:["order_announced","order_inflow","deal_value_tcv"],order_book:["order_book"],capex:["capex_actual","capex_approved","capex_planned"],capacity:["capacity_planned","capacity_operational"],acquisition:[null],business:[null]};
+/* which status each measure may carry: spent and operational things are never approved or planned; approved is never planned */
+var STATUS_OF={order_announced:[null,"announced"],order_inflow:[null],deal_value_tcv:[null],order_book:[null],capex_actual:[null,"completed"],capex_approved:[null,"approved"],capex_planned:[null,"planned"],capacity_operational:[null,"completed"],capacity_planned:[null,"planned","approved","announced"]};
+var MEASURE_LABEL={order_announced:"Order announced",order_inflow:"Order inflow",deal_value_tcv:"Deal value (TCV)",order_book:"Order book",capex_actual:"Capex (actual)",capex_approved:"Capex (approved)",capex_planned:"Capex (planned)",capacity_planned:"Capacity (planned)",capacity_operational:"Capacity (operational)"};
+var STATUS_LABEL={announced:"Announced",completed:"Completed",approved:"Approved",planned:"Planned"};
+var CATS=[["orders","Orders / Contracts","order"],["order_book","Order Book","order_book"],["capex","Capex","capex"],["capacity","Capacity Expansion","capacity"],["acquisitions","Acquisitions / JVs","acquisition"],["business","New Businesses","business"]];
+var CUR={INR:"₹",USD:"US$"};
+
+/* ---------- the rules an event must meet to be shown ---------- */
+function str(v){return typeof v==="string"&&v.trim()?v.trim():null}
+function isDate(s){
+  if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+  var p=s.split("-"),d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+  return d.getUTCFullYear()===+p[0]&&d.getUTCMonth()===+p[1]-1&&d.getUTCDate()===+p[2]}
+function isUrl(u){return typeof u==="string"&&/^https:\/\/[A-Za-z0-9.-]+(:\d+)?([\/?#]\S*)?$/.test(u)}
+function valid(e){
+  if(!e||typeof e!=="object")return false;
+  if(typeof e.symbol!=="string"||!SYM.test(e.symbol))return false;
+  if(!isDate(e.date)||!isDate(e.retrieved_on))return false;
+  if(TYPES.indexOf(e.event_type)<0)return false;
+  if(!str(e.title)||!str(e.source_name)||!str(e.evidence_quote)||!isUrl(e.source_url))return false;
+  var m=e.measure==null?null:e.measure;
+  if(m!==null&&MEASURES.indexOf(m)<0)return false;
+  if(MEASURE_OF[e.event_type].indexOf(m)<0)return false;
+  var st=e.status==null?null:e.status;
+  if(st!==null&&STATUSES.indexOf(st)<0)return false;
+  if(m!==null&&STATUS_OF[m].indexOf(st)<0)return false;
+  if(e.source_date!=null&&!isDate(e.source_date))return false;
+  if(e.value!=null){                                                             /* a value is a real positive number with its currency and unit; null means not disclosed, and zero is never used for that */
+    if(typeof e.value!=="number"||!isFinite(e.value)||e.value<=0)return false;
+    if(!str(e.currency)||!str(e.unit))return false}
+  return true}
+function keyOf(e){return[e.symbol,e.date,e.event_type,e.measure==null?"":e.measure,e.title,e.source_url].join("\u0001")}
+function forSymbol(doc,sym){
+  var list=doc&&Array.isArray(doc.events)?doc.events:[],seen=Object.create(null),out=[];
+  list.forEach(function(e){
+    if(!valid(e)||e.symbol!==sym)return;
+    var k=keyOf(e);if(seen[k])return;seen[k]=1;out.push(e)});
+  out.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:a.title<b.title?-1:a.title>b.title?1:a.source_url<b.source_url?-1:a.source_url>b.source_url?1:0});
+  return out}
+
+/* ---------- showing it ---------- */
+function fmtNum(n){
+  var s=String(n),p=s.split(".");
+  p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,",");return p.join(".")}
+function fmtValue(e){
+  if(e.value==null)return null;
+  var c=str(e.currency),u=str(e.unit);
+  return(CUR[c]||c)+" "+fmtNum(e.value)+" "+u}
+function eventHtml(e){
+  var v=fmtValue(e),m=e.measure==null?null:e.measure,st=e.status==null?null:e.status;
+  var h='<div class="gr-e"><p class="gr-t">'+esc(e.title)+'</p><p class="gr-m"><span class="gr-d">Date: '+esc(e.date)+'</span>'
+   +(m?'<span class="gr-l">'+esc(MEASURE_LABEL[m])+'</span>':"")
+   +(st?'<span class="gr-s">'+esc(STATUS_LABEL[st])+'</span>':"")
+   +(v?'<b class="gr-v">'+esc(v)+'</b>':"")
+   +(str(e.segment)?'<span class="gr-g">'+esc(e.segment)+'</span>':"")+'</p>';
+  if(str(e.description))h+='<p class="gr-x">'+esc(e.description)+'</p>';
+  h+='<p class="gr-src">Source: '+esc(e.source_name)+' <a href="'+esc(e.source_url)+'" target="_blank" rel="noopener noreferrer">View source</a></p>'
+   +'<details class="gr-q"><summary>Quote from the source</summary><blockquote>'+esc(e.evidence_quote)+'</blockquote></details></div>';
+  return h}
+function render(sym,doc){
+  if(!doc||typeof doc!=="object"||!Array.isArray(doc.events))return'<p class="snap-t">Unavailable</p>';
+  var list=forSymbol(doc,sym);
+  var h='<div class="gr"><div class="gr-grid">';
+  CATS.forEach(function(c){
+    var items=list.filter(function(e){return e.event_type===c[2]});
+    h+='<div class="gr-c" data-gr="'+c[0]+'"><h5>'+esc(c[1])+'</h5>'+(items.length?items.map(eventHtml).join(""):'<p class="gr-u">Unavailable</p>')+'</div>'});
+  h+='</div><p class="snap-n">Facts from official company documents, each with its source. Dates are the date of the source document. Order announced, order inflow, deal value (TCV) and order book are different measures, as are capex actual, approved and planned and capacity planned and operational. Unavailable means there is no verified entry in this dataset; it does not mean that nothing has happened.</p></div>';
+  return h}
+
+/* ---------- loading: one static file, once, only when a Stock Detail page has the spot ---------- */
+var STYLE='#detailSnapshot .gr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:10px}'
+ +'#detailSnapshot .gr-c{min-width:0;border-top:1px solid var(--line);padding-top:8px}'
+ +'#detailSnapshot .gr-c h5{margin:0 0 6px;font-size:.88rem}'
+ +'#detailSnapshot .gr-u{margin:0;color:var(--mute);font-size:.85rem}'
+ +'#detailSnapshot .gr-e{min-width:0;margin:0 0 10px}'
+ +'#detailSnapshot .gr-t{margin:0 0 3px;font-weight:600;font-size:.88rem;overflow-wrap:anywhere}'
+ +'#detailSnapshot .gr-m{display:flex;flex-wrap:wrap;gap:2px 8px;margin:0 0 3px;font-size:.8rem;min-width:0}'
+ +'#detailSnapshot .gr-m>*{min-width:0;overflow-wrap:anywhere}'
+ +'#detailSnapshot .gr-l,#detailSnapshot .gr-s,#detailSnapshot .gr-g{color:var(--mute)}'
+ +'#detailSnapshot .gr-x{margin:0 0 3px;font-size:.78rem;color:var(--mute);overflow-wrap:anywhere}'
+ +'#detailSnapshot .gr-src{margin:0;font-size:.78rem;color:var(--mute);overflow-wrap:anywhere}'
+ +'#detailSnapshot .gr-src a{overflow-wrap:anywhere;word-break:break-all}'
+ +'#detailSnapshot .gr-q summary{cursor:pointer;font-size:.78rem;color:var(--mute)}'
+ +'#detailSnapshot .gr-q blockquote{margin:4px 0 0;padding:6px 8px;border-left:3px solid var(--line);font-size:.8rem;overflow-wrap:anywhere}';
+function addStyle(){
+  if(!document.head||!document.createElement||$("growthStyle"))return;
+  var st=document.createElement("style");st.id="growthStyle";st.textContent=STYLE;document.head.appendChild(st)}
+var DATA=null;
+function load(){
+  if(DATA)return DATA;
+  DATA=fetch("out/growth_events.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return DATA}
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+function fill(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box||!box.querySelector)return;
+  var spot=box.querySelector("[data-growth-for]");
+  if(!spot||spot.getAttribute("data-growth-for")!==s||spot.getAttribute("data-growth-state"))return;
+  spot.setAttribute("data-growth-state","loading");
+  addStyle();
+  load().then(function(doc){
+    if(routeSymbol()!==s||!spot.parentNode)return;
+    spot.innerHTML=render(s,doc);spot.setAttribute("data-growth-state","done")})}
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){fill()}).observe(box0,{childList:true,subtree:true})}
+fill();
+window.SLGrowth={valid:valid,forSymbol:forSymbol,render:render,fmtValue:fmtValue,fill:fill,TYPES:TYPES,MEASURES:MEASURES,STATUSES:STATUSES};
 })();
 </script>
 <script>

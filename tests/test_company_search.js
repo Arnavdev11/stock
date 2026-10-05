@@ -9,6 +9,7 @@ const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stoc
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];
 const detailCode = blocks.find((b) => b.includes("Stock Detail view")), fhCode = modOf(html, FHTAG), cmpCode = modOf(html, CMPTAG), snapCode = modOf(html, SNAPTAG), srchCode = modOf(html, SRCHTAG);
 let checks = 0;
+const OLDSPOT = `'<p class="snap-t">Detailed orders, capex, capacity expansion and management guidance will be added through the News &amp; Announcements research layer.</p>'`, NEWSPOT = `'<div data-growth-for="'+esc(s)+'"><p class="snap-t">Unavailable</p></div>'`;
 const unesc = (x) => String(x).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 const eq = (a, b, m) => { checks++; assert.deepStrictEqual(a, b, m); }, ok = (c, m) => { checks++; assert.ok(c, m); },
       re = (s, r, m) => { checks++; assert.match(s, r, m); }, no = (s, r, m) => { checks++; assert.doesNotMatch(s, r, m); };
@@ -95,14 +96,14 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
 
 (async () => {
   // ================= 0. structure and protection =================
-  eq(blocks.length, 7, "still exactly seven classic script blocks"); eq((html.match(/<script/g) || []).length, 11, "eleven script elements in all"); eq(html.split(SRCHTAG).length, 2, "one search module, with its own tag");
+  eq(blocks.length, 7, "still exactly seven classic script blocks"); eq((html.match(/<script/g) || []).length, 12, "twelve script elements in all"); eq(html.split(SRCHTAG).length, 2, "one search module, with its own tag");
   ok(html.indexOf(SNAPTAG) < html.indexOf(SRCHTAG), "the search module comes after the snapshot module");
   let base = ""; try { base = cp.execSync("git show 6edaf45:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
     const ob = base.split("<script>").slice(1).map((x) => x.split("</script>")[0]);
     eq(blocks.map(sha), ob.map(sha), "the seven classic blocks are byte-identical to 6edaf45 (Phase 5E): dashboard, Stock Detail, charts, technicals, research, checklist"); eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical");
-    eq(cmpCode, modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(snapCode, modOf(base, SNAPTAG), "the Investor Snapshot module is byte-identical");
-    eq(html.replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, ""), base, "the page without the search module is identical to 6edaf45: the markup, the tables, the styles, everything");
+    eq(cmpCode, modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(snapCode, modOf(base, SNAPTAG).replace(OLDSPOT, NEWSPOT), "the Investor Snapshot module is byte-identical to 6edaf45 except the Future Growth Evidence placeholder (Phase 5G.2), now an empty spot for the growth module");
+    eq(html.replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, ""), base.replace(OLDSPOT, NEWSPOT), "the page without the search and growth modules is identical to 6edaf45 (apart from the Future Growth Evidence placeholder): the markup, the tables, the styles, everything");
   }
   for (const id of ['id="rows"', 'id="tabs"', 'id="detail"', 'id="demo"', 'id="stat"']) ok(html.includes(id), "the dashboard still has " + id);
   re(html, /\.detail-mode \.w>\*:not\(#detail\)\{display:none!important\}/, "the page's own rule hides every dashboard child (the search box too) while a stock is open");

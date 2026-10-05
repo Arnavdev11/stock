@@ -229,7 +229,7 @@ const liOf = (h, title) => { const m = h.match(new RegExp("<li[^>]*><b>" + esc(t
   eq((code.match(/fetch\(/g) || []).length, 1, "the research module has exactly one fetch call (a helper)"); eq([...new Set(code.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json"], "it reads only the four data files (three existing + company_profiles.json)");
   t = await boot("#stock=TCS"); ok(t.fetched.every((u) => /^out\/(fundamentals|financials|historical|scans|company_profiles)\.json$/.test(u)), "the whole page requests only existing JSON files: " + [...new Set(t.fetched)].join(", ")); ok(!t.fetched.some((u) => /upstox/i.test(u)), "browser never calls Upstox");
   no(html, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization/i, "no token or auth header anywhere in the page"); no(html, /api\.upstox\.com/, "no Upstox call anywhere in the page");
-  ok(!fs.existsSync(__dirname + "/../out/historical.json"), "no fake out/historical.json is shipped"); ok(!fs.existsSync(__dirname + "/../out"), "no new data files shipped");
+  ok(!fs.existsSync(__dirname + "/../out/historical.json"), "no fake out/historical.json is shipped"); ok(!fs.existsSync(__dirname + "/../out") || JSON.stringify(fs.readdirSync(__dirname + "/../out")) === JSON.stringify(["growth_events.json"]), "no new data files shipped (apart from the curated growth_events.json of Phase 5G.2)");
 
   console.log("Research tests passed (" + checks + " checks)");
 })().catch((e) => { console.error(e); process.exit(1); });
