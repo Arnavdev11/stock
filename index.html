@@ -1284,7 +1284,7 @@ window.SLFinHistory={model:model,cagr:cagr,change:change,build:build,check:check
 /* StockLens Phase 5B - Compare stocks (2 to 5 at a time). A separate module script: the seven classic blocks and the Financial History module are not touched.
    Routes:  #compare=TCS,ITC,INFY   the comparison (2 to 5 unique stocks; extra symbols beyond the first five are ignored and a notice says so)
             #compare-pick           the picker;  #compare-pick=TCS  the picker with that stock already ticked. Neither is a comparison, so a one-stock comparison URL is never made.
-   Reads ONLY out/fundamentals.json, out/financial_history.json and out/scans.json (one request each, made when the compare view opens). Nothing is stored in the browser.
+   Reads ONLY out/fundamentals.json, out/financial_history.json and out/historical.json (one request each, made when the compare view opens). Nothing is stored in the browser.
    Fiscal-year, change and CAGR figures come from the Financial History module's own functions (window.SLFinHistory), so the rules are the same as on the Stock Detail page.
    Missing values show "-" and are never estimated. Banks report "Total income", not "Revenue", so banks and other companies are shown in separate tables. Descriptive data only:
    no ranking, winner, rating, score, signal or advice. */
@@ -1330,13 +1330,18 @@ function hashFor(sel){return canApply(sel)?"#compare="+sel.map(encodeURIComponen
 
 /* ---------- data ---------- */
 function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
-function priceFor(scans,s){
-  var out={price:null,change:null};if(!scans)return out;
-  ["gainers","losers","volume_gainers","high_52w","delivery","dma"].forEach(function(k){
-    (Array.isArray(scans[k])?scans[k]:[]).forEach(function(r){
-      if(!r||r.symbol!==s)return;
-      if(out.price===null&&isn(r.price))out.price=r.price;
-      if(out.change===null&&isn(r.change_pct))out.change=r.change_pct})});
+/* LTP = the close of the latest daily candle; change = that close against the close of the candle immediately before it. Both come from the same two candles,
+   so they always describe the same day. Fewer than two valid candles (a date and a finite close): both are "-". A previous close of 0 or less gives no change.
+   This is the last close on file, never a live price. */
+function priceFor(prices,s){
+  var out={price:null,change:null,date:null};
+  var st=prices&&prices.stocks&&typeof prices.stocks==="object"&&!Array.isArray(prices.stocks)&&has(prices.stocks,s)?prices.stocks[s]:null;
+  if(!st||!Array.isArray(st.candles))return out;
+  var c=st.candles.filter(function(x){return x&&typeof x==="object"&&typeof x.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x.date)&&isn(x.close)}).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0});
+  if(c.length<2)return out;
+  var last=c[c.length-1],prev=c[c.length-2];
+  out.price=last.close;out.date=last.date;
+  if(prev.close>0)out.change=(last.close/prev.close-1)*100;
   return out}
 /* the symbols that have data on file: fundamentals and financial history */
 function knownOf(d){
@@ -1357,8 +1362,8 @@ function overview(d,syms,ms){
     ["company","Company",function(s){var n=nameOf(d,s);return n?esc(n):"-"}],
     ["sector","Sector",function(s){var v=find(d.val,s);return v&&v.sector?esc(v.sector):"-"}],
     ["basis","Statements basis",function(s,i){return ms[i].state==="ok"?esc(ms[i].basis):"-"}],
-    ["ltp","LTP (last close, ₹)",function(s){return r2(priceFor(d.scans,s).price)}],
-    ["change","Today's change",function(s){return pc(priceFor(d.scans,s).change)}],
+    ["ltp","LTP (last close, ₹)",function(s){return r2(priceFor(d.prices,s).price)}],
+    ["change","Change vs previous close",function(s){return pc(priceFor(d.prices,s).change)}],
     ["pe","P/E",function(s){var v=find(d.val,s);return r2(v&&v.pe)}],
     ["pb","P/B",function(s){var v=find(d.val,s);return r2(v&&v.pb)}],
     ["roe","ROE %",function(s){var v=find(d.val,s);return r2(v&&v.roe)}],
@@ -1368,8 +1373,15 @@ function overview(d,syms,ms){
   var h='<h3 style="margin:1.2em 0 .4em">Overview</h3><div class="panel"><div class="scroll"><table data-ctable="overview"><thead><tr><th scope="col"><span class="note" style="padding:0">Measure</span></th>'+headCols(syms)+'</tr></thead><tbody>';
   rows.forEach(function(r){h+='<tr data-crow="'+r[0]+'"><th scope="row">'+esc(r[1])+'</th>'+syms.map(function(s,i){return'<td class="n">'+r[2](s,i)+'</td>'}).join("")+'</tr>'});
   h+='</tbody></table></div></div>';
-  h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of)+". ":"Fundamentals not loaded. ")+(d.scans&&d.scans.as_of?"LTP and change are from the end-of-day scan of "+esc(d.scans.as_of)+" and appear only for a stock in that scan. ":"")+'"-" means the value is not available.</p>';
+  h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of)+". ":"Fundamentals not loaded. ")+priceNote(d,syms)+'"-" means the value is not available.</p>';
   return h}
+/* the date of each stock's latest daily candle, stated once when they agree, per stock when they do not */
+function priceNote(d,syms){
+  var dates=syms.map(function(s){return priceFor(d.prices,s).date}),seen=[];
+  dates.forEach(function(x){if(x&&seen.indexOf(x)<0)seen.push(x)});
+  if(!seen.length)return"";
+  if(seen.length===1)return"LTP and change are the last daily close in the historical data, as of "+esc(seen[0])+" (not a live price). ";
+  return"LTP and change are the last daily close in the historical data (not a live price). Last candle: "+syms.map(function(s,i){return esc(s)+" "+(dates[i]?esc(dates[i]):"-")}).join(", ")+". "}
 function histTable(d,syms,ms,key,title,growth,idx){
   /* idx: the positions in syms/ms that belong in this table */
   var fys={};idx.forEach(function(i){ms[i].cols.forEach(function(c){fys[c.fy]=1})});
@@ -1457,7 +1469,7 @@ var DATA=null;
 function loadAll(){
   if(DATA)return DATA;
   var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
-  DATA=Promise.all([j("out/fundamentals.json"),j("out/financial_history.json"),j("out/scans.json")]).then(function(a){return{val:a[0],hist:a[1],scans:a[2]}});
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financial_history.json"),j("out/historical.json")]).then(function(a){return{val:a[0],hist:a[1],prices:a[2]}});
   return DATA}
 var box=null,SEL=[],KNOWN={},TOKEN=0,STYLED=false;
 var CSS="#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}"+
@@ -1498,7 +1510,7 @@ function route(){
   loadAll().then(function(d){
     if(tok!==TOKEN)return;
     var res=resolve(info.symbols,knownOf(d));SEL=res.symbols.slice();KNOWN=knownOf(d);
-    el.innerHTML=build(hash,d)}).catch(function(){if(tok===TOKEN)el.innerHTML=build(hash,{val:null,hist:null,scans:null})})}
+    el.innerHTML=build(hash,d)}).catch(function(){if(tok===TOKEN)el.innerHTML=build(hash,{val:null,hist:null,prices:null})})}
 /* entry points: a header link and a "Compare with…" link on Stock Detail. Both are added here, so the pages' own scripts are untouched. */
 function routeSymbol(){
   var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;

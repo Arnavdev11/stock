@@ -31,8 +31,17 @@ const HDOC = () => ({ schema: 1, as_of: "2026-10-04", source: "Upstox (API) and 
   NEGLAST: STK("NEGLAST", false, [R(2025, { revenue: 10 }), R(2026, { revenue: -4 })]) } });
 const SYMS = ["TCS", "ITC", "INFY", "RELIANCE", "LT", "MARUTI", "HDFCBANK", "ICICIBANK", "SBIN", "GAPPY", "NEGLAST", "NOHIST"];
 const FUND = () => ({ as_of: "2026-10-01", source: "Upstox", stocks: SYMS.map((s, i) => ({ symbol: s, company_name: s === "LT" ? "Larsen <b>&</b> Toubro" : s + " Ltd", sector: i % 2 ? "Banks" : "IT", pe: 20 + i, pb: 3 + i / 10, roa: 5 + i, roe: 15 + i, roce: 18 + i, ev_ebitda: s === "SBIN" ? null : 10 + i })) });
-const SCANS = () => ({ as_of: "2026-10-02", source: "NSE", gainers: [{ symbol: "TCS", price: 3500.5, change_pct: 1.25 }], losers: [{ symbol: "INFY", price: 1500, change_pct: -0.5 }], dma: [{ symbol: "TCS", price: 9, change_pct: 9 }] });
-const D = (o = {}) => Object.assign({ val: FUND(), hist: HDOC(), scans: SCANS() }, o);
+const cd = (date, close) => ({ date, open: close, high: close, low: close, close, volume: 1 });
+const PRICES = () => ({ updated: "2026-10-05", source: "Upstox", benchmark: { symbol: "NIFTY 50", candles: [cd("2026-10-05", 25000), cd("2026-10-06", 25100)] }, stocks: {
+  TCS: { symbol: "TCS", candles: [cd("2026-09-30", 3300), cd("2026-10-01", 3400), cd("2026-10-02", 3442.5)] },                          // +1.25% on the last close
+  INFY: { symbol: "INFY", candles: [cd("2026-10-01", 1600), cd("2026-10-02", 1500)] },                                                 // -6.25%
+  ITC: { symbol: "ITC", candles: [cd("2026-09-30", 400), cd("2026-10-01", 400)] },                                                     // flat
+  LT: { symbol: "LT", candles: [cd("2026-10-02", 3600)] },                                                                             // one candle only
+  RELIANCE: { symbol: "RELIANCE", candles: [] }, MARUTI: { symbol: "MARUTI", candles: [cd("2026-10-01", 0), cd("2026-10-02", 100)] },   // previous close 0
+  HDFCBANK: { symbol: "HDFCBANK", candles: [cd("2026-10-01", 1700), { date: "2026-10-02", close: null }, { date: "bad", close: 1 }, null, { close: 5 }, cd("2026-10-03", 1700 * 1.1)] }, // junk candles are skipped
+  SBIN: { symbol: "SBIN", candles: [cd("2026-10-03", 800), cd("2026-10-01", 780), cd("2026-10-02", 790)] },                            // out of file order: sorted by date
+  ICICIBANK: { symbol: "ICICIBANK", candles: [cd("2026-10-01", 1000), cd("2026-10-02", 1000)] } } });
+const D = (o = {}) => Object.assign({ val: FUND(), hist: HDOC(), prices: PRICES() }, o);
 
 // ---------- load the two modules' pure APIs ----------
 global.MutationObserver = undefined;
@@ -85,7 +94,9 @@ let h = C.build("#compare=TCS,INFY", D());
 eq(tables(h), ["overview", "revenue", "profit_before_tax", "profit_after_tax", "eps_basic", "operating_cash_flow"], "overview plus five history tables");
 eq(heads(h, "overview"), ["TCS", "INFY"], "columns are the two stocks, in the order given"); eq(heads(h, "revenue"), ["TCS", "INFY"], "and in every table");
 eq(row(h, "overview", "crow", "company"), ["Company", "TCS Ltd", "INFY Ltd"], "company names"); eq(row(h, "overview", "crow", "pe"), ["P/E", "20.00", "22.00"], "P/E"); eq(row(h, "overview", "crow", "roce"), ["ROCE %", "18.00", "20.00"], "ROCE");
-eq(row(h, "overview", "crow", "ltp"), ["LTP (last close, ₹)", "3,500.50", "1,500.00"], "LTP uses the first scan row that has the stock"); eq(row(h, "overview", "crow", "change"), ["Today's change", "+1.25%", "-0.50%"], "change from the same scan");
+eq(row(h, "overview", "crow", "ltp"), ["LTP (last close, ₹)", "3,442.50", "1,500.00"], "LTP is the close of the latest daily candle"); eq(row(h, "overview", "crow", "change"), ["Change vs previous close", "+1.25%", "-6.25%"], "change is the latest close against the immediately preceding candle's close");
+eq(text(h.match(/<th scope="row">LTP[^<]*<\/th>/)[0]), "LTP (last close, ₹)", "the LTP row label is exactly this"); eq(text(h.match(/<th scope="row">Change[^<]*<\/th>/)[0]), "Change vs previous close", "the change row label is exactly this"); no(h, /Today's change/, "the old label is gone");
+re(text(h), /LTP and change are the last daily close in the historical data, as of 2026-10-02 \(not a live price\)\./, "the data note states the candle date once when the stocks agree");
 eq(row(h, "overview", "crow", "basis"), ["Statements basis", "consolidated", "consolidated"], "basis shown");
 eq(row(h, "revenue", "fy", "2022"), ["FY2022", "100 AR", "-"], "TCS has FY2022 (official annual report marker), INFY has no FY2022: a dash"); eq(row(h, "revenue", "fy", "2023"), ["FY2023", "110", "200"], "FY2023");
 eq(row(h, "revenue", "fy", "2026"), ["FY2026", "146.41", "266.2"], "FY2026"); eq(row(h, "eps_basic", "fy", "2024"), ["FY2024", "11.00", "11.00"], "EPS to two decimals");
@@ -128,10 +139,26 @@ eq(row(h, "revenue", "cchg", "revenue").slice(1), ["-", "-140.00% FY26 vs FY25"]
 h = C.build("#compare=GAPPY,TCS", D()); eq(row(h, "profit_before_tax", "fy", "2023"), ["FY2023", "-", "55"], "a year on file whose value is null shows a dash, not 0"); eq(row(h, "eps_basic", "fy", "2024"), ["FY2024", "-", "11.00"], "null EPS shows a dash");
 h = C.build("#compare=NOHIST,TCS", D()); re(text(h), /No financial history is on file for NOHIST\./, "a stock with no history is named"); eq(heads(h, "revenue"), ["TCS"], "and left out of the history tables"); eq(row(h, "overview", "crow", "basis").slice(1), ["-", "consolidated"], "basis dash");
 h = C.build("#compare=SBIN,TCS", D()); eq(row(h, "overview", "crow", "ev_ebitda").slice(1), ["-", "28.00".replace("28.00", "10.00")], "a null EV/EBITDA shows a dash");
-h = C.build("#compare=TCS,ITC", D({ scans: null })); eq(row(h, "overview", "crow", "ltp").slice(1), ["-", "-"], "no scan file: LTP dashes"); no(h, /end-of-day scan of/, "and no scan note");
+h = C.build("#compare=TCS,ITC", D({ prices: null })); eq(row(h, "overview", "crow", "ltp").slice(1), ["-", "-"], "no price file: LTP dashes"); eq(row(h, "overview", "crow", "change").slice(1), ["-", "-"], "and change dashes"); no(h, /last daily close/, "and no price note");
+// price rules, one case at a time
+const px = (syms) => { const hh = C.build("#compare=" + syms.join(","), D()); return { ltp: row(hh, "overview", "crow", "ltp").slice(1), chg: row(hh, "overview", "crow", "change").slice(1), h: hh }; };
+let q = px(["TCS", "ITC"]); eq(q.chg, ["+1.25%", "0.00%"], "a flat close is 0.00%, not a dash"); eq(q.ltp, ["3,442.50", "400.00"], "LTP of a flat stock");
+q = px(["LT", "TCS"]); eq(q.ltp, ["-", "3,442.50"], "one candle only: LTP is a dash"); eq(q.chg, ["-", "+1.25%"], "and change is a dash");
+q = px(["RELIANCE", "TCS"]); eq(q.ltp, ["-", "3,442.50"], "no candles: dashes"); eq(q.chg[0], "-", "no candles: no change");
+q = px(["MARUTI", "TCS"]); eq(q.ltp, ["100.00", "3,442.50"], "a previous close of 0: LTP still shown"); eq(q.chg[0], "-", "but no change (division by zero)");
+q = px(["HDFCBANK", "TCS"]); eq(q.ltp[0], "1,870.00", "junk candles (null close, bad date, missing date, null entry) are skipped: LTP is the last valid close"); eq(q.chg[0], "+10.00%", "and change is against the previous VALID candle");
+q = px(["SBIN", "TCS"]); eq(q.ltp[0], "800.00", "candles out of file order are ordered by date: latest is 2026-10-03"); eq(q.chg[0], "+1.27%", "and the previous candle is 2026-10-02 (790)");
+q = px(["NOPE", "TCS", "ITC"]); eq(q.ltp, ["3,442.50", "400.00"], "a symbol that is not in the data is dropped, the rest unaffected");
+q = px(["TCS", "INFY"]); re(text(q.h), /as of 2026-10-02 \(not a live price\)/, "same last date: stated once");
+q = px(["TCS", "SBIN"]); re(text(q.h), /last daily close in the historical data \(not a live price\)\. Last candle: TCS 2026-10-02, SBIN 2026-10-03\./, "different last dates: each stock's date is listed"); no(text(q.h), /as of 2026-10-0[23] \(not/, "and no single date is claimed");
+q = px(["LT", "TCS"]); re(text(q.h), /as of 2026-10-02 \(not a live price\)/, "a stock with no valid price does not break the date note"); q = px(["LT", "RELIANCE"]); no(text(q.h), /last daily close/, "no priced stock: no price note");
+for (const bad of [{}, { stocks: [] }, { stocks: { TCS: null } }, { stocks: { TCS: { candles: "x" } } }, { stocks: { TCS: { candles: [cd("2026-10-02", NaN), cd("2026-10-01", Infinity)] } } }, { stocks: { TCS: { candles: [cd("2026-10-02", "100"), cd("2026-10-01", 90)] } } }]) eq(row(C.build("#compare=TCS,ITC", D({ prices: bad })), "overview", "crow", "ltp").slice(1, 2), ["-"], "malformed price file " + JSON.stringify(bad).slice(0, 50) + ": dash, no error");
+{ const rr = row(C.build("#compare=TCS,ITC", D({ prices: { stocks: { TCS: { candles: [cd("2026-10-01", -50), cd("2026-10-02", 100)] } } } })), "overview", "crow", "change"); eq(rr[1], "-", "a previous close of zero or less gives no change figure"); }
+const dd0 = D(), snap0 = JSON.stringify(dd0.prices); C.build("#compare=SBIN,TCS", dd0); eq(JSON.stringify(dd0.prices), snap0, "reading prices never reorders or changes the candles in the data");
+no(C.build("#compare=TCS,INFY", D()), /Price returns|1M|6M|1Y|<svg/, "no price returns and no chart");
 h = C.build("#compare=TCS,ITC", D({ hist: null })); re(h, /data-cstate="history">Financial history unavailable\./, "history file unavailable: stated"); eq(tables(h), ["overview"], "overview still shown"); eq(row(h, "overview", "crow", "pe").slice(1).length, 2, "with the fundamentals");
 h = C.build("#compare=TCS,ITC", D({ hist: { stocks: [] } })); re(h, /Financial history unavailable\./, "a malformed history file is unavailable, not an error");
-h = C.build("#compare=TCS,ITC", { val: null, hist: null, scans: null }); re(h, /data-cstate="unavailable">Comparison data is unavailable right now\./, "no data at all: one clear message"); no(h, /data-picker/, "and no picker");
+h = C.build("#compare=TCS,ITC", { val: null, hist: null, prices: null }); re(h, /data-cstate="unavailable">Comparison data is unavailable right now\./, "no data at all: one clear message"); no(h, /data-picker/, "and no picker");
 const savedF = window.SLFinHistory; delete window.SLFinHistory; h = C.build("#compare=TCS,ITC", D()); re(h, /Financial history unavailable\./, "without the history module the history part is unavailable, the page does not break"); window.SLFinHistory = savedF;
 
 // the 2-5 rule in the view
@@ -185,7 +212,7 @@ function boot(hash, { files = null, delay = 0, withFH = true, presetFetch = null
   global.document = { body: { classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) } }, head: { appendChild: (n) => headNodes.push(n) },
     getElementById: (i) => (i === "detail" ? detail : sectionKids.find((s) => s.id === i) || detailKids.find((k) => k.id === i) || null),
     querySelector: (s) => (s === 'nav[aria-label="Main"]' ? nav : null), createElement: (t) => mkEl(t) };
-  const f = files || { "fundamentals.json": FUND(), "financial_history.json": HDOC(), "scans.json": SCANS() };
+  const f = files || { "fundamentals.json": FUND(), "financial_history.json": HDOC(), "historical.json": PRICES() };
   global.fetch = async (u) => { fetched.push(u); if (delay) await sleep(delay); const x = f[u.split("/").pop()]; if (x === "reject") throw new Error("net"); return { ok: x !== undefined && x !== null, json: async () => JSON.parse(JSON.stringify(x)) }; };
   if (withFH) (0, eval)(fhCode);
   (0, eval)(cmpCode);
@@ -204,8 +231,8 @@ const DETAILHTML = (s) => '<p><button id="detailBack">Back</button></p><h2>Stock
   t = await boot("#compare=TCS,INFY"); await sleep(60);
   ok(t.classes.has("compare-mode"), "compare mode on for a compare hash"); re(t.html(), /data-ctable="overview"/, "the comparison renders into its own section"); eq(t.section().parentNode !== null, true, "placed in the page before #detail");
   eq(t.headNodes.length, 1, "one style element"); re(t.headNodes[0].textContent, /\.compare-mode \.w>\*:not\(#compareView\)\{display:none!important\}/, "it hides the rest of the page only in compare mode"); re(t.headNodes[0].textContent, /#compareView\{display:none\}/, "and keeps the section hidden otherwise");
-  eq([...t.fetched].sort(), ["out/financial_history.json", "out/fundamentals.json", "out/scans.json"], "exactly three requests, one per file");
-  ok(t.fetched.every((u) => /^out\/(fundamentals|financial_history|scans)\.json$/.test(u)), "static files under out/ only"); ok(!t.fetched.some((u) => /historical|financials\.json|http|upstox/i.test(u)), "no price history, no statements file, no outside address");
+  eq([...t.fetched].sort(), ["out/financial_history.json", "out/fundamentals.json", "out/historical.json"], "exactly three requests, one per file");
+  ok(t.fetched.every((u) => /^out\/(fundamentals|financial_history|historical)\.json$/.test(u)), "static files under out/ only"); ok(!t.fetched.some((u) => /scans|financials\.json|http|upstox/i.test(u)), "no scans file, no statements file, no outside address");
   await t.go("#compare=ITC,TCS,LT"); eq(t.fetched.length, 3, "changing the selection makes no new request"); re(t.html(), /data-compare="ITC,TCS,LT"/, "but re-renders the new selection");
   await t.go("#compare-pick=TCS"); re(t.html(), /data-sym="TCS" checked/, "picker route renders the picker"); no(t.html(), /data-ctable/, "with no comparison"); ok(t.classes.has("compare-mode"), "still in compare mode");
   await t.go("#stock=TCS"); ok(!t.classes.has("compare-mode"), "a stock hash leaves compare mode"); await t.go(""); ok(!t.classes.has("compare-mode"), "so does an empty hash"); await t.go("#demo"); ok(!t.classes.has("compare-mode"), "and an anchor");
@@ -234,8 +261,8 @@ const DETAILHTML = (s) => '<p><button id="detailBack">Back</button></p><h2>Stock
   t = await boot("#compare=TCS,ITC"); await t.setDetail(DETAILHTML("TCS")); no(t.detail.innerHTML, /detailCompare/, "not added when the route is not a stock page");
   t = await boot("#stock=%3Cb%3E"); await t.setDetail(DETAILHTML("X")); no(t.detail.innerHTML, /detailCompare/, "not added for an invalid symbol");
   // failure modes
-  t = await boot("#compare=TCS,ITC", { files: { "fundamentals.json": "reject", "financial_history.json": "reject", "scans.json": "reject" } }); await sleep(50); re(t.html(), /Comparison data is unavailable right now\./, "every file failing: a clear message, no exception");
-  t = await boot("#compare=TCS,ITC", { files: { "fundamentals.json": FUND(), "financial_history.json": null, "scans.json": null } }); await sleep(50); re(t.html(), /data-ctable="overview"/, "history and scans missing: the overview still renders"); re(t.html(), /Financial history unavailable\./, "and says so");
+  t = await boot("#compare=TCS,ITC", { files: { "fundamentals.json": "reject", "financial_history.json": "reject", "historical.json": "reject" } }); await sleep(50); re(t.html(), /Comparison data is unavailable right now\./, "every file failing: a clear message, no exception");
+  t = await boot("#compare=TCS,ITC", { files: { "fundamentals.json": FUND(), "financial_history.json": null, "historical.json": null } }); await sleep(50); re(t.html(), /data-ctable="overview"/, "history and prices missing: the overview still renders"); re(t.html(), /Financial history unavailable\./, "and says so");
   t = await boot("#compare=TCS,ITC", { withFH: false }); await sleep(50); re(t.html(), /Financial history unavailable\./, "without the history module the page still renders");
   t = await boot("#compare=TCS,ITC", { delay: 30 }); await t.go("#compare=INFY,LT", 200); re(t.html(), /data-compare="INFY,LT"/, "a slow earlier load never overwrites a newer selection"); ok(!t.section().log.slice(1).some((x) => /data-compare="TCS,ITC"/.test(x)), "and the stale selection is never drawn at all"); no(t.html(), /data-compare="TCS,ITC"/, "the stale one is discarded");
   t = await boot(""); await sleep(20); await t.go("#compare=TCS,ITC", 5); await t.go("#stock=TCS", 150); ok(!t.classes.has("compare-mode"), "leaving while a load is pending leaves compare mode off");
@@ -250,8 +277,8 @@ const DETAILHTML = (s) => '<p><button id="detailBack">Back</button></p><h2>Stock
     const strip = (x) => x.replace(/<script type="module" id="stocklens-compare">[\s\S]*?<\/script>\n/, "");
     eq(strip(html), old, "removing the compare module gives back the Phase 5A page exactly: nothing else in index.html changed");
   }
-  eq((cmpCode.match(/fetch\(/g) || []).length, 1, "the compare module makes one fetch call (in one helper)"); eq([...new Set(cmpCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/financial_history.json", "out/fundamentals.json", "out/scans.json"], "reading exactly three files");
-  no(cmpCode, /localStorage|sessionStorage|indexedDB|XMLHttpRequest|eval\(|document\.write|<script|https?:|historical\.json|financials\.json|innerHTML\s*\+=|Function\(/, "no storage, no outside address, no price history, no eval");
+  eq((cmpCode.match(/fetch\(/g) || []).length, 1, "the compare module makes one fetch call (in one helper)"); eq([...new Set(cmpCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/financial_history.json", "out/fundamentals.json", "out/historical.json"], "reading exactly three files");
+  no(cmpCode, /localStorage|sessionStorage|indexedDB|XMLHttpRequest|eval\(|document\.write|<script|https?:|scans\.json|financials\.json|innerHTML\s*\+=|Function\(/, "no storage, no outside address, no scans file, no statements file, no eval");
   no(cmpCode, /createChart|LightweightCharts|<svg|<canvas/i, "no chart in Phase 5B");
   no(cmpCode, /Phase 4 Step 4E/, "the module does not copy the history module"); ok(!/getElementById\("detail(Research|Checklist|Tech|Chart)"\)/.test(cmpCode), "and does not reach into the other detail sections");
   re(html, /<style>[\s\S]*?<\/style><\/head>/, "the page's own stylesheet is still where it was"); no(html.split(CMPTAG)[0].split("<style>")[1].split("</style>")[0], /compare/i, "and has no compare rules: they are injected by the module");
