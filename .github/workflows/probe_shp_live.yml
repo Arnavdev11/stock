@@ -1,0 +1,169 @@
+name: TEMP probe-5h3-live shareholding validation
+
+# Phase 5H.3. Separate from "Update data and publish site" and from "Update financial history ledger"; manual only (workflow_dispatch).
+# Source: the official NSE shareholding-pattern filings (no token). UPSTOX_ANALYTICS_TOKEN is used only for a latest-quarter cross-check and is optional.
+# The ledger (shareholding_ledger.json) lives on the existing `stocklens-data` branch next to financial_history_ledger.json. The branch is never created here.
+#   * init_ledger = false (normal): the branch must already hold shareholding_ledger.json; it is the source of truth and nothing may be lost from it.
+#   * init_ledger = true  (the very first run only): the branch must NOT hold the file yet; the first ledger is added to the branch.
+# out/shareholding.json is placed in the saved-data cache (key nse-data-shp-<run>), so "Update data and publish site" copies it into the site on its next run.
+# This workflow does not publish the site.
+
+on:
+  push:
+    branches: [probe-5h3-live]
+
+permissions:
+  contents: read
+
+# The same group as update.yml and financial_history.yml: one writer of the data branch at a time. Never cancels a run.
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+
+jobs:
+  shareholding:
+    runs-on: ubuntu-latest
+    outputs:
+      ledger_ready: ${{ steps.ledgerout.outputs.ready }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "::error::The stocklens-data branch does not exist. This workflow never creates it."; exit 1 ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Restore saved data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-shp-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Update the shareholding ledger
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          SHAREHOLDING_SYMBOLS: ''
+          SHAREHOLDING_INIT: true
+          SHAREHOLDING_REFRESH: ''
+          SHAREHOLDING_LEDGER_DIR: ledger-branch
+          SHAREHOLDING_LEDGER_OUT: ledger-out/shareholding_ledger.json
+        run: python shareholding_updater.py
+
+      - name: Report (notices only)
+        if: always()
+        run: python probe_shp_report.py
+
+      - name: Check the ledger output
+        id: ledgerout
+        run: |
+          if [ -s ledger-out/shareholding_ledger.json ] && [ -s out/shareholding.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::error::The updater produced no ledger, so nothing will be saved."
+            exit 1
+          fi
+
+      - name: Hand the updated ledger to the save job
+        uses: actions/upload-artifact@v4
+        with:
+          name: shareholding-ledger
+          path: ledger-out/shareholding_ledger.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Keep the published file for the next site build
+        uses: actions/upload-artifact@v4
+        with:
+          name: shareholding-output
+          path: out/shareholding.json
+          if-no-files-found: error
+          retention-days: 14
+
+  save:
+    needs: shareholding
+    if: ${{ needs.shareholding.outputs.ledger_ready == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the code (for the verification script)
+        uses: actions/checkout@v4
+
+      - name: Download the updated ledger
+        uses: actions/download-artifact@v4
+        with:
+          name: shareholding-ledger
+          path: ledger-new
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Verify nothing was lost
+        if: false
+        run: python shareholding_ledger.py verify ledger-branch/shareholding_ledger.json ledger-new/shareholding_ledger.json
+
+      - name: Verify the first ledger
+        if: true
+        run: |
+          if [ -e ledger-branch/shareholding_ledger.json ]; then
+            echo "::error::shareholding_ledger.json already exists on the data branch; init_ledger must not replace it."
+            exit 1
+          fi
+          python shareholding_ledger.py verify-first ledger-new/shareholding_ledger.json
+
+      - name: Commit the ledger to the data branch
+        run: |
+          cd ledger-branch
+          cp ../ledger-new/shareholding_ledger.json shareholding_ledger.json
+          git add shareholding_ledger.json
+          if git diff --cached --quiet; then
+            echo "The ledger did not change. Nothing to commit."
+            exit 0
+          fi
+          if [ "$(git diff --cached --name-only)" != "shareholding_ledger.json" ]; then
+            echo "::error::The commit must contain exactly shareholding_ledger.json."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update shareholding ledger (run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data
+
+      - name: Confirm exactly what was written
+        run: |
+          cd ledger-branch
+          git fetch origin stocklens-data -q
+          msg="head=$(git rev-parse HEAD) parent=$(git rev-parse HEAD~1) remote=$(git rev-parse origin/stocklens-data)"
+          files="changed=$(git diff --name-status HEAD~1 HEAD | tr '\n' ';') tree=$(git ls-tree --name-only HEAD | tr '\n' ',')"
+          fh="financial_history_ledger.json before=$(git rev-parse HEAD~1:financial_history_ledger.json) after=$(git rev-parse HEAD:financial_history_ledger.json)"
+          sl="shareholding_ledger.json bytes=$(wc -c < shareholding_ledger.json) sha1=$(git rev-parse HEAD:shareholding_ledger.json) quarters=$(python3 -c "import json;d=json.load(open('shareholding_ledger.json'));print(sum(len(s['quarters']) for s in d['stocks'].values()))")"
+          echo "::notice title=stocklens-data written::$msg | $files | $fh | $sl"
