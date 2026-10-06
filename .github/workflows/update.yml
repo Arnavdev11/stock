@@ -171,6 +171,22 @@ jobs:
               print("::notice title=probe build %d::%s" % (i, m))
           PY
 
+      - name: TEMP probe diagnostics (build 2)
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          d = json.load(open("out/shareholding.json"))
+          ic = {r["quarter_end"]: r for r in d["stocks"]["ICICIBANK"]["quarters"]}
+          for k in ("2026-03-31", "2026-06-30"):
+              print("::notice title=probe icici %s::flags %s | status %s | values %s" % (k, [f["code"] for f in ic[k]["quality"]["flags"]], ic[k]["status"], ic[k]["values"]))
+          per = {s: [len(v["quarters"]), sum(r["status"] == "available" for r in v["quarters"])] for s, v in d["stocks"].items()}
+          print("::notice title=probe per-stock [records, available]::%s" % json.dumps(per, sort_keys=True))
+          itc = [r["quarter_end"] for r in d["stocks"]["ITC"]["quarters"] if r["status"] != "available"]
+          print("::notice title=probe unavailable::ITC %s | all unavailable: %s" % (itc, sorted((s, r["quarter_end"]) for s, v in d["stocks"].items() for r in v["quarters"] if r["status"] != "available")))
+          print("::notice title=probe site::_site/out files: %s | schema %s | categories %s" % (",".join(sorted(os.listdir("_site/out"))), d.get("schema"), d.get("categories")))
+          PY
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
