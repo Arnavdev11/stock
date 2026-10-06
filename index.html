@@ -64,14 +64,13 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 #globalBar .gb-sections{display:block;padding:0;gap:0;flex:1 1 0;min-width:0}#globalBar .gb-sections ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-start;gap:2px 2px}
 #globalBar .gb-sections a{display:block;min-height:36px;padding:8px 10px;border-radius:8px;color:var(--mute);font-size:.88rem;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
 #globalBar .gb-sections a:hover{color:var(--ac)}#globalBar .gb-sections a[aria-current=true]{background:var(--ac);color:#fff}
-@container (max-width:1000px){#globalBar .gb-toggle{display:inline-flex;margin-left:auto}#globalBar[data-stock] .gb-search{flex:1 1 100%;max-width:none;order:3}
+@container (max-width:1000px){#globalBar .gb-toggle{display:inline-flex;margin-left:auto}#globalBar .gb-search{flex:1 1 100%;max-width:none;order:3}
 #globalBar .gb-sections{flex:1 1 100%;order:4;display:none}#globalBar[data-open] .gb-sections{display:block}
 #globalBar .gb-sections ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:6px}
 #globalBar .gb-sections a{min-height:44px;padding:11px 12px;border:1px solid var(--line);background:var(--card)}#globalBar .gb-sections a[aria-current=true]{border-color:var(--ac)}}
 </style></head><body>
 <div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav><div class="gb-search" id="globalSearchHost"></div></div></div>
 <div class="w">
-<nav aria-label="Main"><b>StockLens India</b><a href="#demo">Demo</a><a href="#all">All scans</a><a href="#more">More data</a><a href="#news">News &amp; filings</a><a href="#stock">Stock page</a><a href="#tools">More tools</a><a href="#road">Roadmap</a><a href="#cost">Costs</a><a href="#money">Earning</a><a href="#pc">Pros &amp; cons</a><a href="#law">SEBI rules</a></nav>
 
 <header>
 <h1>A simple end-of-day stock screener for Indian swing traders</h1>
@@ -2459,7 +2458,7 @@ function parse(hash){
   s=s.trim().toUpperCase();if(!SYM.test(s))return null;
   return{symbol:s,section:m[2]&&sectionOf(m[2])?m[2]:null,rawSection:m[2]||null}}
 function hashFor(sym,key){return"#stock="+encodeURIComponent(sym)+(key&&sectionOf(key)?"&section="+key:"")}
-function compareHash(sym){return"#compare-pick="+encodeURIComponent(sym)}      /* the existing comparison route, which already takes a stock */
+function compareHash(sym){return sym?"#compare-pick="+encodeURIComponent(sym):"#compare-pick"}      /* the existing comparison route, which already takes a stock */
 
 var bar=null,box=null,navSym=null,activeKey=null,pending=null,prev=null,timer=null;
 function barH(){return bar&&bar.getBoundingClientRect?Math.round(bar.getBoundingClientRect().height):0}
@@ -2471,20 +2470,19 @@ function goTo(el){var y=topOf(el)+(window.pageYOffset||0)-barH()-8;window.scroll
 function setActive(key){
   activeKey=key;
   var nav=$("gbSections"),t=$("gbToggle");
-  if(nav&&nav.querySelectorAll)[].forEach.call(nav.querySelectorAll("a[data-gb-section]"),function(a){
-    if(a.getAttribute("data-gb-section")===key)a.setAttribute("aria-current","true");else a.removeAttribute("aria-current")});
+  if(nav&&nav.querySelectorAll)[].forEach.call(nav.querySelectorAll("a[data-gb-section],a[data-gb-compare]"),function(a){
+    var k=a.getAttribute("data-gb-section")||"compare";
+    if(key&&k===key)a.setAttribute("aria-current","true");else a.removeAttribute("aria-current")});
   var s=key?sectionOf(key):null;
-  if(t)t.textContent=(s?s.label:"Sections")+" ▾"}
+  if(t)t.textContent=(s?s.label:key==="compare"?"Compare":"Sections")+" ▾"}
 function showBar(sym){
-  var nav=$("gbSections"),t=$("gbToggle");
+  var nav=$("gbSections"),t=$("gbToggle"),k=sym||"";
   if(!bar||!nav)return;
-  if(!sym){
-    nav.setAttribute("hidden","");if(t)t.setAttribute("hidden","");bar.removeAttribute("data-stock");bar.removeAttribute("data-open");navSym=null;return}
-  bar.setAttribute("data-stock","1");
+  if(sym)bar.setAttribute("data-stock","1");else{bar.removeAttribute("data-stock");bar.removeAttribute("data-open")}
   nav.removeAttribute("hidden");if(t)t.removeAttribute("hidden");
-  if(navSym===sym)return;
-  navSym=sym;
-  nav.innerHTML='<ul>'+SECTIONS.map(function(s){return'<li><a href="'+esc(hashFor(sym,s.key))+'" data-gb-section="'+s.key+'">'+esc(s.label)+'</a></li>'}).join("")
+  if(navSym===k)return;
+  navSym=k;      /* the bar is on every view: the section links need a stock, so without one only Compare (the existing comparison picker) is listed */
+  nav.innerHTML='<ul>'+(sym?SECTIONS.map(function(s){return'<li><a href="'+esc(hashFor(sym,s.key))+'" data-gb-section="'+s.key+'">'+esc(s.label)+'</a></li>'}).join(""):"")
     +'<li><a href="'+esc(compareHash(sym))+'" data-gb-compare="1">Compare</a></li></ul>';
   setActive(activeKey)}
 function closeMenu(){if(bar){bar.removeAttribute("data-open");var t=$("gbToggle");if(t)t.setAttribute("aria-expanded","false")}}
@@ -2508,7 +2506,7 @@ function settle(){
 function later(){if(pending&&!timer)timer=setTimeout(settle,30)}
 function apply(){
   var r=parse(window.location.hash);
-  if(!r){showBar(null);pending=null;prev=null;activeKey=null;return}
+  if(!r){showBar(null);pending=null;prev=null;activeKey=null;setActive(/^#compare(-pick)?(=|$)/.test(window.location.hash||"")?"compare":null);return}
   showBar(r.symbol);closeMenu();
   if(r.section){
     pending={key:r.section,t0:Date.now()};setActive(r.section);settle()

@@ -36,11 +36,25 @@ no(navCode, /createElement\("input"\)|type="search"|placeholder=/, "the navigati
 re(srchCode, /\$\("globalSearchHost"\)/, "the existing search module mounts itself in the global bar when it exists");
 re(srchCode, /document\.querySelector\("header"\)/, "and still mounts under the header when there is no bar (unchanged fallback)");
 
+// ---------- 2b. ONE primary header: the old "StockLens India" row is gone, nothing it linked to was deleted ----------
+{ const body = html.slice(bodyAt, html.indexOf("<script"));
+  no(body, /<nav aria-label="Main">/, "the old primary navigation row is not rendered");
+  no(body, /<b>StockLens India<\/b>/, "the old 'StockLens India' brand is not rendered as a header");
+  for (const l of ["Demo", "All scans", "More data", "News &amp; filings", "Stock page", "More tools", "Roadmap", "Costs", "Earning", "Pros &amp; cons", "SEBI rules"]) no(body, new RegExp('<a href="#[a-z]+">' + l + "</a>"), "no duplicate header link: " + l);
+  eq((body.match(/<nav\b/g) || []).length, 1, "exactly one <nav> in the page's markup (the global bar's)");
+  eq((html.match(/class="gb-brand"/g) || []).length, 1, "exactly one StockLens brand in a header");
+  eq((html.match(/id="globalBar"/g) || []).length, 1, "exactly one global bar");
+  for (const id of ["demo", "all", "more", "news", "stock", "tools", "road", "cost", "money", "pc", "law"]) re(html, new RegExp('id="' + id + '"'), "the dashboard section #" + id + " still exists: only its header link was removed");
+  re(html, /<h1>A simple end-of-day stock screener/, "the page's own heading is content, not a second header");
+  eq(html.indexOf("</style></head><body>\n<div id=\"globalBar\">") > -1, true, "the global bar is the first thing in the page");
+}
+
 // ---------- 3. the navigation module: routes and the registry of destinations ----------
 function loadNav(hash = "", extra = {}) {
   const calls = { scroll: [] }, attrs = {}, listeners = {};
   global.MutationObserver = undefined;
-  const mkEl = (id) => { const e = { id, innerHTML: "", textContent: "", attrs: {}, hidden: false, listeners: {}, setAttribute(k, v) { e.attrs[k] = String(v); }, removeAttribute(k) { delete e.attrs[k]; }, getAttribute(k) { return k in e.attrs ? e.attrs[k] : null; }, hasAttribute(k) { return k in e.attrs; }, addEventListener(t, f) { (e.listeners[t] = e.listeners[t] || []).push(f); }, contains() { return false; }, querySelectorAll() { return []; }, querySelector() { return null; }, getBoundingClientRect: () => ({ top: 0, height: 50 }) }; return e; };
+  const mkEl = (id) => { const e = { id, innerHTML: "", textContent: "", attrs: {}, hidden: false, listeners: {}, setAttribute(k, v) { e.attrs[k] = String(v); }, removeAttribute(k) { delete e.attrs[k]; }, getAttribute(k) { return k in e.attrs ? e.attrs[k] : null; }, hasAttribute(k) { return k in e.attrs; }, addEventListener(t, f) { (e.listeners[t] = e.listeners[t] || []).push(f); }, contains() { return false; }, querySelector() { return null; }, getBoundingClientRect: () => ({ top: 0, height: 50 }),
+    querySelectorAll() { const cur = (e.anchors = e.anchors && e.anchorsFor === e.innerHTML ? e.anchors : [...e.innerHTML.matchAll(/<a [^>]*data-gb-(section|compare)="([^"]*)"[^>]*>/g)].map((m) => { const a = { attrs: m[1] === "section" ? { "data-gb-section": m[2] } : { "data-gb-compare": m[2] }, getAttribute(k) { return k in a.attrs ? a.attrs[k] : null; }, setAttribute(k, v) { a.attrs[k] = String(v); }, removeAttribute(k) { delete a.attrs[k]; } }; return a; })); e.anchorsFor = e.innerHTML; return cur; } }; return e; };
   const els = { globalBar: mkEl("globalBar"), gbSections: mkEl("gbSections"), gbToggle: mkEl("gbToggle"), detail: mkEl("detail") };
   els.gbSections.attrs.hidden = ""; els.gbToggle.attrs.hidden = "";
   let h = hash;
@@ -93,7 +107,13 @@ eq(N.parse(null), null, "no address at all");
   t.setHash("#stock=INFY&section=research"); t.listeners.hashchange();
   ok(/#stock=INFY&section=research/.test(nav.innerHTML.replace(/&amp;/g, "&")), "changing the stock rebuilds the links for the new stock"); eq(t.els.gbToggle.textContent, "Research ▾", "and the active section follows the address");
   t.setHash("#stock=INFY&section=bogus"); t.listeners.hashchange(); eq(t.els.gbToggle.textContent, "Sections ▾", "an unknown section: no section is marked, nothing breaks"); ok(!bar.hasAttribute("data-open"), "and the menu is closed");
-  t.setHash(""); t.listeners.hashchange(); ok(nav.hasAttribute("hidden") && !bar.hasAttribute("data-stock"), "back on the dashboard the section navigation is hidden (the search stays)");
+  t.setHash(""); t.listeners.hashchange(); ok(!nav.hasAttribute("hidden") && !bar.hasAttribute("data-stock"), "on the dashboard the bar is still there (it is the one header of every view)");
+  eq([...nav.innerHTML.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1]), ["#compare-pick"], "with no stock there are no section links to give (they need a stock): only Compare, the existing comparison picker");
+  { const act = () => nav.querySelectorAll().filter((x) => x.getAttribute("aria-current") === "true").map((x) => x.getAttribute("data-gb-section") || "compare"); t.setHash("#stock=TCS&section=technical"); t.listeners.hashchange(); eq(act(), ["technical"], "exactly the current section carries aria-current"); t.setHash(""); t.listeners.hashchange(); eq(act(), [], "no current item on the dashboard");
+    t.setHash("#compare=TCS,INFY"); t.listeners.hashchange(); eq(act(), ["compare"], "on the comparison view Compare is the (only) current item"); t.setHash("#compare-pick"); t.listeners.hashchange(); eq(act(), ["compare"], "and on the comparison picker"); }
+  t.setHash("#compare=TCS,INFY"); t.listeners.hashchange(); ok(/data-gb-compare="1"/.test(nav.innerHTML) && nav.hasAttribute("hidden") === false, "on the comparison view the bar stays"); eq(t.els.gbToggle.textContent, "Compare ▾", "and Compare is the current item");
+  t.setHash("#compare-pick"); t.listeners.hashchange(); eq(t.els.gbToggle.textContent, "Compare ▾", "also on the comparison picker");
+  t.setHash("#stock=TCS"); t.listeners.hashchange(); ok(/data-gb-section="research"/.test(nav.innerHTML), "and a stock brings its section links back");
   t.setHash("#stock=zzz-nothing&section=shareholding"); t.listeners.hashchange(); ok(/#stock=ZZZ-NOTHING&section=shareholding/.test(nav.innerHTML.replace(/&amp;/g, "&")), "an unknown stock still routes (the Stock Detail view shows its own 'not found'); the bar does not crash");
 }
 { // jumping to a section scrolls to the existing element, below the bar; a stock with the section absent is safe
@@ -151,6 +171,7 @@ async function loadSearch({ bar = true } = {}) {
   re(css, /#globalBar\{[^}]*position:sticky;top:0/, "the bar stays on screen while scrolling (persistent)");
   re(css, /@container \(max-width:1000px\)\{#globalBar \.gb-toggle\{display:inline-flex/, "the compact navigation is a container query on the bar itself");
   re(css, /#globalBar\[data-open\] \.gb-sections\{display:block\}/, "the menu opens on demand");
+  re(css, /@container \(max-width:1000px\)\{[^]*#globalBar \.gb-search\{flex:1 1 100%;max-width:none;order:3\}/, "compact layout: the search gets its own full-width row, on the dashboard too (it stays easy to reach)");
   re(css, /#globalBar \.gb-sections a\{min-height:44px/, "touch targets are at least 44px on small screens");
   const bar = css.slice(css.indexOf("#globalBar{"), css.indexOf("@container (max-width:1000px)") + 900);
   no(bar, /overflow-x\s*:\s*(auto|scroll)|white-space\s*:\s*nowrap|(?<![-\w])width\s*:\s*\d+(px|rem)|min-width\s*:\s*\d+(px|rem)|transition|animation|@keyframes/, "no fixed widths, no nowrap, no scroll-strip hack, no animation in the bar");
