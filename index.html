@@ -68,43 +68,62 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 #globalBar .gb-sections{flex:1 1 100%;order:4;display:none}#globalBar[data-open] .gb-sections{display:block}
 #globalBar .gb-sections ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:6px}
 #globalBar .gb-sections a{min-height:44px;padding:11px 12px;border:1px solid var(--line);background:var(--card)}#globalBar .gb-sections a[aria-current=true]{border-color:var(--ac)}}
+</style><style id="marketCss">
+.mk-sec{margin:0 0 20px;container-type:inline-size}
+.mk-h1{font-size:1.45rem;line-height:1.2;margin:.8em 0 .3em;max-width:none}
+.mk-sec h2{font-size:1.05rem;margin:1.1em 0 .45em}
+.mk-sub{color:var(--mute);font-size:.76rem;margin:.35em 0 0;overflow-wrap:anywhere}
+.mk-status{color:var(--mute);font-size:.84rem;margin:.1em 0 .6em}
+.mk-na{margin:.3em 0;padding:11px 14px;border:1px dashed var(--line);border-radius:10px;color:var(--mute);font-size:.88rem}.mk-na small{display:block;font-size:.75rem;margin-top:2px}
+.mk-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0;container-type:inline-size}
+.mk-card h3{font-size:.95rem;margin:0}.mk-card .mk-na{margin:.5em 0 0}
+.mk-h4{font-size:.85rem;margin:.9em 0 .2em;color:var(--mute)}
+.mk-2,.mk-g{display:grid;gap:12px;align-items:start;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}.mk-g{margin-top:12px}.mk-2>*,.mk-g>*{min-width:0}
+.mk-t{width:100%;min-width:0;border-collapse:collapse;margin-top:6px}
+.mk-t th,.mk-t td{padding:6px 6px;font-size:.84rem;border-bottom:1px solid var(--line);text-align:left;vertical-align:baseline}
+.mk-t th{font-size:.72rem;text-transform:none;color:var(--mute);font-weight:600}
+.mk-t th.n,.mk-t td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.mk-t td.s{overflow-wrap:anywhere}
+.mk-t tr:last-child td{border-bottom:0}
+.mk-sym{color:var(--ac);font-weight:700;text-decoration:none}.mk-sym:hover{text-decoration:underline}
+@container (max-width:330px){.mk-t .c3{display:none}}
+.mk-idx-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
+.mk-idx{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;container-type:inline-size;min-width:0}
+.mk-idx-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}.mk-idx-h b{font-size:1rem}.mk-idx-h .v{font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums}
+.mk-perf{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.mk-perf div{background:var(--bg);border-radius:8px;padding:6px 8px;min-width:0}.mk-perf small{display:block;color:var(--mute);font-size:.72rem}.mk-perf span{font-size:.9rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+@container (max-width:240px){.mk-perf{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.mk-adv{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.mk-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line)}.mk-bar i{display:block;height:100%}.mk-bar .a{background:var(--up)}.mk-bar .u{background:var(--mute);opacity:.45}.mk-bar .d{background:var(--dn)}
+.mk-adv-t{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;margin-top:8px;font-size:.86rem}
+.mk-tiles{display:grid;gap:8px;margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr))}
+.mk-tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}.mk-tile b{display:block;font-size:1.25rem;font-variant-numeric:tabular-nums}.mk-tile span{display:block;color:var(--mute);font-size:.8rem;overflow-wrap:anywhere}.mk-tile small{display:block;color:var(--mute);font-size:.72rem}.mk-dash{color:var(--mute)}
+.mk-feed{list-style:none;margin:0;padding:0;display:grid;gap:6px;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))}
+.mk-feed li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:.88rem;min-width:0}
+.mk-k{background:var(--acs);color:var(--ac);border-radius:4px;padding:1px 8px;font-size:.72rem;font-weight:700}.mk-ft{color:var(--mute);overflow-wrap:anywhere;min-width:0}
+.mk-tabs{flex-wrap:wrap;border:0;padding:0 0 8px;overflow:visible}.mk-tabs button{white-space:normal;padding:6px 12px;min-height:36px}
 </style></head><body>
 <div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav><div class="gb-search" id="globalSearchHost"></div></div></div>
 <div class="w">
 
-<header>
-<h1>A simple end-of-day stock screener for Indian swing traders</h1>
-<p class="lead">This page is your working plan plus a live demo for swing traders (people who hold stocks for days to weeks): what to build, in what order, what it costs and what to watch out for. Name "StockLens India" is a placeholder; pick your own.</p>
-<a class="btn" href="#road">See the roadmap</a>
-<p class="note" id="stat" style="padding-left:0"></p>
-</header>
-
-<h2 id="demo">Demo: swing scans (updated after market close)</h2>
-<div class="panel">
-<div class="tabs" role="tablist" id="tabs"></div>
-<div class="scroll"><table><thead><tr><th>Symbol</th><th>LTP (₹)</th><th>Change %</th><th>Volume vs avg</th></tr></thead><tbody id="rows"></tbody></table></div>
-<p class="note" id="dnote">Sample numbers only, not real market data. Real data comes from a paid data provider (see Costs).</p>
-</div>
-
-<div class="panel" style="margin-top:14px;padding:16px">
-<h3>Market breadth (sample): advance / decline</h3>
-<div class="bar" role="img" aria-label="1180 advancing, 60 unchanged, 760 declining"><i style="width:59%;background:var(--up)"></i><i style="width:3%;background:var(--line)"></i><i style="width:38%;background:var(--dn)"></i></div>
-<div id="adtxt"><span class="up">1,180 advancing</span> &nbsp; <span style="color:var(--mute)">60 flat</span> &nbsp; <span class="dn">760 declining</span></div>
-</div>
-
-<h2 id="all">Everything in one place</h2>
-<p class="lead">I could not open the widgets inside your Chartink link (it only showed the title, "Market Breadth Dashboard"). So this section covers what that kind of dashboard usually has, plus the gainers, losers, volume, highs, technical and fundamental scans you asked for.</p>
-<h3 style="margin-top:1.2em">Market breadth (sample)</h3>
-<div class="tiles" id="tiles"></div>
-<div class="g" style="margin-top:18px">
-<div class="c"><h3>Gainers and losers</h3><ul><li>Top gainers / top losers today</li><li>Up or down 4%+ with high volume</li><li>Gap up / gap down at open</li><li>Weekly and monthly gainers</li></ul></div>
-<div class="c"><h3>Volume</h3><ul><li>Volume 2x or more of the 20-day average</li><li>Highest traded value (₹) today</li><li>Quiet stocks about to move (low volume dry-up)</li></ul></div>
-<div class="c"><h3>Highs and lows</h3><ul><li>52-week high / 52-week low</li><li>All-time high</li><li>Near 52-week high (within 5%)</li><li>20-day high breakout</li></ul></div>
-<div class="c"><h3>Technical</h3><ul><li>Above 20 / 50 / 200 day average</li><li>Golden cross, MACD crossover</li><li>RSI above 60 or below 30</li><li>Supertrend, inside bar, Bollinger squeeze</li></ul></div>
-<div class="c"><h3>Fundamental</h3><ul><li>PE, market cap, dividend yield</li><li>ROE, ROCE, debt to equity</li><li>Sales and profit growth</li><li>Promoter holding, quarterly results</li></ul></div>
-<div class="c"><h3>Sectors</h3><ul><li>Sector gainers and losers</li><li>Sector strength this week and month</li><li>Stocks above 50 DMA per sector</li></ul></div>
-</div>
-<h3 style="margin-top:1.4em">Fundamental screen</h3>
+<!-- 5J:start -->
+<main id="market">
+<section class="mk-sec" id="mk-today"><h1 class="mk-h1">Market Today</h1><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-breadth"><h2>Market Breadth</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-happening"><h2>What's Happening</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-sectors"><h2>Sector Dashboard</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-movers"><h2>Top Gainers / Top Losers</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-trending"><h2>Trending Stocks</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-52w"><h2>New 52-Week High / Low</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-ath"><h2>All-Time High / Low</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-volume"><h2>Volume Shockers</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-hvgain"><h2>High Volume + High Gain</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-hvloss"><h2>High Volume + Top Losers</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-relative"><h2>Relative Outperformance / Underperformance</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-fiidii"><h2>FII / DII Activity</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-sectorlead"><h2>Sector Leaders / Laggards</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+<section class="mk-sec" id="mk-swing"><h2>Swing Market Watch</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
+</main>
+<section class="mk-sec" id="screener-sec"><h2 id="screener">Fundamental screen</h2>
 <p id="fstat" class="note" style="padding-left:0">Loading fundamentals…</p>
 <p style="margin:.3em 0 .6em;color:var(--mute)">Show me stocks with ROE above: <select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select></p>
 <div class="tabs" role="tablist" id="ftabs" style="padding:0 0 10px;border:0"></div>
@@ -119,104 +138,12 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 <h4 style="margin:.6em 0 .4em">Cash flow (latest annual period)</h4><div class="panel scroll" id="t3a"></div><p class="note" id="fcfnote" style="padding-left:0"></p>
 <h4 style="margin:1.2em 0 .4em">Growth (latest year, change vs previous year as reported by Upstox)</h4><div class="panel scroll" id="t3b"></div>
 <p class="note" id="n3" style="padding-left:0"></p></div>
-
-<h2 id="more">More market data</h2>
-<p class="lead">Six extra views swing traders check every evening. Each has a one-line explanation so beginners can follow.</p>
-<div class="panel">
-<div class="tabs" role="tablist" id="mt"></div>
-<p class="note" id="mx" style="padding-bottom:0"></p>
-<div class="scroll"><table><thead id="mh"></thead><tbody id="mb"></tbody></table></div>
-<p class="note">Sample numbers and made-up investor names only. Real data comes from the daily exchange files and your data vendor.</p>
-</div>
-
-<h2 id="news">News and filings: yesterday's company updates</h2>
-<p class="lead">Every item comes from an official company filing on the exchange, rewritten in two plain lines. Tap a tag to filter.</p>
-<div class="chips" id="chips" role="group" aria-label="Filter by type"></div>
-<div id="feed"></div>
-<p class="note">All companies, amounts and dates below are made up for the demo. Real items must link to the original filing and be checked before they go live.</p>
-
-<h2 id="stock">Filings for this stock</h2>
-<p class="lead">Tap any stock name in the scan table above, or choose one here.</p>
-<div class="panel" style="padding:16px">
-<label for="sp" style="color:var(--mute);font-size:.9rem">Stock </label><select id="sp"></select>
-<div class="tiles" id="snap"></div>
-<div class="chips" id="sf" role="group" aria-label="Filter filings"></div>
-<div class="tl" id="tl"></div>
-<p class="note" style="padding-left:0">Sample data. In the real product each line links to the original exchange filing.</p>
-</div>
-
-<h2 id="tools">Strength, delivery, big deals and FII/DII</h2>
-<p class="lead">Six more tools swing traders use every evening. Choose a tab.</p>
-<div class="panel"><div class="tabs" role="tablist" id="ttabs"></div>
-<p class="note" id="tdesc" style="padding-bottom:0"></p>
-<div class="scroll"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
-<p class="note" id="xnote">Sample numbers and made-up investor names. Delivery %, bulk/block deals and FII/DII figures are published by the exchanges after market close. Relative strength and moving averages you calculate yourself from price data. Check the exchanges' terms before showing their reports on your site.</p></div>
-
-<h2 id="road">Roadmap: step by step</h2>
-<div class="g">
-<div class="c"><small>Weeks 1–2 · Plan</small><h3>Validate and set up</h3><ul><li>Niche is set: swing traders who hold for days to weeks</li><li>Talk to 20 traders, ask what they pay for today</li><li>Register company, buy domain, talk to a CA/lawyer about SEBI</li></ul></div>
-<div class="c"><small>Weeks 3–12 · Build</small><h3>MVP (first version)</h3><ul><li>End-of-day data from a licensed vendor (no live feed needed)</li><li>4 pages: Swing scans, Market breadth, Sector strength, Watchlist</li><li>Login, free vs paid plan, payments</li><li>Fast web app that works well on mobile</li></ul></div>
-<div class="c"><small>Months 4–6 · Launch</small><h3>Go live</h3><ul><li>Beta with 100 users, fix bugs</li><li>YouTube, Telegram, X, WhatsApp communities</li><li>Weekly market-breadth posts to build trust</li></ul></div>
-<div class="c"><small>Months 7–12 · Grow</small><h3>Add depth</h3><ul><li>Evening Telegram/email digest, custom scans, chart patterns</li><li>% of stocks above 50/200 DMA, FII/DII, results calendar</li><li>Broker tie-ups, mobile app</li></ul></div>
-<div class="c"><small>Year 2 · Scale</small><h3>Become a brand</h3><ul><li>Backtesting, API for developers</li><li>Hindi and regional language versions</li><li>Education courses, B2B for brokers</li></ul></div>
-</div>
-
-<h2 id="cost">Expected spending (India, rough estimates)</h2>
-<div class="panel scroll"><table><thead><tr><th>Item</th><th>Cost</th><th>Note</th></tr></thead><tbody>
-<tr><td>Developers (freelance / small agency)</td><td class="n">₹1.5–4 lakh</td><td>3-month MVP</td></tr>
-<tr><td>Design (logo, UI)</td><td class="n">₹30–60k</td><td>One-time</td></tr>
-<tr><td>Market data (end-of-day)</td><td class="n">₹500–5k / month</td><td>Much cheaper than live F&amp;O data</td></tr>
-<tr><td>Cloud servers, database, domain</td><td class="n">₹3–10k / month</td><td>Start small, scale later</td></tr>
-<tr><td>Company registration, legal, disclaimers</td><td class="n">₹20–50k</td><td>Plus yearly CA fees</td></tr>
-<tr><td>Marketing (first 6 months)</td><td class="n">₹1–3 lakh</td><td>Content beats ads at the start</td></tr>
-<tr><td><b>Total to launch</b></td><td class="n"><b>₹4–9 lakh</b></td><td>Year 1 including running costs: about ₹8–18 lakh</td></tr>
-</tbody></table></div>
-<p class="note">Get 2–3 quotes for every item. Exact vendor prices change, so confirm before paying.</p>
-
-<h2 id="money">How you earn</h2>
-<div class="g">
-<div class="c"><h3>Subscriptions</h3><p>Free plan with delay and limits. Pro at about ₹299–999/month. This is your main income.</p></div>
-<div class="c"><h3>Broker referrals</h3><p>Earn when users open demat accounts. Always disclose it clearly.</p></div>
-<div class="c"><h3>Evening alerts and API</h3><p>Paid daily scan digests on Telegram or email, plus data access for developers.</p></div>
-<div class="c"><h3>Education</h3><p>Courses and webinars on reading OI, breadth and pivots.</p></div>
-</div>
-<p class="note">Rough goal: 1,000 paying users × ₹500 = ₹5 lakh/month. Most sites need 12–24 months to get there.</p>
-
-<h2 id="pc">Pros and cons</h2>
-<div class="g">
-<div class="c pro"><h3>Pros</h3><ul><li>Millions of new demat accounts in India</li><li>Repeat subscriptions, users come daily</li><li>End-of-day data keeps running costs low</li><li>Content and SEO bring free users</li></ul></div>
-<div class="c con"><h3>Cons</h3><ul><li>Crowded: Intraday Screener, Chartink, Screener.in already exist</li><li>Swing traders visit once a day, so you need evening alerts to bring them back</li><li>Users leave quickly if data is late or wrong</li><li>Strict SEBI rules; a bad month for markets means fewer users</li></ul></div>
-<div class="c"><h3>How to win</h3><ul><li>Choose a narrow niche and do it better</li><li>Simple Hindi and English explanations</li><li>Very fast pages, clean mobile view</li><li>Honest, no-tips, education-first brand</li></ul></div>
-</div>
-
-<h2 id="law">Rules you must follow</h2>
-<div class="warn"><ul>
-<li>Do not say "buy" or "sell" or give targets unless you are a SEBI-registered Research Analyst or Investment Adviser. Show data, not advice.</li>
-<li>Do not copy exchange data or another site's data. Use a licensed vendor.</li>
-<li>Add a risk disclaimer, privacy policy and terms on every page.</li>
-<li>Follow SEBI rules on influencers and paid promotions. Disclose affiliate links.</li>
-<li>Check the current rules with a lawyer before launch; they change often.</li>
-</ul></div>
-
+</section>
+<!-- 5J:end -->
 <section id="detail" aria-live="polite"></section>
-<footer>Sample plan for learning purposes. Not financial or legal advice. Market figures on this page are dummy data.</footer>
+<footer>End-of-day market data. Not investment advice.</footer>
 </div>
 <script>
-var LIVE=false;
-const D={
-"Breakout":[["GLENMARK",2441.5,4.98,2.4],["MANKIND",2545,4.49,1.9],["SONACOMS",815.65,3.1,2.8]],
-"Pullback to 20 EMA":[["TORNTPHARM",4894,0.51,0.8],["ADANIPOWER",196.3,0.4,0.9],["DEMO BANK",640.2,-0.3,0.7]],
-"52-Week High":[["SAMPLE CO",980,2.2,3.1],["TEST AUTO",2210,1.6,2.2],["DEMO STEEL",145.5,3.4,1.7]],
-"Volume Surge":[["XYZ INDS",1204,1.2,4.6],["ABC LTD",312.4,0.6,3.9],["GLENMARK",2441.5,4.98,2.4]],
-"Near Support":[["PQR PHARMA",455,-0.8,0.6],["LMN TECH",1320,-1.1,0.9],["DEMO BANK",640.2,-0.3,0.7]]};
-const tabs=document.getElementById("tabs"),rows=document.getElementById("rows");
-function show(k){[...tabs.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));
-rows.innerHTML=D[k].map(r=>`<tr><td><button class="lk" type="button">${r[0]}</button>${LIVE?"":'<span class="tag">SAMPLE</span>'}</td><td class="n">${r[1].toFixed(2)}</td><td class="n ${r[2]>=0?"up":"dn"}">${r[2]>=0?"▲":"▼"} ${Math.abs(r[2]).toFixed(2)}</td><td class="n">${r[3].toFixed(1)}×</td></tr>`).join("")}
-Object.keys(D).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>show(k);tabs.appendChild(b)});
-show("Breakout");
-
-const T=[["Above 20 DMA",58],["Above 50 DMA",46],["Above 200 DMA",52],["New 52-week highs",41,1],["New 52-week lows",17,1],["Up 4%+ today",63,1],["Down 4%+ today",38,1],["Advance/decline ratio",1.6,1]];
-document.getElementById("tiles").innerHTML=T.map(t=>`<div class="tile"><b>${t[0].includes("ratio")?t[1].toFixed(1):t[1]+(t[2]?"":"%")}</b><span>${t[0]}</span>${t[2]?"":`<div class="meter"><i style="width:${t[1]}%"></i></div>`}</div>`).join("");
 let FD=[],fsort={k:"roe",dir:-1};
 const fesc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ffmt=v=>v==null?"-":v.toLocaleString("en-IN",{maximumFractionDigits:2});
@@ -232,108 +159,6 @@ if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.
 st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
 catch(e){st.textContent="Fundamentals not loaded yet.";document.getElementById("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';return}
 fund()})();
-
-const N=[
-["Orders","SAMPLE ENGINEERING","Wins a ₹850 crore order from a state power company.","Work to be finished in 24 months.","Order book filing","28 Sep, 6:40 pm"],
-["Orders","DEMO INFRA","Gets a ₹310 crore road project from a national agency.","Project is 12% of last year's sales.","Exchange filing","28 Sep, 4:15 pm"],
-["Fundraising","TEST FINANCE","Board approves raising up to ₹2,000 crore through bonds.","Money is for lending; timing is not fixed.","Board meeting outcome","28 Sep, 5:30 pm"],
-["Fundraising","ABC PHARMA","Plans a share sale to institutions (QIP) of up to ₹1,200 crore.","Shareholders must approve first.","Exchange filing","28 Sep, 2:05 pm"],
-["Mergers","XYZ CEMENT","Board approves merging its small subsidiary into the parent.","Needs approval from regulators and courts.","Scheme of arrangement","28 Sep, 7:10 pm"],
-["Ratings","LMN AUTO","Credit rating raised by one level with a stable outlook.","Agency cites lower debt and steady cash flow.","Rating rationale","28 Sep, 3:00 pm"],
-["Ratings","DEMO STEEL","Rating outlook changed from stable to negative.","Agency points to weak margins.","Rating rationale","28 Sep, 11:20 am"],
-["Management","SAMPLE FMCG","Chief financial officer resigns; interim CFO named.","Change takes effect next month.","Change in management","28 Sep, 8:00 pm"],
-["Capex","PQR POWER","Plans ₹4,000 crore for new capacity over 3 years.","Management shared this on the earnings call.","Concall transcript","28 Sep, 9:15 pm"],
-["Capex","TEST CHEMICALS","Sets aside ₹600 crore to expand a plant by 40%.","Production starts in the second half of next year.","Investor presentation","28 Sep, 6:00 pm"]];
-const types=["All","Orders","Fundraising","Mergers","Ratings","Management","Capex"];let cur="All";
-const ch=document.getElementById("chips"),fd=document.getElementById("feed");
-function draw(){[...ch.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===cur));
-fd.innerHTML=N.filter(n=>cur==="All"||n[0]===cur).map(n=>`<div class="item"><span class="k">${n[0]}</span><b>${n[1]}</b><span class="tag">SAMPLE</span><div style="margin-top:6px">${n[2]} ${n[3]}</div><div class="m">${n[4]} · ${n[5]}</div></div>`).join("")}
-types.forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{cur=t;draw()};ch.appendChild(b)});draw();
-
-const P={
-"GLENMARK":{s:["₹2,441.50","+4.98%","Pharma"],f:[["28 Sep","Orders","Signs a licensing deal worth up to ₹900 crore in milestone payments.","Exchange filing"],["24 Sep","Ratings","Credit rating kept at the same level, outlook stable.","Rating rationale"],["12 Sep","Capex","Plans ₹700 crore to expand a plant in Gujarat.","Concall transcript"],["30 Aug","Management","New head of research and development joins.","Change in management"]]},
-"MANKIND":{s:["₹2,545.00","+4.49%","Pharma"],f:[["27 Sep","Fundraising","Board approves bonds of up to ₹1,500 crore.","Board outcome"],["15 Sep","Capex","Sets aside ₹500 crore for a new factory.","Investor presentation"]]},
-"SONACOMS":{s:["₹815.65","+3.10%","Auto parts"],f:[["28 Sep","Orders","Wins a multi-year supply contract from a large car maker.","Exchange filing"],["19 Sep","Mergers","Board approves buying a small electronics company.","Scheme of arrangement"]]},
-"TORNTPHARM":{s:["₹4,894.00","+0.51%","Pharma"],f:[["26 Sep","Ratings","Rating raised by one level.","Rating rationale"]]},
-"ADANIPOWER":{s:["₹196.30","+0.40%","Power"],f:[["25 Sep","Orders","Signs a long-term power supply agreement with a state utility.","Exchange filing"],["10 Sep","Capex","Plans new units adding to total capacity.","Concall transcript"]]}};
-const sp=document.getElementById("sp"),sn=document.getElementById("snap"),sf=document.getElementById("sf"),tl=document.getElementById("tl");let sc="All",cs="GLENMARK";
-Object.keys(P).forEach(k=>{const o=document.createElement("option");o.textContent=k;sp.appendChild(o)});
-["All","Orders","Fundraising","Mergers","Ratings","Management","Capex"].forEach(t=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{sc=t;drawS()};sf.appendChild(b)});
-function drawS(){const d=P[cs];sp.value=cs in P?cs:"";[...sf.children].forEach(b=>b.setAttribute("aria-pressed",b.textContent===sc));
-if(!d){sn.innerHTML="";tl.innerHTML=`<p>No filings found for ${cs} in this sample. Real data would show the last 90 days.</p>`;return}
-sn.innerHTML=[["Price",d.s[0]],["Today",d.s[1]],["Sector",d.s[2]],["Filings (90 days)",d.f.length]].map(x=>`<div class="tile"><b style="font-size:1.1rem">${x[1]}</b><span>${x[0]}</span></div>`).join("");
-const r=d.f.filter(f=>sc==="All"||f[1]===sc);
-tl.innerHTML=r.length?r.map(f=>`<div><span class="k">${f[1]}</span><b>${f[0]}</b><div style="margin:4px 0 0;position:static">${f[2]}</div><span style="color:var(--mute);font-size:.8rem">${f[3]}</span></div>`).join(""):"<p>No filings of this type for this stock.</p>"}
-sp.onchange=()=>{cs=sp.value;sc="All";drawS()};
-function pick(k){cs=k;sc="All";drawS();document.getElementById("stock").scrollIntoView({behavior:"smooth"})}
-drawS();
-
-const M={
-"Relative strength":{x:"Shows which stocks are beating the market. Rating runs 1 to 99; 99 is strongest.",h:["Symbol","RS rating","1-month return %","Vs Nifty %","Verdict"],r:[["GLENMARK","92","+12.4","+8.1","Leader"],["MANKIND","88","+9.7","+5.4","Leader"],["SONACOMS","81","+7.2","+2.9","Strong"],["DEMO BANK","47","+0.8","-3.5","Average"],["LMN STEEL","22","-6.3","-10.6","Weak"]]},
-"Delivery":{x:"Delivery % is the share of traded shares actually taken home, not squared off the same day. High delivery with a rising price often means real buying.",h:["Symbol","Delivery %","20-day avg %","Volume vs avg","Change %"],r:[["SAMPLE FMCG","74","51","2.1×","+2.3"],["DEMO PHARMA","68","49","1.8×","+1.6"],["TEST BANK","61","55","1.1×","+0.4"],["ABC AUTO","33","52","2.6×","-2.8"]]},
-"FII / DII":{x:"Net money put in (+) or taken out (-) by foreign (FII) and domestic (DII) institutions, in ₹ crore.",h:["Date","FII net (₹ cr)","DII net (₹ cr)","Nifty change %"],r:[["28 Sep","-2,140","+3,020","-0.42"],["27 Sep","+860","+1,410","+0.65"],["26 Sep","-1,320","+2,270","-0.18"],["25 Sep","-3,480","+4,100","-0.90"],["24 Sep","+1,050","+780","+0.71"]]},
-"50 & 200 DMA":{x:"DMA is the average price of the last 50 or 200 days. Golden cross: the 50 rises above the 200 (bullish sign). Death cross is the opposite.",h:["Symbol","Price","50 DMA","200 DMA","Status"],r:[["GLENMARK","2,441","2,280","2,050","Above both"],["SONACOMS","816","779","781","Golden cross today"],["TORNTPHARM","4,894","4,700","4,410","Above both"],["XYZ IT","1,204","1,240","1,255","Death cross today"],["LMN STEEL","145","158","171","Below both"]]},
-"Volume gainers":{x:"Stocks trading far more shares than usual and rising in price.",h:["Symbol","Volume (lakh)","20-day avg (lakh)","Volume vs avg","Change %"],r:[["XYZ INDS","48.2","10.5","4.6×","+1.2"],["ABC LTD","31.0","7.9","3.9×","+0.6"],["SAMPLE CO","22.4","7.2","3.1×","+2.2"],["DEMO STEEL","18.9","10.7","1.7×","+3.4"]]},
-"Big deals":{x:"Bulk and block deals are very large trades that the exchange must publish with the buyer or seller's name.",h:["Date","Symbol","Investor","Buy / Sell","Qty (lakh)","Price ₹","Type"],r:[["28 Sep","SAMPLE ENGINEERING","SAMPLE MUTUAL FUND","Buy","12.5","1,340","Block"],["28 Sep","DEMO INFRA","DEMO CAPITAL","Sell","8.0","412","Bulk"],["27 Sep","TEST FINANCE","EXAMPLE INSURANCE CO","Buy","20.0","688","Block"],["27 Sep","ABC PHARMA","SAMPLE FOREIGN FUND","Sell","6.4","1,015","Bulk"]]}};
-const mt=document.getElementById("mt");
-function cell(v){const c=/^[+-][\d.,]+$/.test(v)?(v[0]==="+"?"n up":"n dn"):v==="Buy"?"up":v==="Sell"?"dn":/\d/.test(v)&&!/[A-Za-z]/.test(v)?"n":"";return `<td class="${c}">${v}</td>`}
-function mshow(k){[...mt.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));const d=M[k];
-document.getElementById("mx").textContent=d.x;
-document.getElementById("mh").innerHTML="<tr>"+d.h.map(h=>`<th>${h}</th>`).join("")+"</tr>";
-document.getElementById("mb").innerHTML=d.r.map(r=>"<tr>"+r.map(cell).join("")+"</tr>").join("")}
-Object.keys(M).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>mshow(k);mt.appendChild(b)});mshow("Relative strength");
-
-const X={
-"Relative strength":{d:"How a stock performed compared with the Nifty. Rating 99 is the strongest, 1 the weakest.",h:["Symbol","3-month return","Nifty 3-month","RS rating"],r:[["SAMPLE FMCG","+24.5%","+6.1%","94"],["DEMO PHARMA","+17.2%","+6.1%","86"],["TEST AUTO","+8.0%","+6.1%","64"],["ABC BANK","+1.2%","+6.1%","35"],["LMN STEEL","-9.4%","+6.1%","12"]]},
-"Delivery":{d:"Delivery % is the share of traded shares actually taken home, not squared off the same day. High delivery on a rising price shows real buying.",h:["Symbol","Price change","Volume vs avg","Delivery %","Usual delivery %"],r:[["SAMPLE FMCG","+2.8%","2.6x","74%","51%"],["DEMO PHARMA","+1.9%","1.8x","68%","46%"],["XYZ IT","-1.4%","2.1x","62%","40%"],["ABC BANK","+0.3%","0.9x","38%","44%"]]},
-"50 & 200 DMA":{d:"DMA means daily moving average. Above both is a healthy uptrend. Golden cross is when the 50 DMA moves above the 200 DMA.",h:["Symbol","Price","50 DMA","200 DMA","Status"],r:[["SAMPLE FMCG","1,240","1,150","1,020","Above both"],["DEMO PHARMA","845","812","805","Golden cross today"],["TEST AUTO","2,210","2,300","2,180","Between the two"],["LMN STEEL","145","162","171","Below both"],["ABC BANK","640","655","648","Death cross today"]]},
-"Volume gainers":{d:"Stocks rising on much higher volume than usual.",h:["Symbol","Change","Volume (lakh shares)","Vs 20-day avg"],r:[["XYZ INDS","+6.2%","48.5","5.1x"],["DEMO INFRA","+4.1%","31.2","3.8x"],["SAMPLE ENGINEERING","+3.3%","22.9","3.2x"],["TEST CHEMICALS","+2.7%","18.4","2.6x"]]},
-"Big deals":{d:"Bulk and block deals: large trades reported by the exchange after close. Names below are made up.",h:["Date","Symbol","Investor","Buy / Sell","Shares (lakh)","Price (₹)","Type"],r:[["28 Sep","DEMO INFRA","SAMPLE FUND A","Buy","12.0","310.40","Block"],["28 Sep","TEST FINANCE","DEMO INVESTOR B","Sell","8.5","512.10","Bulk"],["27 Sep","ABC PHARMA","SAMPLE MUTUAL FUND","Buy","15.2","1,180.00","Block"],["27 Sep","XYZ INDS","DEMO PROMOTER C","Sell","20.0","1,204.00","Block"]]},
-"FII / DII":{d:"Net buying (+) or selling (-) by foreign (FII) and domestic (DII) institutions, in ₹ crore.",h:["Date","FII net","DII net","Combined"],r:[["28 Sep","-1,240","+1,860","+620"],["27 Sep","+820","+540","+1,360"],["26 Sep","-2,150","+2,400","+250"],["25 Sep","-310","+1,120","+810"],["24 Sep","+1,470","-220","+1,250"]]}};
-const tt=document.getElementById("ttabs");
-function tshow(k){[...tt.children].forEach(b=>b.setAttribute("aria-selected",b.textContent===k));const v=X[k];
-document.getElementById("tdesc").textContent=v.d;
-document.getElementById("thead").innerHTML="<tr>"+v.h.map(h=>`<th>${h}</th>`).join("")+"</tr>";
-document.getElementById("tbody").innerHTML=v.r.map(r=>"<tr>"+r.map((c,i)=>{const cl=/^\+/.test(c)||c==="Buy"||c==="Above both"||c.startsWith("Golden")?"up":/^-/.test(c)||c==="Sell"||c==="Below both"||c.startsWith("Death")?"dn":"";return `<td class="n ${cl}">${i===0&&v.h[0]==="Symbol"?c+(LIVE?'':'<span class="tag">SAMPLE</span>'):c}</td>`}).join("")+"</tr>").join("")}
-Object.keys(X).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>tshow(k);tt.appendChild(b)});
-tshow("Relative strength");
-
-(async()=>{
-const j=async u=>{try{const r=await fetch(u,{cache:"no-store"});return r.ok?await r.json():null}catch(e){return null}};
-const [S,B,F]=await Promise.all([j("out/scans.json"),j("out/bigdeals.json"),j("out/fiidii_history.json")]);
-const st=document.getElementById("stat");
-if(!S){st.textContent="Showing sample data. Real data appears when this site is hosted and the updater has run.";return}
-LIVE=true;
-const n=v=>v==null?0:v,sg=(v,d=2,u="%")=>(v>0?"+":"")+n(v).toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d})+u;
-Object.keys(D).forEach(k=>delete D[k]);
-const M=a=>(a||[]).slice(0,15).map(r=>[r.symbol,n(r.price),n(r.change_pct),n(r.volume_x_avg)]);
-D["Gainers"]=M(S.gainers);D["Losers"]=M(S.losers);D["Volume Surge"]=M(S.volume_gainers);D["52-Week High"]=M(S.high_52w);
-tabs.innerHTML="";Object.keys(D).forEach(k=>{const b=document.createElement("button");b.textContent=k;b.setAttribute("role","tab");b.onclick=()=>show(k);tabs.appendChild(b)});show("Gainers");
-const b=S.breadth,tot=b.advancing+b.declining+b.unchanged||1;
-const tiles=[["Above 50 DMA",b.above_50dma_pct+"%",b.above_50dma_pct],["Above 200 DMA",b.above_200dma_pct+"%",b.above_200dma_pct],["New 52-week highs",b.new_52w_highs],["Advancing",b.advancing],["Declining",b.declining],["Advance/decline ratio",(b.advancing/Math.max(b.declining,1)).toFixed(1)]];
-document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><b>${t[1]}</b><span>${t[0]}</span>${t[2]!=null&&typeof t[1]==="string"&&t[1].includes("%")?`<div class="meter"><i style="width:${t[2]}%"></i></div>`:""}</div>`).join("");
-const bar=document.querySelector(".bar").children;
-bar[0].style.width=b.advancing/tot*100+"%";bar[1].style.width=b.unchanged/tot*100+"%";bar[2].style.width=b.declining/tot*100+"%";
-document.getElementById("adtxt").innerHTML=`<span class="up">${b.advancing.toLocaleString("en-IN")} advancing</span> &nbsp; <span style="color:var(--mute)">${b.unchanged} flat</span> &nbsp; <span class="dn">${b.declining.toLocaleString("en-IN")} declining</span>`;
-const L=(a,k=25)=>(a||[]).slice(0,k);
-X["Relative strength"].h=["Symbol","3-month return","RS rating"];
-X["Relative strength"].r=L(S.relative_strength).map(r=>[r.symbol,sg(r.return_3m_pct,1),String(r.rs_rating)]);
-X["Delivery"].r=L(S.delivery).map(r=>[r.symbol,sg(r.change_pct,1),n(r.volume_x_avg).toFixed(1)+"x",n(r.delivery_pct).toFixed(0)+"%",n(r.usual_delivery_pct).toFixed(0)+"%"]);
-const dm=(S.dma||[]),cr=dm.filter(r=>/cross/.test(r.status)),rest=dm.filter(r=>!/cross/.test(r.status));
-X["50 & 200 DMA"].r=L(cr.concat(rest)).map(r=>[r.symbol,n(r.price).toFixed(0),n(r.dma50).toFixed(0),n(r.dma200).toFixed(0),r.status]);
-X["Volume gainers"].r=L(S.volume_gainers).map(r=>[r.symbol,sg(r.change_pct,1),(n(r.volume)/1e5).toFixed(1),n(r.volume_x_avg).toFixed(1)+"x"]);
-if(B){const pk=(o,re)=>{const k=Object.keys(o).find(k=>re.test(k.toLowerCase()));return k?o[k]:""};
-X["Big deals"].r=B.slice(-30).reverse().map(o=>{const q=parseFloat(String(pk(o,/quantity/)).replace(/,/g,""))||0,bs=String(pk(o,/buy/)).toLowerCase();
-return [pk(o,/^date/),pk(o,/^symbol/),pk(o,/client/),bs.startsWith("b")?"Buy":"Sell",(q/1e5).toFixed(1),pk(o,/price/),o.Type||""]})}
-else X["Big deals"].d+=" (Sample data. Not loaded yet.)";
-if(F){const by={};F.forEach(x=>{const d=x.date;by[d]=by[d]||{};const v=parseFloat(String(x.netValue).replace(/,/g,""));if(/FII/i.test(x.category))by[d].f=v;else if(/DII/i.test(x.category))by[d].d=v});
-X["FII / DII"].r=Object.entries(by).slice(-8).reverse().map(([d,v])=>[d,sg(v.f,0,""),sg(v.d,0,""),sg((v.f||0)+(v.d||0),0,"")])}
-else X["FII / DII"].d+=" (Sample data. Not loaded yet.)";
-const cur=[...tt.children].find(x=>x.getAttribute("aria-selected")==="true");tshow(cur?cur.textContent:"Relative strength");
-st.textContent="Live NSE end-of-day data as of "+S.as_of+". News and filings are still sample.";
-document.getElementById("dnote").textContent="End-of-day data, calculated from NSE daily files and updated each evening.";
-document.getElementById("xnote").textContent="From NSE's daily end-of-day files. Check the exchange's terms before showing them on a paid site.";
-})();
 </script>
 <script>
 /* StockLens Phase 3 Step 1 - Stock Detail view (#stock=SYMBOL). Separate from the dashboard scripts; reads existing JSON only. */
@@ -2453,15 +2278,13 @@ var SECTIONS=[
   {key:"technical",label:"Technical",find:function(b){return b.querySelector("#detailTech")}},
   {key:"research",label:"Research",find:function(b){return b.querySelector("#detailResearch")}}];
 function sectionOf(key){for(var i=0;i<SECTIONS.length;i++)if(SECTIONS[i].key===key)return SECTIONS[i];return null}
-/* the same destinations on the dashboard, where no stock is selected: each reuses an existing section of the page (found by its heading, never copied). Shareholding has no
-   dashboard section (it belongs to a stock), so there it only asks for a stock: see pick(). Route: #home=KEY. */
-function h3(text){var l=document.querySelectorAll?document.querySelectorAll("h3"):[];for(var i=0;i<l.length;i++)if(String(l[i].textContent||"").trim()===text)return l[i];return null}
+/* the same destinations on the dashboard, where no stock is selected: each reuses an existing section of the page (never copied): Fundamentals = the Fundamental screen, Financials = its Financial Health
+   and Cash Flow tabs, Technical = Swing Market Watch. Shareholding and Research belong to a stock, so on the dashboard they only ask for one: see pick(). Route: #home=KEY. */
 var HOME=[
   {key:"overview",find:function(){return document.body}},
-  {key:"fundamentals",find:function(){return h3("Fundamental screen")}},
+  {key:"fundamentals",find:function(){return $("screener")}},
   {key:"financials",find:function(){return $("ftabs")}},
-  {key:"technical",find:function(){return h3("Technical")}},
-  {key:"research",find:function(){return $("news")}}];
+  {key:"technical",find:function(){return $("mk-swing")}}];
 function homeOf(key){for(var i=0;i<HOME.length;i++)if(HOME[i].key===key)return HOME[i];return null}
 function parseHome(hash){var m=/^#home=([a-z]{1,30})$/.exec(hash||"");return m&&homeOf(m[1])?m[1]:null}
 function homeHash(key){return"#home="+key}
@@ -2497,8 +2320,8 @@ function showBar(sym){
   if(navSym===k)return;
   navSym=k;      /* the bar is on every view and always lists the same destinations: a stock's sections, or (no stock) their dashboard equivalents */
   nav.innerHTML='<ul>'+SECTIONS.map(function(x){
-    var href=sym?hashFor(sym,x.key):x.key==="shareholding"?"#":homeHash(x.key);
-    return'<li><a href="'+esc(href)+'" data-gb-section="'+x.key+'"'+(!sym&&x.key==="shareholding"?' data-gb-pick="1"':'')+'>'+esc(x.label)+'</a></li>'}).join("")
+    var ask=!sym&&!homeOf(x.key)&&x.key!=="overview",href=sym?hashFor(sym,x.key):ask?"#":homeHash(x.key);
+    return'<li><a href="'+esc(href)+'" data-gb-section="'+x.key+'"'+(ask?' data-gb-pick="'+x.key+'"':'')+'>'+esc(x.label)+'</a></li>'}).join("")
     +'<li><a href="'+esc(compareHash(sym))+'" data-gb-compare="1">Compare</a></li></ul>';
   setActive(activeKey)}
 function closeMenu(){if(bar){bar.removeAttribute("data-open");var t=$("gbToggle");if(t)t.setAttribute("aria-expanded","false")}}
@@ -2538,11 +2361,11 @@ function apply(){
     setActive(null)}
   prev={symbol:r.symbol,section:r.section}}
 
-/* Shareholding on the dashboard: there is no stock yet, so there is nothing to open and no stockless address to make. The one existing search is the way to choose a stock. */
-function pick(){
+/* Shareholding and Research on the dashboard: there is no stock yet, so there is nothing to open and no stockless address to make. The one existing search is the way to choose a stock. */
+function pick(key){
   closeMenu();var i=$("companySearch");if(!i)return;
-  if(i.focus)i.focus();
-  var ph=i.getAttribute("placeholder")||"";i.setAttribute("placeholder","Pick a stock to see its Shareholding");
+  if(i.focus)i.focus();var s=sectionOf(key);
+  var ph=i.getAttribute("placeholder")||"";i.setAttribute("placeholder","Pick a stock to see its "+(s?s.label:"details"));
   var back=function(){i.setAttribute("placeholder",ph);i.removeEventListener("blur",back)};i.addEventListener("blur",back)}
 function init(){
   bar=$("globalBar");box=$("detail");
@@ -2552,7 +2375,7 @@ function init(){
     var open=bar.hasAttribute("data-open");
     if(open)closeMenu();else{bar.setAttribute("data-open","1");t.setAttribute("aria-expanded","true")}});
   var nv=$("gbSections");
-  if(nv)nv.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a[data-gb-pick]");if(a){e.preventDefault();pick()}});
+  if(nv)nv.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a[data-gb-pick]");if(a){e.preventDefault();pick(a.getAttribute("data-gb-pick"))}});
   document.addEventListener("click",function(e){
     if(!bar.contains||!e.target)return;
     if(!bar.contains(e.target)||(e.target.closest&&e.target.closest("a[data-gb-section],a[data-gb-compare]")))closeMenu()});
@@ -2567,6 +2390,222 @@ function init(){
   apply()}
 init();
 window.SLNav={parseHome:parseHome,homeHash:homeHash,HOME:HOME,parse:parse,hashFor:hashFor,compareHash:compareHash,SECTIONS:SECTIONS,sectionOf:sectionOf,apply:apply,init:init,currentKey:currentKey};
+})();
+</script>
+<script type="module" id="stocklens-market">
+/* StockLens Phase 5J - Market Today dashboard (the home page). It only READS the files the site already publishes: out/scans.json (NSE end-of-day scans and breadth),
+   out/historical.json (daily candles of the tracked stocks and of NIFTY 50) and out/fiidii_history.json (NSE FII/DII). No other request, no API, no token, no estimate.
+   Everything is end-of-day: the date of the data is always shown and nothing is called live. A block whose data does not exist shows "Data unavailable" and says what it is missing.
+   Stocks link to the existing Stock Detail route (#stock=SYMBOL). Pure functions are exposed as window.SLMarket for the tests. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var SYM=/^[A-Za-z0-9&._-]{1,20}$/;
+var DAY=864e5, LARGE_MOVE=5, VOL_MULT=2, HV_GAIN=3, ROWS=10;
+var WINDOWS=[{key:"d1",label:"1D"},{key:"w1",label:"1W",days:7},{key:"d30",label:"30D",days:30},{key:"d90",label:"90D",days:90}];
+
+/* ---------- numbers ---------- */
+function num(v){if(v===null||v===undefined||v==="")return null;var n=typeof v==="number"?v:parseFloat(String(v).replace(/,/g,""));return isFinite(n)?n:null}
+function fmt(v,d){var n=num(v);return n===null?"-":n.toLocaleString("en-IN",{minimumFractionDigits:d===undefined?2:d,maximumFractionDigits:d===undefined?2:d})}
+function pct(v){var n=num(v);return n===null?"-":(n>0?"+":"")+n.toFixed(2)+"%"}
+function pp(v){var n=num(v);return n===null?"-":(n>0?"+":"")+n.toFixed(2)}
+function cls(v){var n=num(v);return n===null||n===0?"":n>0?"up":"dn"}
+function sig3(n){if(!(n>0))return null;var p=Math.pow(10,Math.floor(Math.log10(n))-2);return Math.round(n/p)*p}
+function vol(v){var n=num(v);if(n===null)return"-";if(n>=1e7)return(n/1e7).toFixed(2)+" Cr";if(n>=1e5)return(n/1e5).toFixed(2)+" L";return n.toLocaleString("en-IN",{maximumFractionDigits:0})}
+function mult(v){var n=num(v);return n===null?"-":n.toFixed(1)+"x"}
+function dayMs(d){return Date.parse(d+"T00:00:00Z")}
+function isDay(d){return typeof d==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&isFinite(dayMs(d))}
+
+/* ---------- candles: only valid days, ascending, one per day ---------- */
+function cleanCandles(list){
+  var out=[],seen={};
+  (Array.isArray(list)?list:[]).forEach(function(c){
+    if(!c||!isDay(c.date)||seen[c.date])return;var close=num(c.close);if(close===null||close<=0)return;
+    seen[c.date]=1;out.push({date:c.date,close:close})});
+  out.sort(function(a,b){return a.date<b.date?-1:1});return out}
+function ret(a,b){return b>0?(a/b-1)*100:null}
+/* 1D = the previous trading day. 1W/30D/90D = the last candle on or before that many calendar days back; a base candle more than 7 days before the target means the history has a gap, so there is no value */
+function perfOf(candles){
+  var c=cleanCandles(candles);if(c.length<2)return null;
+  var last=c[c.length-1],t0=dayMs(last.date),out={last:last.close,date:last.date,d1:null,w1:null,d30:null,d90:null};
+  var prev=c[c.length-2];if(t0-dayMs(prev.date)<=7*DAY)out.d1=ret(last.close,prev.close);
+  WINDOWS.forEach(function(w){
+    if(!w.days)return;var target=t0-w.days*DAY,base=null;
+    for(var i=c.length-2;i>=0;i--){if(dayMs(c[i].date)<=target){base=c[i];break}}
+    if(base&&target-dayMs(base.date)<=7*DAY)out[w.key]=ret(last.close,base.close)});
+  return out}
+function indices(H){
+  var b=H&&H.benchmark&&H.benchmark.candles,p=perfOf(b);
+  return p?[{name:String(H.benchmark.symbol||"NIFTY 50"),perf:p}]:[]}
+function tracked(H){
+  var out=[],st=H&&H.stocks&&typeof H.stocks==="object"?H.stocks:{};
+  Object.keys(st).sort().forEach(function(k){if(!SYM.test(k))return;var p=perfOf(st[k]&&st[k].candles);if(p)out.push({symbol:k,perf:p})});
+  return out}
+/* a tracked stock against NIFTY 50 over the same window: percentage points, never a rank or a rating */
+function relative(H,key){
+  var ix=indices(H);if(!ix.length)return null;var b=ix[0].perf[key];if(num(b)===null)return null;
+  var rows=[];tracked(H).forEach(function(t){var s=t.perf[key];if(num(s)===null)return;rows.push({symbol:t.symbol,stock:s,bench:b,rel:s-b})});
+  return{rows:rows,bench:b,date:ix[0].perf.date}}
+
+/* ---------- scans ---------- */
+function list(S,k){
+  var a=S&&Array.isArray(S[k])?S[k]:[],out=[];
+  a.forEach(function(r){if(r&&typeof r.symbol==="string"&&SYM.test(r.symbol))out.push(r)});return out}
+function byChange(a,dir){return a.filter(function(r){return num(r.change_pct)!==null}).sort(function(x,y){var d=(num(y.change_pct)-num(x.change_pct))*dir;return d||(x.symbol<y.symbol?-1:1)})}
+function gainers(S){return byChange(list(S,"gainers"),1).filter(function(r){return num(r.change_pct)>0})}
+function losers(S){return byChange(list(S,"losers"),-1).filter(function(r){return num(r.change_pct)<0})}
+function highs(S){return byChange(list(S,"high_52w"),1)}
+function shockers(S){return list(S,"volume_gainers").filter(function(r){return num(r.volume_x_avg)>=VOL_MULT&&num(r.volume)>0}).sort(function(x,y){return num(y.volume_x_avg)-num(x.volume_x_avg)||(x.symbol<y.symbol?-1:1)})}
+function hvGain(S){return shockers(S).filter(function(r){return num(r.change_pct)>=HV_GAIN})}
+function hvLoss(S){return losers(S).filter(function(r){return num(r.volume_x_avg)>=VOL_MULT}).sort(function(x,y){return num(y.volume_x_avg)-num(x.volume_x_avg)||(x.symbol<y.symbol?-1:1)})}
+function crosses(S){return list(S,"dma").filter(function(r){return r.status==="Golden cross today"||r.status==="Death cross today"})}
+function topReturns(S){return list(S,"relative_strength").filter(function(r){return num(r.return_3m_pct)!==null}).sort(function(x,y){return num(y.return_3m_pct)-num(x.return_3m_pct)})}
+function breadth(S){
+  var b=S&&S.breadth;if(!b||typeof b!=="object")return null;
+  var a=num(b.advancing),d=num(b.declining),u=num(b.unchanged);if(a===null||d===null||u===null)return null;
+  return{adv:a,dec:d,unch:u,highs:num(b.new_52w_highs),a50:num(b.above_50dma_pct),a200:num(b.above_200dma_pct)}}
+
+/* ---------- what's happening: facts from the lists above, one line each, with the rule written on it ---------- */
+function events(S){
+  var out=[],seen={};
+  function add(type,r,text){var k=type+"|"+r.symbol;if(seen[k])return;seen[k]=1;out.push({type:type,symbol:r.symbol,text:text,change:num(r.change_pct)})}
+  highs(S).forEach(function(r){add("New 52-week high",r,"Closed at "+fmt(r.price)+(num(r.old_52w_high)!==null?", above the previous 52-week high of "+fmt(r.old_52w_high):""))});
+  gainers(S).concat(losers(S)).filter(function(r){return Math.abs(num(r.change_pct))>=LARGE_MOVE}).forEach(function(r){add("Large move",r,(num(r.change_pct)>0?"Up ":"Down ")+Math.abs(num(r.change_pct)).toFixed(2)+"% to "+fmt(r.price))});
+  gainers(S).concat(losers(S)).concat(shockers(S)).filter(function(r){return num(r.volume_x_avg)>=VOL_MULT}).forEach(function(r){add("Unusual volume",r,mult(r.volume_x_avg)+" the 20-day average volume"+(num(r.change_pct)!==null?", price "+pct(r.change_pct):""))});
+  crosses(S).forEach(function(r){add(r.status==="Golden cross today"?"50-day crossed above 200-day":"50-day crossed below 200-day",r,"Close "+fmt(r.price)+" · 50-day "+fmt(r.dma50,0)+" · 200-day "+fmt(r.dma200,0))});
+  return out}
+
+/* ---------- FII / DII (NSE: values in rupees crore) ---------- */
+var MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function nseDay(d){
+  if(typeof d!=="string")return null;var s=d.trim(),m=/^(\d{1,2})[- ]([A-Za-z]{3})[a-z]*[- ](\d{4})$/.exec(s);
+  if(m&&MON[m[2].toLowerCase()]!==undefined)return Date.UTC(+m[3],MON[m[2].toLowerCase()],+m[1]);
+  if(isDay(s))return dayMs(s);return null}
+function fiidii(F){
+  if(!Array.isArray(F))return null;var best=null;
+  F.forEach(function(x){if(!x||typeof x!=="object")return;var t=nseDay(x.date);if(t!==null&&(best===null||t>best))best=t});
+  if(best===null)return null;var out={date:null,fii:null,dii:null};
+  F.forEach(function(x){
+    if(!x||nseDay(x.date)!==best)return;var cat=String(x.category||""),side=/FII|FPI/i.test(cat)?"fii":/DII/i.test(cat)?"dii":null;if(!side)return;
+    var net=num(x.netValue);if(net===null)return;out.date=String(x.date).trim();out[side]={buy:num(x.buyValue),sell:num(x.sellValue),net:net}});
+  return out.fii||out.dii?out:null}
+
+/* ---------- html pieces ---------- */
+function na(why){return'<p class="mk-na">Data unavailable'+(why?'<small>'+esc(why)+'</small>':'')+'</p>'}
+function link(s){return'<a class="mk-sym" href="#stock='+encodeURIComponent(s)+'">'+esc(s)+'</a>'}
+function th(h,c){return'<th'+(c?' class="'+c+'"':'')+'>'+esc(h)+'</th>'}
+function table(head,rows){
+  if(!rows.length)return"";
+  return'<table class="mk-t"><thead><tr>'+head.map(function(h){return th(h[0],h[1])}).join("")+'</tr></thead><tbody>'+rows.map(function(r){return'<tr>'+r.map(function(c,i){return'<td'+(head[i][1]?' class="'+head[i][1]+'"':'')+'>'+c+'</td>'}).join("")+'</tr>'}).join("")+'</tbody></table>'}
+function box(body){return'<div class="mk-card">'+body+'</div>'}
+function card(title,sub,body){return'<div class="mk-card"><h3>'+esc(title)+'</h3>'+(sub?'<p class="mk-sub">'+esc(sub)+'</p>':'')+body+'</div>'}
+function chg(v){return'<span class="'+cls(v)+'">'+pct(v)+'</span>'}
+function priceTable(rows,extra){          /* symbol, price, change, (extra column) */
+  var head=[["Stock","s"],["Price","n"],["Change","n"]].concat(extra?[[extra.h,"n c3"]]:[]);
+  return table(head,rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.price),chg(r.change_pct)].concat(extra?[extra.f(r)]:[])}))}
+function moversCard(title,rows,sub,why){return card(title,sub,rows.length?priceTable(rows,{h:"Vol vs avg",f:function(r){return mult(r.volume_x_avg)}}):na(why))}
+function highTable(rows){return table([["Stock","s"],["Price","n"],["Prev 52W high","n c3"],["Change","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.price),fmt(r.old_52w_high),chg(r.change_pct)]}))}
+function shockerTable(rows){return table([["Stock","s"],["Volume","n"],["20D avg","n c3"],["Multiple","n"],["Change","n"]],rows.slice(0,ROWS).map(function(r){var a=sig3(num(r.volume)/num(r.volume_x_avg));return[link(r.symbol),vol(r.volume),a?vol(a):"-",mult(r.volume_x_avg),chg(r.change_pct)]}))}
+function hvLossTable(rows){return table([["Stock","s"],["Price","n c3"],["Change","n"],["Vol vs avg","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.price),chg(r.change_pct),mult(r.volume_x_avg)]}))}
+function relTable(rows){return table([["Stock","s"],["Stock","n"],["NIFTY 50","n c3"],["Relative","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),chg(r.stock),chg(r.bench),'<span class="'+cls(r.rel)+'">'+pp(r.rel)+' pts</span>']}))}
+function trackTable(rows,key){return table([["Stock","s"],["Last close","n"],["Change","n"]],rows.slice(0,ROWS).map(function(t){return[link(t.symbol),fmt(t.perf.last),chg(t.perf[key])]}))}
+var NEED_ALL="needs daily prices for all NSE stocks";
+
+/* ---------- the sections ---------- */
+var S_={};
+S_["mk-today"]=function(m){
+  var h='';
+  h+='<p class="mk-status">'+(m.asOf?'Latest available market data: <b>'+esc(m.asOf)+'</b> · end of day, not live':'Latest available market data: <b>unavailable</b>')+'</p>';
+  if(!m.indices.length)return h+na("NIFTY 50 history is not loaded");
+  h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
+    return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
+      +'<div class="mk-perf">'+WINDOWS.map(function(w){return'<div><small>'+w.label+'</small><span class="'+cls(x.perf[w.key])+'">'+pct(x.perf[w.key])+'</span></div>'}).join("")+'</div>'
+      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p></div>'}).join("")+'</div>';
+  return h}
+S_["mk-breadth"]=function(m){
+  var b=m.breadth;if(!b)return na("breadth is not in the latest scan");
+  var tot=b.adv+b.dec+b.unch||1,w=function(v){return(v/tot*100).toFixed(2)+"%"};
+  function tile(l,v,x){return'<div class="mk-tile"><b>'+(v===null?'<span class="mk-dash">-</span>':v)+'</b><span>'+l+'</span>'+(v===null?'<small>Data unavailable</small>':'')+(x||'')+'</div>'}
+  var h='<div class="mk-adv"><div class="mk-bar" role="img" aria-label="'+b.adv+' advancing, '+b.unch+' unchanged, '+b.dec+' declining"><i class="a" style="width:'+w(b.adv)+'"></i><i class="u" style="width:'+w(b.unch)+'"></i><i class="d" style="width:'+w(b.dec)+'"></i></div>'
+    +'<div class="mk-adv-t"><span class="up">'+fmt(b.adv,0)+' advances</span><span>'+fmt(b.unch,0)+' unchanged</span><span class="dn">'+fmt(b.dec,0)+' declines</span></div></div>';
+  h+='<div class="mk-tiles">'+tile("Advances",fmt(b.adv,0))+tile("Declines",fmt(b.dec,0))+tile("Unchanged",fmt(b.unch,0))
+    +tile("52-week highs",b.highs===null?null:fmt(b.highs,0))+tile("52-week lows",null)+tile("Upper circuits",null)+tile("Lower circuits",null)
+    +(b.a50!==null?tile("Above 50-day average",b.a50.toFixed(1)+"%"):"")+(b.a200!==null?tile("Above 200-day average",b.a200.toFixed(1)+"%"):"")+'</div>';
+  return h}
+S_["mk-happening"]=function(m){
+  if(!m.events.length)return na("no events in the latest scan");
+  return'<ul class="mk-feed">'+m.events.slice(0,24).map(function(e){return'<li><span class="mk-k">'+esc(e.type)+'</span>'+link(e.symbol)+'<span class="mk-ft">'+esc(e.text)+'</span></li>'}).join("")+'</ul>'
+    +'<p class="mk-sub">Rules: new 52-week high; move of '+LARGE_MOVE+'% or more; volume '+VOL_MULT+'x the 20-day average or more; 50/200-day average cross. From the latest NSE end-of-day scan.</p>'}
+S_["mk-sectors"]=function(){return na(NEED_ALL+" (sector performance is not in the current data)")}
+S_["mk-movers"]=function(m){
+  return'<div class="mk-2">'+moversCard("Top Gainers",m.gainers,"Latest close vs previous close","no gainers in the latest scan")+moversCard("Top Losers",m.losers,"Latest close vs previous close","no losers in the latest scan")+'</div>'}
+S_["mk-trending"]=function(m,st){
+  var tab=st.trend||"movers",tabs=[["movers","Price Movers"],["volume","Volume Shockers"],["52w","52W High / Low"],["ath","All-Time High / Low"],["active","Most Active"]],h='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="trend">'+tabs.map(function(t){return'<button type="button" role="tab" data-tab="'+t[0]+'" aria-selected="'+(t[0]===tab)+'">'+t[1]+'</button>'}).join("")+'</div>';
+  var mv=byChange(m.gainers.concat(m.losers),1).sort(function(a,b){return Math.abs(num(b.change_pct))-Math.abs(num(a.change_pct))||(a.symbol<b.symbol?-1:1)});
+  if(tab==="movers")h+=mv.length?priceTable(mv,{h:"Vol vs avg",f:function(r){return mult(r.volume_x_avg)}}):na("no movers in the latest scan");
+  else if(tab==="volume")h+=m.shockers.length?shockerTable(m.shockers):na("no volume shockers in the latest scan");
+  else if(tab==="52w")h+=(m.highs.length?'<h4 class="mk-h4">New 52-week high</h4>'+highTable(m.highs):'')+'<h4 class="mk-h4">New 52-week low</h4>'+na(NEED_ALL);
+  else if(tab==="ath")h+=na("needs the full price history of every stock (the current data holds about one year)");
+  else h+=na("most-active needs traded volume for all NSE stocks");
+  return'<div class="mk-card">'+h+'</div>'}
+S_["mk-52w"]=function(m){
+  return'<div class="mk-2">'+card("New 52-Week High","Close above the previous 52-week high",m.highs.length?highTable(m.highs):na("no new highs in the latest scan"))
+    +card("New 52-Week Low","",na(NEED_ALL+" (the scan lists new highs only)"))+'</div>'}
+S_["mk-ath"]=function(){return'<div class="mk-2">'+card("New All-Time High","",na("needs the full price history of every stock"))+card("New All-Time Low","",na("needs the full price history of every stock"))+'</div>'}
+S_["mk-volume"]=function(m){return m.shockers.length?box(shockerTable(m.shockers))+'<p class="mk-sub">Volume at least '+VOL_MULT+'x the 20-day average, price up. 20-day average is volume divided by the multiple (3 significant digits).</p>':na("no volume shockers in the latest scan")}
+S_["mk-hvgain"]=function(m){return m.hvGain.length?box(shockerTable(m.hvGain))+'<p class="mk-sub">Volume '+VOL_MULT+'x the average or more and a gain of '+HV_GAIN+'% or more, by volume multiple. From the 25 highest volume multiples in the scan.</p>':na("none in the latest scan")}
+S_["mk-hvloss"]=function(m){return m.hvLoss.length?box(hvLossTable(m.hvLoss))+'<p class="mk-sub">Among the 25 biggest losers: volume '+VOL_MULT+'x the 20-day average or more, by volume multiple.</p>':na("none among the biggest losers in the latest scan")}
+S_["mk-relative"]=function(m,st){
+  var k=st.rel||"w1",h='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="rel">'+WINDOWS.map(function(w){return'<button type="button" role="tab" data-tab="'+w.key+'" aria-selected="'+(w.key===k)+'">'+w.label+'</button>'}).join("")+'</div>';
+  var r=m.rel[k];if(!r||!r.rows.length)return h+na("NIFTY 50 and tracked-stock history are not loaded for this window");
+  var out=r.rows.filter(function(x){return x.rel>0}).sort(function(a,b){return b.rel-a.rel||(a.symbol<b.symbol?-1:1)}),und=r.rows.filter(function(x){return x.rel<0}).sort(function(a,b){return a.rel-b.rel||(a.symbol<b.symbol?-1:1)});
+  h+='<div class="mk-2">'+card("Relative Outperformance","vs NIFTY 50 over "+labelOf(k),out.length?relTable(out):na("none"))+card("Relative Underperformance","vs NIFTY 50 over "+labelOf(k),und.length?relTable(und):na("none"))+'</div>'
+    +'<p class="mk-sub">Covers the '+m.trackedCount+' tracked stocks, not the whole market. Difference in percentage points to NIFTY 50 ('+fmt(r.bench)+'% over '+labelOf(k)+', as of '+esc(r.date)+').</p>';
+  return h}
+function labelOf(k){for(var i=0;i<WINDOWS.length;i++)if(WINDOWS[i].key===k)return WINDOWS[i].label;return k}
+S_["mk-fiidii"]=function(m){
+  var f=m.fiidii;if(!f)return na("FII/DII figures are not loaded");
+  function row(n,v){return v?'<tr><td class="s">'+n+'</td><td class="n c3">'+fmt(v.buy,0)+'</td><td class="n c3">'+fmt(v.sell,0)+'</td><td class="n"><span class="'+cls(v.net)+'">'+(v.net>0?"+":"")+fmt(v.net,0)+'</span></td></tr>':'<tr><td class="s">'+n+'</td><td class="n c3">-</td><td class="n c3">-</td><td class="n">-</td></tr>'}
+  return'<p class="mk-status">NSE figures for <b>'+esc(f.date)+'</b> · end of day, ₹ crore</p><div class="mk-card"><table class="mk-t"><thead><tr>'+th("","s")+th("Buy","n c3")+th("Sell","n c3")+th("Net","n")+'</tr></thead><tbody>'+row("FII / FPI",f.fii)+row("DII",f.dii)+'</tbody></table></div>'}
+S_["mk-sectorlead"]=function(){return'<div class="mk-2">'+card("Sector Leaders","",na(NEED_ALL))+card("Sector Laggards","",na(NEED_ALL))+'</div>'}
+S_["mk-swing"]=function(m,st){
+  var k=st.swing||"d1",h='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="swing">'+WINDOWS.map(function(w){return'<button type="button" role="tab" data-tab="'+w.key+'" aria-selected="'+(w.key===k)+'">'+w.label+'</button>'}).join("")+'</div>',L=labelOf(k),cards=[];
+  if(k==="d1"){
+    cards.push(card("Strongest performers","Latest close vs previous close, "+"NSE scan",m.gainers.length?priceTable(m.gainers):na("no gainers in the latest scan")));
+    cards.push(card("Weakest performers","Latest close vs previous close, NSE scan",m.losers.length?priceTable(m.losers):na("no losers in the latest scan")));
+    cards.push(card("New 52-week high","",m.highs.length?highTable(m.highs):na("no new highs in the latest scan")));
+    cards.push(card("Near 52-week low","",na(NEED_ALL)));
+    cards.push(card("High-volume positive performers","Volume "+VOL_MULT+"x the average or more, price up",m.shockers.length?shockerTable(m.shockers):na("none in the latest scan")))}
+  else{
+    var rows=m.track.filter(function(t){return num(t.perf[k])!==null}),up=rows.slice().sort(function(a,b){return b.perf[k]-a.perf[k]||(a.symbol<b.symbol?-1:1)}),dn=rows.slice().sort(function(a,b){return a.perf[k]-b.perf[k]||(a.symbol<b.symbol?-1:1)}),sub="Tracked stocks ("+m.trackedCount+"), "+L+" change";
+    cards.push(card("Strongest performers",sub,rows.length?trackTable(up,k):na("tracked-stock history does not cover "+L)));
+    cards.push(card("Weakest performers",sub,rows.length?trackTable(dn,k):na("tracked-stock history does not cover "+L)));
+    cards.push(card("Near 52-week high","",na(NEED_ALL)));cards.push(card("Near 52-week low","",na(NEED_ALL)));
+    var r=m.rel[k];cards.push(card("Relative outperformers","vs NIFTY 50 over "+L+", tracked stocks",r&&r.rows.some(function(x){return x.rel>0})?relTable(r.rows.filter(function(x){return x.rel>0}).sort(function(a,b){return b.rel-a.rel})):na("none")));
+    if(k==="d90"){var tr=topReturns(m.S);cards.push(card("Highest 3-month returns","NSE scan, 63 trading days, top 100 by return",tr.length?table([["Stock","s"],["3M return","n"],["RS","n c3"]],tr.slice(0,ROWS).map(function(r){return[link(r.symbol),chg(r.return_3m_pct),esc(r.rs_rating==null?"-":r.rs_rating)]})):na("not in the latest scan")))}}
+  return h+'<div class="mk-g">'+cards.join("")+'</div>'}
+
+/* ---------- the model: everything above, computed once from the three files ---------- */
+function model(S,H,F){
+  var tr=tracked(H),m={S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
+  WINDOWS.forEach(function(w){m.rel[w.key]=relative(H,w.key)});return m}
+var IDS=["mk-today","mk-breadth","mk-happening","mk-sectors","mk-movers","mk-trending","mk-52w","mk-ath","mk-volume","mk-hvgain","mk-hvloss","mk-relative","mk-fiidii","mk-sectorlead","mk-swing"];
+function sectionHtml(id,m,st){try{return S_[id](m,st||{})}catch(e){return na("this block could not be drawn")}}
+
+var M=null,STATE={};
+function paint(id){var box=document.querySelector&&document.querySelector('#'+id+' [data-mk]');if(box)box.innerHTML=sectionHtml(id,M,STATE)}
+function paintAll(){IDS.forEach(paint)}
+function getJson(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})}
+function init(){
+  if(!$("market"))return;
+  document.addEventListener("click",function(e){
+    var b=e.target&&e.target.closest&&e.target.closest("[data-mk-tabs] [data-tab]");if(!b||!M)return;
+    var sec=b.closest("section"),grp=b.parentNode.getAttribute("data-mk-tabs");STATE[grp]=b.getAttribute("data-tab");
+    if(sec&&sec.id)paint(sec.id)});
+  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json")]).then(function(r){M=model(r[0],r[1],r[2]);paintAll()})}
+if(typeof document!=="undefined"&&document.getElementById)init();
+window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
 })();
 </script>
 <script>

@@ -107,7 +107,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
     eq(modOf(PINHTML, CMPTAG), modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(modOf(PINHTML, SNAPTAG), modOf(base, SNAPTAG).replace(OLDSPOT, NEWSPOT), "the Investor Snapshot module is byte-identical to 6edaf45 except the Future Growth Evidence placeholder (Phase 5G.2), now an empty spot for the growth module");
     eq(PINHTML.replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""), base.replace(OLDSPOT, NEWSPOT), "the page without the search and growth modules is identical to 6edaf45 (apart from the Future Growth Evidence placeholder): the markup, the tables, the styles, everything");
   }
-  for (const id of ['id="rows"', 'id="tabs"', 'id="detail"', 'id="demo"', 'id="stat"']) ok(html.includes(id), "the dashboard still has " + id);
+  for (const id of ['id="rows"', 'id="tabs"', 'id="detail"', 'id="demo"', 'id="stat"']) ok(PINHTML.includes(id), "the pinned pre-5J dashboard has " + id);
   re(html, /\.detail-mode \.w>\*:not\(#detail\)\{display:none!important\}/, "the page's own rule hides every dashboard child (the search box too) while a stock is open");
 
   // ================= A. the box =================

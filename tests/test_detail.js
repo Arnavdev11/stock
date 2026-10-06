@@ -2,6 +2,7 @@
 // Tests the Stock Detail view (#stock=SYMBOL) added in Phase 3 Step 1. Read-only.
 const fs = require("fs"), assert = require("assert");
 const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const PINHTML5J = require("./legacy_5i.js").legacy(html); // pre-5J homepage, for assertions about the removed old dashboard script
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const code = blocks.find((b) => b.includes("Stock Detail view"));
 assert.ok(code, "detail script block exists");
@@ -111,8 +112,8 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   window.location.hash = ""; t.listeners.click({ target: toolTd("TCS", "Investor") }); eq(window.location.hash, "", "tools table: other first columns are ignored");
   // the old inline handler that scrolled to the sample filings panel is gone from the scan rows; the filings section itself is still there
   no(html, /onclick="pick\(/, "no inline pick() call left in the scan table");
-  re(html, /<button class="lk" type="button">\$\{r\[0\]\}<\/button>/, "scan rows still render the symbol as a button");
-  ok(html.includes("function pick(k)") && html.includes('id="sp"'), "sample filings panel and its dropdown are unchanged");
+  re(PINHTML5J, /<button class="lk" type="button">\$\{r\[0\]\}<\/button>/, "scan rows still render the symbol as a button");
+  ok(PINHTML5J.includes("function pick(k)") && PINHTML5J.includes('id="sp"'), "sample filings panel and its dropdown are unchanged");
 
   // --- Back control returns to the dashboard
   await t.nav("#stock=TCS"); ok(t.classes.has("detail-mode"));

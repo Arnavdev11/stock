@@ -262,7 +262,7 @@ const E = (o = {}) => Object.assign({ symbol: "TCS", date: "2026-07-09", event_t
     eq((code.match(/createElement\("/g) || []).length, 1, "the only element it creates is its style"); re(code, /createElement\("style"\)/, "(a style element)"); eq((code.match(/\.innerHTML\s*=/g) || []).length, 1, "and the only place it writes is the spot");
     eq((code.match(/\$\("[^"]*"\)/g) || []).sort(), ['$("detail")', '$("detail")', '$("growthStyle")'], "the only ids it looks up are the Stock Detail area and its own style"); no(code, /document\.body|document\.querySelector\(|document\.addEventListener/, "it never reaches outside the Stock Detail area");
     eq(Object.keys(load({ spotFor: null }).G).sort(), ["MEASURES", "STATUSES", "TYPES", "fill", "fmtValue", "forSymbol", "render", "valid"], "its public surface is small and fixed"); }
-  { const keep = ['id="rows"', 'id="tabs"', 'id="detail"', 'id="demo"', 'id="stat"']; for (const id of keep) ok(html.includes(id), "the dashboard still has " + id);
+  { const keep = ['id="rows"', 'id="tabs"', 'id="detail"', 'id="demo"', 'id="stat"']; for (const id of keep) ok(PINHTML.includes(id), "the pinned pre-5J dashboard has " + id);
     no(html.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, ""), /data-growth-for|Future Growth Evidence/, "no growth markup in the static page or the dashboard: only the snapshot and the growth module mention it");
     ok(html.includes('id="stocklens-search"') && html.includes('id="stocklens-compare"') && html.includes('id="stocklens-snapshot"'), "search, comparison and snapshot modules are still there"); }
 
