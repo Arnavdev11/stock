@@ -75,9 +75,10 @@ def main():
         print("::notice title=%s detail %d::%s" % (sym, j // 14, "%0A".join(detail[j:j + 14])))
 
 
-try:
-    main()
-except SystemExit:
-    raise
-except BaseException:
-    print("::notice title=ERR::" + traceback.format_exc().replace("\n", "%0A")[-3000:])
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        print("::notice title=ERR::" + traceback.format_exc().replace("\n", "%0A")[-3000:])

@@ -17,53 +17,28 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests
-      - name: RELIANCE
-        continue-on-error: true
-        env:
-          SYM: RELIANCE
-        run: python probe_inv.py
-      - name: TCS
-        continue-on-error: true
-        env:
-          SYM: TCS
-        run: python probe_inv.py
       - name: INFY
         continue-on-error: true
         env:
           SYM: INFY
-        run: python probe_inv.py
+        run: python probe_inv2.py
       - name: HDFCBANK
         continue-on-error: true
         env:
           SYM: HDFCBANK
-        run: python probe_inv.py
+        run: python probe_inv2.py
       - name: ICICIBANK
         continue-on-error: true
         env:
           SYM: ICICIBANK
-        run: python probe_inv.py
+        run: python probe_inv2.py
       - name: SBIN
         continue-on-error: true
         env:
           SYM: SBIN
-        run: python probe_inv.py
-      - name: ITC
+        run: python probe_inv2.py
+      - name: RELIANCE
         continue-on-error: true
         env:
-          SYM: ITC
-        run: python probe_inv.py
-      - name: BHARTIARTL
-        continue-on-error: true
-        env:
-          SYM: BHARTIARTL
-        run: python probe_inv.py
-      - name: LT
-        continue-on-error: true
-        env:
-          SYM: LT
-        run: python probe_inv.py
-      - name: MARUTI
-        continue-on-error: true
-        env:
-          SYM: MARUTI
-        run: python probe_inv.py
+          SYM: RELIANCE
+        run: python probe_inv2.py
