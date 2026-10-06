@@ -103,6 +103,16 @@ def no_loss_problems(old, new):
             if osrc.get("record_id") and nsrc.get("record_id") and osrc["record_id"] != nsrc["record_id"]:
                 if not any(isinstance(rv, dict) and (rv.get("source") or {}).get("record_id") == osrc["record_id"] for rv in added):
                     p.append(w + "the NSE record id changed without a revision recording the old one")
+            onh, nnh = orec.get("named_holders"), nrec.get("named_holders")
+            if isinstance(onh, dict) and onh.get("status") in ("available", "none-disclosed", "not-in-filing"):
+                same_version = osrc.get("record_id") == nsrc.get("record_id")
+                if not isinstance(nnh, dict) or nnh.get("status") not in ("available", "none-disclosed", "not-in-filing"):
+                    if same_version:
+                        p.append(w + "named holders were lost")
+                elif same_version and {k: v for k, v in onh.items() if k != "fetched"} != {k: v for k, v in nnh.items() if k != "fetched"}:
+                    p.append(w + "named holders changed under the same NSE record id")
+                elif not same_version and not any(isinstance(rv, dict) and rv.get("named_holders") == onh for rv in added):
+                    p.append(w + "named holders changed with a new NSE record id without a revision recording the old holders")
             nvals = nrec.get("values") or {}
             for f, o in (orec.get("values") or {}).items():
                 n = nvals.get(f)

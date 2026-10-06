@@ -269,6 +269,168 @@ def parse_xbrl(data):
     return {"report_date": report_date, "rows": rows, "duplicates": sorted(set(dups))}
 
 
+# ---------------------------------------------------------------- Phase 5H.6: individually disclosed holders (named holders)
+# In the NSE XBRL every individually disclosed holder is a PAIR of contexts that share one typed member, in a dimension called
+# DetailsOfSharesHeldBy<Category>Axis (typed member "<Category>_ContextNN"):
+#     the descriptive context  id "D_<Category>_ContextNN"  -> NameOfTheShareholder (PAN and promoter type are masked "******")
+#     the numeric context      id "<Category>_ContextNN"    -> NumberOfFullyPaidUpEquityShares, ShareholdingAsAPercentageOfTotalNumberOfShares
+# The two are joined on (axis, member, period). The holder's category comes ONLY from the axis (HOLDER_AXES below, verified against the filings
+# by reconciling the named shares with the aggregate category row); a name is never used to classify, and an axis that is not in the table is
+# counted and left out, never guessed. The filing lists institutional holders only where they hold 1% or more, so the named rows are
+# a PART of a category, never the whole of it; they are kept apart from the aggregate ownership and never added to it.
+NAMED_VERSION = 1
+HOLDER_BASIS = ("Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. "
+                "The aggregate ownership categories are reported separately and are not the sum of these rows.")
+L_PROMOTER, L_MF, L_INS, L_DII, L_FII, L_PUBLIC, L_OTHER = "Promoter", "DII – Mutual Fund", "DII – Insurance", "DII – Other", "FII/FPI", "Public – Disclosed", "Other – Custodian / DR holder"
+# axis (lower case, without "DetailsOfSharesHeldBy" and "Axis") -> (section, category, investor label, the aggregate row to reconcile with)
+HOLDER_AXES = {
+    "othersindianshareholders": ("promoter_group_indian", "Promoter", L_PROMOTER, "otherindianshareholders"),
+    "otherforeignshareholders": ("promoter_group_foreign", "Promoter", L_PROMOTER, "otherforeignshareholders"),
+    "mutualfundsoruti": ("mutual_funds", "DII", L_MF, "mutualfundsoruti"),
+    "insurancecompanies": ("insurance_companies", "DII", L_INS, "insurancecompanies"),
+    "providentfundsorpensionfunds": ("provident_pension_funds", "DII", L_DII, "providentfundsorpensionfunds"),
+    "otherfinancialinstitutions": ("other_financial_institutions", "DII", L_DII, "otherfinancialinstitutions"),
+    "otherinstitutionsdomestic": ("other_institutions_domestic", "DII", L_DII, "otherinstitutionsdomestic"),
+    "institutionsforeignportfolioinvestorone": ("fpi_category_one", "FII", L_FII, None),
+    "institutionsforeignportfolioinvestortwo": ("fpi_category_two", "FII", L_FII, None),
+    "foreigndirectinvestment": ("foreign_direct_investment", "FII", L_FII, "foreigndirectinvestment"),
+    "overseasdepositories": ("overseas_depositories", "FII", L_FII, "overseasdepositories"),
+    "otherinstitutionsforeign": ("other_institutions_foreign", "FII", L_FII, "otherinstitutionsforeign"),
+    "custodianordrholder": ("custodian_dr_holder", "Other", L_OTHER, "custodianordrholder"),
+}
+# axes that are never holders: they repeat holders already listed elsewhere, or are not holders at all
+HOLDER_SKIP_AXES = {"shareholdersactingaspersonsinconcertforpublic": "persons_in_concert", "shareswhichremainunclaimedforpublicshareholders": "unclaimed"}
+HOLDER_NAME_EL, HOLDER_SHARES_EL, HOLDER_PCT_EL = "NameOfTheShareholder", "NumberOfFullyPaidUpEquityShares", "ShareholdingAsAPercentageOfTotalNumberOfShares"
+HOLDER_FLAG_EL = "WhetherACategoryOrMoreThan1PercentageOfShareholding"
+
+
+def _axis_key(axis):
+    k = re.sub(r"[^a-z0-9]", "", re.sub(r"^.*:", "", axis or "").lower())
+    k = k[:-4] if k.endswith("axis") else k
+    for pre in ("detailsofsharesheldby", "detailsofthe", "detailsof"):
+        if k.startswith(pre):
+            return k[len(pre):]
+    return k
+
+
+def nh_state(status, reason, day):
+    """A named_holders record that holds no holders."""
+    return {"version": NAMED_VERSION, "status": status, "reason": reason, "fetched": day, "basis": HOLDER_BASIS, "holders": [],
+            "excluded": {}, "unmapped_axes": {}, "section_totals": {}, "flags": []}
+
+
+def holder_sort_key(h):
+    return (h.get("percentage") is None, -(h.get("percentage") or 0), h.get("shares") is None, -(h.get("shares") or 0), h.get("holder_name") or "", h.get("axis") or "", h.get("member") or "")
+
+
+def build_named_holders(data, report_date, unit, rows, day):
+    """XBRL bytes -> a named_holders record. report_date: the period of the holder contexts (the filing's own report date).
+    unit: 'percent' | 'fraction' (the unit the aggregate parse detected). rows: the aggregate rows of that quarter ({norm: row}), only for reconciliation."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as e:
+        return nh_state("unavailable", "the XBRL file could not be parsed (%s)" % type(e).__name__, day)
+    ctx = {}
+    for el in root.iter():
+        if local(el.tag) == "context":
+            dims, per = [], None
+            for c in el.iter():
+                lt = local(c.tag)
+                if lt == "typedMember":
+                    dims.append(("T", (c.get("dimension") or ""), "".join(x.text or "" for x in c.iter() if x is not c).strip()))
+                elif lt == "explicitMember":
+                    dims.append(("E", (c.get("dimension") or ""), (c.text or "").strip()))
+                elif lt in ("instant", "endDate"):
+                    per = (c.text or "").strip()
+            ctx[el.get("id")] = (dims, per)
+    pairs, conflicts = {}, set()
+    for el in root:
+        cr = el.get("contextRef")
+        if cr not in ctx:
+            continue
+        dims, per = ctx[cr]
+        if per != report_date or len(dims) != 1 or dims[0][0] != "T":
+            continue
+        key = (dims[0][1], dims[0][2])
+        name, text = local(el.tag), (el.text or "").strip()
+        if name not in (HOLDER_NAME_EL, HOLDER_SHARES_EL, HOLDER_PCT_EL, HOLDER_FLAG_EL):
+            continue
+        slot = pairs.setdefault(key, {})
+        if name in slot and slot[name] != text:
+            conflicts.add(key)
+        slot.setdefault(name, text)
+    k = 100.0 if unit == "fraction" else (1.0 if unit == "percent" else None)
+    excluded = {"zero_share": 0, "category_rows": 0, "persons_in_concert": 0, "unclaimed": 0, "unnamed": 0, "unmapped_axis": 0, "conflicting": 0}
+    unmapped, holders, flags = {}, [], []
+    if not pairs:
+        st = nh_state("not-in-filing", "the filing carries no per-holder rows for %s" % report_date, day)
+        st["excluded"] = excluded
+        return st
+    for (axis, member), f in sorted(pairs.items()):
+        ak = _axis_key(axis)
+        ak = ak[3:] if ak.startswith("the") and ak[3:] in HOLDER_SKIP_AXES else ak
+        if ak in HOLDER_SKIP_AXES:
+            excluded[HOLDER_SKIP_AXES[ak]] += 1
+            continue
+        if ak not in HOLDER_AXES:
+            unmapped[re.sub(r"^.*:", "", axis)] = unmapped.get(re.sub(r"^.*:", "", axis), 0) + 1
+            excluded["unmapped_axis"] += 1
+            continue
+        if (axis, member) in conflicts:
+            excluded["conflicting"] += 1
+            continue
+        if re.match(r"^\s*category\b", f.get(HOLDER_FLAG_EL) or "", re.I):
+            excluded["category_rows"] += 1
+            continue
+        name = re.sub(r"\s+", " ", f.get(HOLDER_NAME_EL) or "").strip()
+        shares, pct = fnum(f.get(HOLDER_SHARES_EL)), fnum(f.get(HOLDER_PCT_EL))
+        if not name or set(name) <= {"*", "-", "."}:
+            excluded["unnamed"] += 1
+            continue
+        if shares is None and pct is None or shares == 0:
+            excluded["zero_share"] += 1
+            continue
+        if shares is not None and shares < 0:
+            excluded["conflicting"] += 1
+            continue
+        pv = None if (pct is None or k is None) else r2(pct * k)
+        if pv is not None and not 0 <= pv <= 100.5:
+            pv = None
+            flags.append({"code": "holder-percentage-out-of-range", "detail": "%s: the reported percentage is outside 0-100 and is not shown" % name})
+        section, cat, label, _agg = HOLDER_AXES[ak]
+        holders.append({"holder_name": name, "category": cat, "label": label, "section": section, "shares": None if shares is None else int(shares) if shares == int(shares) else shares,
+                        "percentage": pv, "axis": re.sub(r"^.*:", "", axis), "member": member})
+    holders.sort(key=holder_sort_key)
+    totals = {}
+    for h in holders:
+        t = totals.setdefault(h["section"], {"named_shares": 0, "category_total_shares": None, "named_count": 0})
+        t["named_shares"] += h["shares"] or 0
+        t["named_count"] += 1
+    for ak, (section, cat, label, aggkey) in HOLDER_AXES.items():
+        if section in totals and aggkey:
+            a = rows.get(aggkey)
+            totals[section]["category_total_shares"] = None if a is None or a["shares"] is None else int(a["shares"])
+            ct = totals[section]["category_total_shares"]
+            if ct is not None and totals[section]["named_shares"] > ct + 1:
+                flags.append({"code": "named-holders-exceed-category-total", "detail": "%s: the named rows hold more shares than the category row; check before use" % section})
+    status = "available" if holders else "none-disclosed"
+    st = nh_state(status, None if holders else "the filing lists no individually disclosed holder with shares for %s" % report_date, day)
+    st.update(holders=holders, excluded=excluded, unmapped_axes=dict(sorted(unmapped.items())), section_totals=totals, flags=flags)
+    return st
+
+
+def nh_core(nh):
+    """The part of a named_holders record that says what the filing held (the fetch date is not part of it)."""
+    return None if not isinstance(nh, dict) else {k: v for k, v in nh.items() if k != "fetched"}
+
+
+def select_major(nh, limit=10):
+    """The deterministic 'major disclosed shareholders' list: only individually disclosed holders, percentage descending, at most `limit`."""
+    if not isinstance(nh, dict) or nh.get("status") != "available":
+        return []
+    return sorted(nh.get("holders") or [], key=holder_sort_key)[:limit]
+
+
 PROM = ("shareholdingofpromoterandpromotergroup",)
 MF = ("mutualfundsoruti",)
 DOM, FOR_NEW = ("institutionsdomestic",), ("institutionsforeign",)
@@ -444,8 +606,10 @@ def build_record(rec, qdate, data, used_url, err, day):
     if used_url and listed and used_url != listed:
         src["xbrl_url_listed"] = listed
     base = {"quarter_end": qdate.isoformat(), "status": "unavailable", "reason": None, "values": empty_values(), "format_version": None,
-            "percent_unit": None, "diagnostics": None, "quality": {"status": "ok", "flags": []}, "raw": None, "source": src, "fetched": day, "revisions": []}
+            "percent_unit": None, "diagnostics": None, "quality": {"status": "ok", "flags": []}, "raw": None, "source": src, "fetched": day, "revisions": [],
+            "named_holders": None}
     if data is None:
+        base["named_holders"] = nh_state("unavailable", "the XBRL file could not be obtained (%s)" % (err or "no URL listed"), day)
         base["reason"] = "the XBRL file could not be obtained (%s)" % (err or "no URL listed")
         base["quality"] = {"status": "flagged", "flags": [{"code": "xbrl-unavailable", "detail": base["reason"]}]}
         return base
@@ -453,6 +617,7 @@ def build_record(rec, qdate, data, used_url, err, day):
         parsed = parse_xbrl(data)
     except ET.ParseError as e:
         base["reason"] = "the XBRL file could not be parsed (%s)" % type(e).__name__
+        base["named_holders"] = nh_state("unavailable", base["reason"], day)
         base["quality"] = {"status": "flagged", "flags": [{"code": "xbrl-unparsable", "detail": base["reason"]}]}
         return base
     flags = []
@@ -462,6 +627,7 @@ def build_record(rec, qdate, data, used_url, err, day):
     rows = {n: r for (n, per), r in parsed["rows"].items() if per == want}
     if not rows:
         base["reason"] = "the XBRL holds no category rows for %s" % want
+        base["named_holders"] = nh_state("unavailable", base["reason"], day)
         base["quality"] = {"status": "flagged", "flags": [{"code": "xbrl-no-rows", "detail": base["reason"]}]}
         return base
     if parsed["duplicates"]:
@@ -471,11 +637,13 @@ def build_record(rec, qdate, data, used_url, err, day):
                    "rows": {r["member"]: [r["shares"], r["pct"]] for r in sorted(rows.values(), key=lambda x: x["member"])}}
     if m["problem"]:
         base["reason"] = m["problem"]
+        base["named_holders"] = nh_state("unavailable", m["problem"], day)
         base["quality"] = {"status": "flagged", "flags": flags + [{"code": "xbrl-unmappable", "detail": m["problem"]}]}
         return base
     base.update(status="available", values=m["values"], format_version=m["format_version"], percent_unit=m["percent_unit"], diagnostics=m["diagnostics"])
     flags += m["flags"]
     base["quality"] = {"status": "flagged" if flags else "ok", "flags": flags}
+    base["named_holders"] = build_named_holders(data, want, m["percent_unit"], rows, day)
     return base
 
 
@@ -533,14 +701,37 @@ def sort_quarters(stock):
 
 def _snapshot(rec, day):
     return {"recorded": day, "status": rec.get("status"), "reason": rec.get("reason"), "values": copy.deepcopy(rec.get("values")),
-            "format_version": rec.get("format_version"), "source": copy.deepcopy(rec.get("source")), "quality": copy.deepcopy(rec.get("quality"))}
+            "format_version": rec.get("format_version"), "source": copy.deepcopy(rec.get("source")), "quality": copy.deepcopy(rec.get("quality")),
+            "named_holders": copy.deepcopy(rec.get("named_holders"))}
 
 
 def _core(rec):
     return (rec.get("status"), json.dumps(rec.get("values"), sort_keys=True), (rec.get("source") or {}).get("record_id"))
 
 
+def _nh_ok(nh):
+    return isinstance(nh, dict) and nh.get("status") in ("available", "none-disclosed", "not-in-filing")
+
+
+def _carry_named(old, new):
+    """Named holders follow the no-loss rule: a read result is never replaced by a failed read, and the same NSE version keeps the holders it already has."""
+    o, n = (old or {}).get("named_holders"), new.get("named_holders")
+    if _nh_ok(o) and _core(old) == _core(new):
+        new["named_holders"] = o
+    return new
+
+
 def merge_record(old, new, day):
+    rec, ev = _merge_record(old, new, day)
+    if rec is old and old is not None and old.get("status") == "available" and new.get("status") == "available" and not _nh_ok(old.get("named_holders")) and _nh_ok(new.get("named_holders")):
+        old["named_holders"] = new["named_holders"]      # a same-version quarter that had no named holders yet gains them; nothing else changes
+        return old, "named-added"
+    if rec is not old:
+        _carry_named(old, rec)
+    return rec, ev
+
+
+def _merge_record(old, new, day):
     """(record, event). Events: added, unchanged, revised, refreshed, resurrected, kept-existing. Never loses a value or a quarter."""
     if old is None:
         return new, "added"
@@ -583,6 +774,24 @@ def expected_quarters(newest):
     return out
 
 
+def fill_named(nse, old, listed, d, rec, day, budget):
+    """Gap-fill: an available quarter of the same NSE version that has no named holders yet. The XBRL is read again ONLY to add named_holders, and only if its
+    aggregate rows reproduce the stored ones exactly; the stored aggregate values are never touched. Returns the event."""
+    data, used, e = (None, None, "the index lists no XBRL file") if not listed else fetch_xbrl(nse, listed)
+    if listed:
+        budget[0] -= 1
+    new = build_record(rec, d, data, used, e, day)
+    if new.get("status") != "available":
+        if not _nh_ok(old.get("named_holders")):
+            old["named_holders"] = nh_state("unavailable", new.get("reason") or "the XBRL file could not be read", day)
+        return "named-unavailable"
+    if new["values"] != old.get("values"):
+        old["named_holders"] = nh_state("unavailable", "the filing now reads differently from the stored aggregates; named holders are not added to a quarter whose values would change", day)
+        return "named-skipped"
+    old["named_holders"] = new["named_holders"]
+    return "named-added"
+
+
 def process_stock(nse, ledger, symbol, day, budget, refresh_all=False):
     """Fetch the index and every quarter that is new, revised or not yet read. Returns (events, skipped, error)."""
     recs, err = nse.index(symbol)
@@ -604,12 +813,16 @@ def process_stock(nse, ledger, symbol, day, budget, refresh_all=False):
         rec, q = keep[d], d.isoformat()
         old = have.get(q)
         rid = str(rec.get("recordId")) if rec.get("recordId") not in (None, "") else None
-        if old and old.get("status") == "available" and (old.get("source") or {}).get("record_id") == rid and not refresh_all:
+        same_version = bool(old and old.get("status") == "available" and (old.get("source") or {}).get("record_id") == rid)
+        if same_version and not refresh_all and _nh_ok(old.get("named_holders")):
             events[q] = "unchanged"
             continue
         listed = rec.get("xbrl") if isinstance(rec.get("xbrl"), str) and rec.get("xbrl", "").startswith("https://") else None
         if budget[0] <= 0:
             events[q] = "not-attempted"
+            continue
+        if same_version and not refresh_all:
+            events[q] = fill_named(nse, old, listed, d, rec, day, budget)
             continue
         data, used, e = (None, None, "the index lists no XBRL file") if not listed else fetch_xbrl(nse, listed)
         if listed:
@@ -671,7 +884,18 @@ def cross_check(api, stock, isin=None):
 # ---------------------------------------------------------------- the published file
 def public_quarter(r):
     out = {k: copy.deepcopy(r.get(k)) for k in ("quarter_end", "status", "reason", "values", "format_version", "percent_unit", "diagnostics", "quality", "source", "fetched", "revisions")}
+    out["named_holders"] = copy.deepcopy(r.get("named_holders")) or nh_state("unavailable", "named holders have not been read for this quarter yet", r.get("fetched"))
     return out
+
+
+def major_for(qs):
+    """The stock-level 'major disclosed shareholders': the NEWEST available quarter, top 10 by percentage. Never an older quarter's holders under a newer date."""
+    latest = next((r for r in qs if r.get("status") == "available"), None)
+    if latest is None:
+        return {"quarter_end": None, "status": "unavailable", "reason": "no available quarter", "basis": HOLDER_BASIS, "holders": []}
+    nh = latest.get("named_holders") or {}
+    return {"quarter_end": latest["quarter_end"], "status": nh.get("status") or "unavailable", "reason": nh.get("reason"), "basis": HOLDER_BASIS,
+            "holders": [{k: h.get(k) for k in ("holder_name", "category", "label", "shares", "percentage")} for h in select_major(nh)]}
 
 
 def build_output(ledger, extra, day):
@@ -690,6 +914,7 @@ def build_output(ledger, extra, day):
             "symbol": sym, "isin": st.get("isin"), "name": st.get("name"), "quarters": qs,
             "coverage": {"count": len(qs), "available": sum(1 for r in qs if r["status"] == "available"), "oldest": min(have) if have else None, "newest": newest,
                          "missing_quarters": [q for q in exp if q not in have], "unavailable_quarters": [r["quarter_end"] for r in qs if r["status"] != "available"]},
+            "major_holders": major_for(qs),
             "off_cycle_filings": e.get("skipped") or [],
             "cross_check": e.get("cross_check"),
             "error": e.get("error"),
@@ -699,6 +924,33 @@ def build_output(ledger, extra, day):
         flagged += sum(1 for r in qs if (r.get("quality") or {}).get("status") == "flagged")
     return {"schema": SCHEMA_VERSION, "as_of": day, "categories": CATEGORIES, "notes": NOTES, "stocks": stocks,
             "summary": {"stocks": len(stocks), "quarter_records": total, "available": avail, "unavailable": total - avail, "flagged": flagged}}
+
+
+def validate_named(nh, status):
+    if not isinstance(nh, dict):
+        return ["missing"]
+    p = []
+    if nh.get("status") not in ("available", "none-disclosed", "not-in-filing", "unavailable"):
+        p.append("bad status")
+    hs = nh.get("holders")
+    if not isinstance(hs, list):
+        return p + ["holders is not a list"]
+    if nh.get("status") != "available" and hs:
+        p.append("holders present without status available")
+    if nh.get("status") == "available" and not hs:
+        p.append("available without holders")
+    if status != "available" and nh.get("status") == "available":
+        p.append("holders on an unavailable quarter")
+    for h in hs:
+        if not isinstance(h, dict) or not h.get("holder_name") or h.get("label") not in (L_PROMOTER, L_MF, L_INS, L_DII, L_FII, L_PUBLIC, L_OTHER):
+            p.append("holder without a name or a known label")
+        elif not (h.get("shares") is None or (isnum(h["shares"]) and h["shares"] > 0)):
+            p.append("%s: shares must be positive" % h["holder_name"])
+        elif h.get("percentage") is not None and not (isnum(h["percentage"]) and 0 <= h["percentage"] <= 100.5):
+            p.append("%s: percentage out of range" % h["holder_name"])
+    if hs != sorted(hs, key=holder_sort_key):
+        p.append("holders are not sorted")
+    return p
 
 
 def validate_doc(doc):
@@ -745,6 +997,8 @@ def validate_doc(doc):
                     p.append(w + "an unavailable quarter must hold no values")
                 if not r.get("reason"):
                     p.append(w + "an unavailable quarter must say why")
+            problems_nh = validate_named(r.get("named_holders"), r.get("status"))
+            p += [w + "named_holders: " + x for x in problems_nh]
             q_ = r.get("quality") or {}
             if q_.get("status") not in ("ok", "flagged") or (q_.get("status") == "ok") != (not q_.get("flags")):
                 p.append(w + "quality status does not match its flags")
