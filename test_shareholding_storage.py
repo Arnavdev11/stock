@@ -223,8 +223,14 @@ class Workflow(unittest.TestCase):
         self.assertNotIn("save_ledger.yml", self.t)
 
     def test_existing_workflows_do_not_mention_the_new_ledger(self):
-        for n in ("update.yml", "financial_history.yml", "save_ledger.yml", "historical.yml"):
+        for n in ("financial_history.yml", "save_ledger.yml", "historical.yml"):
             self.assertNotIn("shareholding", (ROOT / ".github" / "workflows" / n).read_text(), n)
+        upd = (ROOT / ".github" / "workflows" / "update.yml").read_text()                   # Phase 5H.5: update.yml runs the same updater, but never initialises the ledger
+        self.assertIn("python shareholding_updater.py", upd); self.assertNotIn("SHAREHOLDING_INIT", upd); self.assertNotIn("init_ledger", upd)
+        self.assertNotIn("financial_history_ledger.json", upd.split("save-shareholding:")[1])
+        save = upd.split("save-shareholding:")[1]                                            # the save job: the no-loss verifier runs, no force push, no token, only the shareholding ledger
+        self.assertIn("python shareholding_ledger.py verify ledger-branch/shareholding_ledger.json ledger-new/shareholding_ledger.json", save)
+        self.assertNotRegex(save, r"push[^\n]*(--force|-f\b|--force-with-lease)"); self.assertNotIn("UPSTOX", save); self.assertNotIn("secrets", save)
 
     def test_workflow_parses_as_yaml_when_pyyaml_is_available(self):
         try:

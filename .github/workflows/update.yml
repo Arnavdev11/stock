@@ -8,7 +8,7 @@ name: Update data and publish site
 permissions:
   contents: read
 
-# One shared group for everything that reads or writes the financial-history ledger (see also financial_history.yml). Never cancels a run.
+# One shared group for everything that reads or writes the financial-history ledger or the shareholding ledger (see also financial_history.yml and shareholding.yml). Never cancels a run.
 concurrency:
   group: stocklens-ledger
   cancel-in-progress: false
@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ledger_ready: ${{ steps.ledgerout.outputs.ready }}
+      shareholding_ready: ${{ steps.shpout.outputs.ready }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +98,37 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Phase 5H.5. The shareholding updater (the same script as the manual shareholding.yml) reads the durable ledger from the data branch and
+      # rewrites out/shareholding.json, which the site-folder step below publishes with the other out/*.json files.
+      # It never initialises a ledger (no init flag is passed) and never creates the data branch. If it fails, nothing is saved and the
+      # previously published out/shareholding.json (from the saved-data cache) is left as it was.
+      - name: Update shareholding pattern (NSE/XBRL)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          SHAREHOLDING_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
+          SHAREHOLDING_LEDGER_OUT: shareholding-ledger-out/shareholding_ledger.json
+        run: python shareholding_updater.py
+
+      - name: Check the shareholding ledger output
+        id: shpout
+        run: |
+          if [ -s shareholding-ledger-out/shareholding_ledger.json ] && [ -s out/shareholding.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The shareholding updater produced no ledger this run, so nothing will be saved. The last published shareholding.json (if any) is kept."
+          fi
+
+      - name: Hand the updated shareholding ledger to the save job
+        if: steps.shpout.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shareholding-ledger
+          path: shareholding-ledger-out/shareholding_ledger.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Validate outputs
         continue-on-error: true
         run: python validate_outputs.py
@@ -135,3 +167,48 @@ jobs:
     uses: ./.github/workflows/save_ledger.yml
     with:
       create_branch: false
+
+  # Phase 5H.5. Saves the shareholding ledger to the data branch with the existing no-loss check (shareholding_ledger.py verify), and nothing else.
+  # It waits for save-history so the two jobs never push to the data branch at the same time. It never creates the branch and never initialises the ledger.
+  save-shareholding:
+    needs: [build, save-history]
+    if: ${{ !cancelled() && needs.build.outputs.shareholding_ready == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the code (for the verification script)
+        uses: actions/checkout@v4
+
+      - name: Download the updated shareholding ledger
+        uses: actions/download-artifact@v4
+        with:
+          name: shareholding-ledger
+          path: ledger-new
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Verify nothing was lost
+        run: python shareholding_ledger.py verify ledger-branch/shareholding_ledger.json ledger-new/shareholding_ledger.json
+
+      - name: Commit the shareholding ledger to the data branch
+        run: |
+          cd ledger-branch
+          cp ../ledger-new/shareholding_ledger.json shareholding_ledger.json
+          git add shareholding_ledger.json
+          if git diff --cached --quiet; then
+            echo "The shareholding ledger did not change. Nothing to commit."
+            exit 0
+          fi
+          if [ "$(git diff --cached --name-only)" != "shareholding_ledger.json" ]; then
+            echo "::error::The commit must contain exactly shareholding_ledger.json."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update shareholding ledger (run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data
