@@ -4,6 +4,9 @@ name: Update data and publish site
   schedule:
     - cron: "15 15 * * 1-5"
   workflow_dispatch: {}
+  push:
+    branches:
+      - probe-5h5-live
 
 permissions:
   contents: read
@@ -141,12 +144,40 @@ jobs:
           cp out/*.json _site/out/
           cp company_profiles.json _site/out/
 
+      - name: TEMP probe diagnostics (build)
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, hashlib, os
+          sha = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()[:16] if os.path.isfile(p) else "MISSING"
+          lb = "ledger-branch/"; lo = "shareholding-ledger-out/shareholding_ledger.json"
+          msg = ["branch shareholding_ledger sha " + sha(lb + "shareholding_ledger.json"), "branch financial_history_ledger sha " + sha(lb + "financial_history_ledger.json"),
+                 "NEW shareholding ledger sha " + sha(lo), "site out/shareholding.json sha " + sha("_site/out/shareholding.json"), "out/shareholding.json sha " + sha("out/shareholding.json")]
+          if os.path.isfile(lo) and os.path.isfile(lb + "shareholding_ledger.json"):
+              a = json.load(open(lb + "shareholding_ledger.json")); b = json.load(open(lo))
+              msg.append("new ledger == branch ledger (parsed): %s" % (a == b))
+              q = lambda d: [r for s in d["stocks"].values() for r in s["quarters"]]
+              msg.append("ledger before: %d stocks, %d records, %d available, %d unavailable" % (len(a["stocks"]), len(q(a)), sum(r["status"] == "available" for r in q(a)), sum(r["status"] != "available" for r in q(a))))
+              msg.append("ledger after : %d stocks, %d records, %d available, %d unavailable" % (len(b["stocks"]), len(q(b)), sum(r["status"] == "available" for r in q(b)), sum(r["status"] != "available" for r in q(b))))
+          if os.path.isfile("out/shareholding.json"):
+              d = json.load(open("out/shareholding.json")); sm = d["summary"]
+              msg.append("out/shareholding.json summary: " + json.dumps(sm, sort_keys=True))
+              ic = {r["quarter_end"]: r for r in d["stocks"]["ICICIBANK"]["quarters"]}
+              for k in ("2026-03-31", "2026-06-30"):
+                  msg.append("ICICIBANK %s flags %s values %s" % (k, [f["code"] for f in ic[k]["quality"]["flags"]], ic[k]["values"]))
+          msg.append("site file: " + ("present" if os.path.isfile("_site/out/shareholding.json") else "MISSING"))
+          msg.append("site out files: " + ",".join(sorted(os.listdir("_site/out"))) if os.path.isdir("_site/out") else "no _site/out")
+          for i, m in enumerate(msg):
+              print("::notice title=probe build %d::%s" % (i, m))
+          PY
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
   deploy:
     needs: build
+    if: ${{ false }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -161,7 +192,7 @@ jobs:
 
   save-history:
     needs: build
-    if: ${{ needs.build.outputs.ledger_ready == 'true' }}
+    if: ${{ false }}
     permissions:
       contents: write
     uses: ./.github/workflows/save_ledger.yml
@@ -212,3 +243,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update shareholding ledger (run ${{ github.run_id }})"
           git push origin HEAD:stocklens-data
+
+      - name: TEMP probe diagnostics (save)
+        if: always()
+        run: |
+          cd ledger-branch
+          sha() { sha256sum "$1" | cut -c1-16; }
+          echo "::notice title=probe save 0::branch HEAD $(git rev-parse HEAD) subject: $(git log -1 --format=%s)"
+          echo "::notice title=probe save 1::shareholding_ledger sha now $(sha shareholding_ledger.json) | financial_history_ledger sha now $(sha financial_history_ledger.json)"
+          echo "::notice title=probe save 2::files in HEAD commit: $(git show --name-only --format= HEAD | tr '\n' ' ') | files at HEAD~1 vs HEAD changed: $(git diff --name-only HEAD~1 HEAD 2>/dev/null | tr '\n' ' ')"
