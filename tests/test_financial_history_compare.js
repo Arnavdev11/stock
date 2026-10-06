@@ -3,7 +3,7 @@
 // overview and financial-history tables (fiscal years, change, CAGR, banks vs other companies, ITC boundary, markers), "-" for gaps, unavailable states, neutral wording,
 // the two entry points, the files read, and that every older piece of the page (seven classic blocks, Financial History module, everything else) is exactly what it was.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">';
 const fhCode = (html.split(FHTAG)[1] || "").split("</script>")[0], cmpCode = (html.split(CMPTAG)[1] || "").split("</script>")[0];

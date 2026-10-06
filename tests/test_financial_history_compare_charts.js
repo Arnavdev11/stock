@@ -4,7 +4,7 @@
 // vs other companies, one fiscal year per chart, fixed-window CAGR, 2- and 5-stock layouts, responsive markup, neutral wording, and that the tables and the rest of the page
 // are exactly what they were at Phase 5B.1 (700767f).
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];

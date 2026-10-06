@@ -1,7 +1,7 @@
 // Run: node tests/test_macd.js   (no network, no browser; stubs the DOM, fetch and the TradingView library)
 // Tests the Phase 3 Step 4 MACD (12, 26, 9) panel inside the chart. Expected values are hand-calculated (closed forms below).
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const chartCode = blocks.find((b) => b.includes("Phase 3 Step 2 - historical price chart"));
 const detailCode = blocks.find((b) => b.includes("Stock Detail view"));

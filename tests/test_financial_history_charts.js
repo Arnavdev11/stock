@@ -3,7 +3,7 @@
 // the line, missing years left empty (never bridged or zero), unavailable states, bank "Total income", official-year hatching, the ITC divider,
 // no growth figures or advice wording, no library/network use, responsive markup, and that the table / change / CAGR output is unchanged from 3c07ada.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const MARK = "Phase 4 Step 4E - Financial History", MOD = '<script type="module">';
 const modOf = (src) => (src.split(MOD)[1] || "").split("</script>")[0];

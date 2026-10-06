@@ -3,7 +3,7 @@
 // (case-insensitive, trimmed, exact / partial symbol and name), lists at most 10 results in a fixed text-based order (never by any financial value), opens the existing #stock=SYMBOL route,
 // says "No matching company found." (and goes nowhere) for an unknown company, works from the keyboard, and leaves the rest of the page exactly as it was.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">', SNAPTAG = '<script type="module" id="stocklens-snapshot">', SRCHTAG = '<script type="module" id="stocklens-search">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];

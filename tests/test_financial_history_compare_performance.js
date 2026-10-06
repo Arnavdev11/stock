@@ -4,7 +4,7 @@
 // the inline-SVG bar charts, missing and insufficient history, zero / positive / negative returns, order kept (no sorting, no ranking), responsive markup, neutral wording, and that
 // the Phase 5B tables, the Phase 5C charts, the Financial History module and the rest of the page are exactly what they were at 823ecc9.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];

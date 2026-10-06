@@ -54,7 +54,23 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 #ftable td:first-child,#t2a td:first-child,#t2b td:first-child,#t2 td:first-child,#t3a td:first-child,#t3b td:first-child{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
 td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
 #detail{display:none}.detail-mode .w>*:not(#detail){display:none!important}.detail-mode #detail{display:block}
-</style></head><body><div class="w">
+#globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
+#globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1040px;margin:0 auto;padding:8px 18px}
+#globalBar .gb-brand{flex:0 0 auto;font-weight:800;font-size:1.1rem;color:var(--ink);text-decoration:none}
+#globalBar .gb-search{flex:1 1 200px;min-width:0;max-width:380px}
+#globalBar #stockSearch{margin:0}#globalBar #stockSearch .ss-box{padding:0;border:0;background:none;border-radius:0}
+#globalBar #stockSearch input{padding:8px 12px;font-size:.95rem}#globalBar #stockSearch .ss-list{max-height:50vh;overflow-y:auto}
+#globalBar .gb-toggle{display:none;align-items:center;min-height:40px;max-width:100%;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:600 .88rem Manrope,sans-serif;cursor:pointer;overflow-wrap:anywhere}
+#globalBar .gb-sections{display:block;padding:0;gap:0;flex:1 1 auto;min-width:0}#globalBar .gb-sections ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 2px}
+#globalBar .gb-sections a{display:block;min-height:36px;padding:8px 10px;border-radius:8px;color:var(--mute);font-size:.88rem;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
+#globalBar .gb-sections a:hover{color:var(--ac)}#globalBar .gb-sections a[aria-current=true]{background:var(--ac);color:#fff}
+@container (max-width:1000px){#globalBar .gb-toggle{display:inline-flex;margin-left:auto}#globalBar[data-stock] .gb-search{flex:1 1 100%;max-width:none;order:3}
+#globalBar .gb-sections{flex:1 1 100%;order:4;display:none}#globalBar[data-open] .gb-sections{display:block}
+#globalBar .gb-sections ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:6px}
+#globalBar .gb-sections a{min-height:44px;padding:11px 12px;border:1px solid var(--line);background:var(--card)}#globalBar .gb-sections a[aria-current=true]{border-color:var(--ac)}}
+</style></head><body>
+<div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><div class="gb-search" id="globalSearchHost"></div><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav></div></div>
+<div class="w">
 <nav aria-label="Main"><b>StockLens India</b><a href="#demo">Demo</a><a href="#all">All scans</a><a href="#more">More data</a><a href="#news">News &amp; filings</a><a href="#stock">Stock page</a><a href="#tools">More tools</a><a href="#road">Roadmap</a><a href="#cost">Costs</a><a href="#money">Earning</a><a href="#pc">Pros &amp; cons</a><a href="#law">SEBI rules</a></nav>
 
 <header>
@@ -336,7 +352,7 @@ var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;   /* NSE symbols: letters, digits, & 
 var DATA=null;
 
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 
@@ -390,9 +406,12 @@ function view(s,d){
   h+='<p class="note" style="padding-left:0">'+(d.fin&&d.fin.as_of?"Financial data: "+esc(d.fin.source||"Upstox")+" · ₹ crore · Updated: "+esc(d.fin.as_of):"Financial statements not loaded yet.")+'</p>';
   return h}
 
+var RENDERED=null;   /* Phase 5I: the stock now on screen; a change of #stock=SYM&section=... that keeps the same stock only moves to a section and never re-renders */
 function render(){
   var s=routeSymbol(),box=$("detail"),b=document.body;
-  if(!s){b.classList.remove("detail-mode");return}
+  if(!s){b.classList.remove("detail-mode");RENDERED=null;return}
+  if(s===RENDERED&&b.classList.contains("detail-mode"))return;
+  RENDERED=s;
   b.classList.add("detail-mode");
   box.innerHTML='<p class="note">Loading '+esc(s)+'…</p>';
   if(window.scrollTo)window.scrollTo(0,0);
@@ -821,7 +840,7 @@ var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
 var RS_WINDOW="1Y";
 
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 
@@ -979,7 +998,7 @@ var MISSING="not in the current data";
 var NOTE="Descriptive only — this checklist does not provide investment advice.";
 
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
@@ -1127,7 +1146,7 @@ var cr=function(v){return isn(v)?N0.format(v):"-"},r2=function(v){return isn(v)?
 function pc(v){if(!isn(v))return"-";var s=v.toFixed(2);if(s==="-0.00")s="0.00";return(v>0?"+":"")+s+"%"}
 function yy(fy){return String(fy%100).length<2?"0"+(fy%100):String(fy%100)}
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 function crosses(sym,a,b){var B=Object.prototype.hasOwnProperty.call(BOUNDARY,sym)?BOUNDARY[sym]:null;return B!==null&&a<B&&b>=B}
@@ -1645,7 +1664,7 @@ function route(){
     el.innerHTML=build(hash,d)}).catch(function(){if(tok===TOKEN)el.innerHTML=build(hash,{val:null,hist:null,prices:null})})}
 /* entry points: a header link and a "Compare with…" link on Stock Detail. Both are added here, so the pages' own scripts are untouched. */
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 function addNavLink(){
@@ -1690,7 +1709,7 @@ function tone(v){return isn(v)&&v>0?"up":isn(v)&&v<0?"dn":""}
 function find(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
 function obj(v){return v&&typeof v==="object"?v:{}}
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 
@@ -1923,15 +1942,15 @@ function addStyle(){
 
 function mount(){
   if(typeof document==="undefined"||!document.createElement||$("stockSearch"))return null;
-  var host=document.querySelector&&document.querySelector("header");
-  if(!host||!host.parentNode)return null;
+  var gh=$("globalSearchHost"),host=gh||(document.querySelector&&document.querySelector("header"));      /* Phase 5I: the one search box lives in the global bar when the page has it */
+  if(!host||(!gh&&!host.parentNode))return null;
   addStyle();
   var sec=document.createElement("section");sec.id="stockSearch";sec.setAttribute("role","search");
-  sec.innerHTML='<div class="ss-box"><label for="companySearch">Search stocks</label>'
-    +'<input id="companySearch" type="search" placeholder="Search company or symbol..." autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="companySearchList">'
+  sec.innerHTML='<div class="ss-box">'+(gh?'':'<label for="companySearch">Search stocks</label>')
+    +'<input id="companySearch" '+(gh?'aria-label="Search stocks" ':'')+'type="search" placeholder="Search company or symbol..." autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="companySearchList">'
     +'<p class="ss-msg" id="companySearchMsg" role="status" aria-live="polite" hidden></p>'
     +'<ul class="ss-list" id="companySearchList" role="listbox" aria-label="Matching companies" hidden></ul></div>';
-  host.parentNode.insertBefore(sec,host);                    /* directly under the navigation, above the page heading */
+  if(gh)gh.appendChild(sec);else host.parentNode.insertBefore(sec,host);                    /* the global bar, or directly under the navigation, above the page heading */
   return sec}
 
 var state={res:[],active:-1,data:null,loading:false};
@@ -2113,7 +2132,7 @@ function load(){
   DATA=fetch("out/growth_events.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
   return DATA}
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 function fill(){
@@ -2379,7 +2398,7 @@ function load(){
   DATA=fetch("out/shareholding.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
   return DATA}
 function routeSymbol(){
-  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
   s=s.trim().toUpperCase();return SYM.test(s)?s:null}
 var node=null,nodeSym=null;
@@ -2405,6 +2424,121 @@ function check(){
 if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true,subtree:true})}
 check();
 window.SLShareholding={model:model,summaryHtml:summaryHtml,sectionHtml:sectionHtml,chartHtml:chartHtml,slotsOf:slotsOf,axisOf:axisOf,check:check,notesOf:notesOf,hostOk:hostOk,fmtPct:fmtPct,KEYS:KEYS,LABEL:LABEL};
+})();
+</script>
+<script type="module" id="stocklens-nav">
+/* StockLens Phase 5I - global stock search and direct section navigation (navigation only: no data, no calculation, no request).
+   The global bar (#globalBar, in the page itself) holds the ONE company search: the Phase 5F search module mounts into #globalSearchHost, so there is no second search and no second company list. Selecting a result opens the
+   existing Stock Detail route. This module adds the stock's section links and the routing around them. Route: #stock=SYMBOL, or #stock=SYMBOL&section=KEY. The stock is always in the address, so a link, a refresh,
+   Back and Forward all keep both the stock and the section. A section change never re-renders the stock (the Stock Detail script ignores it); this module only scrolls to the section. A destination appears here only if it
+   exists in SECTIONS below: to add one later (for example quarterly results), add one line to SECTIONS when its section exists. Nothing here is a fake link. An unknown section in the address is ignored; the stock still opens. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var ROUTE=/^#stock=([^&]+)(?:&section=([A-Za-z0-9_-]{1,30}))?$/;
+var SETTLE_MS=6000;
+/* a heading that the Stock Detail script writes directly into #detail */
+function heading(box,prefix){
+  var h=box.querySelectorAll?box.querySelectorAll("h3"):[];
+  for(var i=0;i<h.length;i++){if(h[i].parentNode===box&&String(h[i].textContent||"").trim().indexOf(prefix)===0)return h[i]}
+  return null}
+/* the destinations that exist today, in menu order; each finds its element inside the Stock Detail view (reusing the existing sections, never copying them) */
+var SECTIONS=[
+  {key:"overview",label:"Overview",find:function(b){return b.querySelector("h2")}},
+  {key:"fundamentals",label:"Fundamentals",find:function(b){return heading(b,"Overview")}},
+  {key:"financials",label:"Financials",find:function(b){return heading(b,"Financial Health")}},
+  {key:"shareholding",label:"Shareholding",find:function(b){return b.querySelector("#detailShareholding")}},
+  {key:"technical",label:"Technical",find:function(b){return b.querySelector("#detailTech")}},
+  {key:"research",label:"Research",find:function(b){return b.querySelector("#detailResearch")}}];
+function sectionOf(key){for(var i=0;i<SECTIONS.length;i++)if(SECTIONS[i].key===key)return SECTIONS[i];return null}
+function parse(hash){
+  var m=ROUTE.exec(hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();if(!SYM.test(s))return null;
+  return{symbol:s,section:m[2]&&sectionOf(m[2])?m[2]:null,rawSection:m[2]||null}}
+function hashFor(sym,key){return"#stock="+encodeURIComponent(sym)+(key&&sectionOf(key)?"&section="+key:"")}
+function compareHash(sym){return"#compare-pick="+encodeURIComponent(sym)}      /* the existing comparison route, which already takes a stock */
+
+var bar=null,box=null,navSym=null,activeKey=null,pending=null,prev=null,timer=null;
+function barH(){return bar&&bar.getBoundingClientRect?Math.round(bar.getBoundingClientRect().height):0}
+function elOf(key){var s=sectionOf(key);return s&&box?s.find(box):null}
+function topOf(el){return el.getBoundingClientRect().top}
+function goTo(el){var y=topOf(el)+(window.pageYOffset||0)-barH()-8;window.scrollTo(0,Math.max(0,Math.round(y)))}
+
+/* ---------- the bar ---------- */
+function setActive(key){
+  activeKey=key;
+  var nav=$("gbSections"),t=$("gbToggle");
+  if(nav&&nav.querySelectorAll)[].forEach.call(nav.querySelectorAll("a[data-gb-section]"),function(a){
+    if(a.getAttribute("data-gb-section")===key)a.setAttribute("aria-current","true");else a.removeAttribute("aria-current")});
+  var s=key?sectionOf(key):null;
+  if(t)t.textContent=(s?s.label:"Sections")+" ▾"}
+function showBar(sym){
+  var nav=$("gbSections"),t=$("gbToggle");
+  if(!bar||!nav)return;
+  if(!sym){
+    nav.setAttribute("hidden","");if(t)t.setAttribute("hidden","");bar.removeAttribute("data-stock");bar.removeAttribute("data-open");navSym=null;return}
+  bar.setAttribute("data-stock","1");
+  nav.removeAttribute("hidden");if(t)t.removeAttribute("hidden");
+  if(navSym===sym)return;
+  navSym=sym;
+  nav.innerHTML='<ul>'+SECTIONS.map(function(s){return'<li><a href="'+esc(hashFor(sym,s.key))+'" data-gb-section="'+s.key+'">'+esc(s.label)+'</a></li>'}).join("")
+    +'<li><a href="'+esc(compareHash(sym))+'" data-gb-compare="1">Compare</a></li></ul>';
+  setActive(activeKey)}
+function closeMenu(){if(bar){bar.removeAttribute("data-open");var t=$("gbToggle");if(t)t.setAttribute("aria-expanded","false")}}
+
+/* ---------- which section is in view (shown in the bar; never a rank or a signal) ---------- */
+function currentKey(){
+  if(!box)return null;
+  var line=barH()+40,best=null,bt=-1e9;
+  SECTIONS.forEach(function(s){var el=s.find(box);if(!el)return;var t=topOf(el);if(t<=line&&t>bt){bt=t;best=s.key}});
+  return best||"overview"}
+function onScroll(){if(pending)return;if(parse(window.location.hash))setActive(currentKey())}
+
+/* ---------- moving to a section: the page content above it is still loading on a direct link, so the position is re-applied while it settles, until the reader scrolls ---------- */
+function settle(){
+  timer=null;
+  if(!pending)return;
+  if(Date.now()-pending.t0>SETTLE_MS){pending=null;return}
+  var el=elOf(pending.key);
+  if(!el)return;
+  if(Math.abs(topOf(el)-barH()-8)>2)goTo(el)}
+function later(){if(pending&&!timer)timer=setTimeout(settle,30)}
+function apply(){
+  var r=parse(window.location.hash);
+  if(!r){showBar(null);pending=null;prev=null;activeKey=null;return}
+  showBar(r.symbol);closeMenu();
+  if(r.section){
+    pending={key:r.section,t0:Date.now()};setActive(r.section);settle()
+  }else{
+    pending=null;
+    if(prev&&prev.symbol===r.symbol&&prev.section&&window.scrollTo)window.scrollTo(0,0);     /* Back / Forward from a section to the stock itself */
+    setActive(null)}
+  prev={symbol:r.symbol,section:r.section}}
+
+function init(){
+  bar=$("globalBar");box=$("detail");
+  if(!bar||!box)return;
+  var t=$("gbToggle");
+  if(t)t.addEventListener("click",function(){
+    var open=bar.hasAttribute("data-open");
+    if(open)closeMenu();else{bar.setAttribute("data-open","1");t.setAttribute("aria-expanded","true")}});
+  document.addEventListener("click",function(e){
+    if(!bar.contains||!e.target)return;
+    if(!bar.contains(e.target)||(e.target.closest&&e.target.closest("a[data-gb-section],a[data-gb-compare]")))closeMenu()});
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape")closeMenu();
+    if(pending&&e.key!=="Enter")pending=null});
+  ["wheel","touchstart","mousedown"].forEach(function(n){document.addEventListener(n,function(e){
+    if(pending&&!(e.target&&e.target.closest&&e.target.closest("#globalBar")))pending=null},{passive:true})});
+  window.addEventListener("hashchange",apply);
+  window.addEventListener("scroll",function(){onScroll()},{passive:true});
+  if(typeof MutationObserver!=="undefined")new MutationObserver(later).observe(box,{childList:true,subtree:true});
+  apply()}
+init();
+window.SLNav={parse:parse,hashFor:hashFor,compareHash:compareHash,SECTIONS:SECTIONS,sectionOf:sectionOf,apply:apply,init:init,currentKey:currentKey};
 })();
 </script>
 <script>

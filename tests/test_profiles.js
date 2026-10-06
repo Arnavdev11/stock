@@ -13,7 +13,7 @@ const eq = (a, b, m) => { checks++; assert.deepStrictEqual(a, b, m); }, ok = (c,
 const BANNED = /\b(buy|sell|strong|bullish|bearish|signals?|rating|score|target|undervalued|overvalued|recommend\w*|tally|composite|overall)\b/i;
 const isDate = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && new Date(x + "T00:00:00Z").toISOString().slice(0, 10) === x;
 
-const html = read("index.html");
+const html = require("./legacy_5i.js").legacy(read("index.html")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const has = (m) => blocks.find((b) => b.includes(m));
 const researchCode = has("Phase 4 Step 1 - Stock Research"), checkCode = has("Phase 4 Step 2 - Investment Checklist"),

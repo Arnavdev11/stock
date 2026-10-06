@@ -5,7 +5,7 @@
 // and nothing is advice. The page makes no request except the one static file.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
 const ROOT = __dirname + "/..";
-const html = fs.readFileSync(ROOT + "/index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(ROOT + "/index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">', SNAPTAG = '<script type="module" id="stocklens-snapshot">', SRCHTAG = '<script type="module" id="stocklens-search">', GROWTAG = '<script type="module" id="stocklens-growth">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];

@@ -3,7 +3,7 @@
 // provenance and reconciliation markers, change/CAGR rules (including the ITC FY2022/FY2023 boundary), the unavailable state, placement
 // under Stock Research, and that every other script block of the page is byte-for-byte what it was before this step.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);          // the seven classic blocks the other suites pin
 const MARK = "Phase 4 Step 4E - Financial History", MOD = '<script type="module">';
 const fhCode = (html.split(MOD)[1] || "").split("</script>")[0], detailCode = blocks.find((b) => b.includes("Stock Detail view")),

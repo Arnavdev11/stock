@@ -2,7 +2,7 @@
 // Tests the Phase 4 Step 1 Stock Research section: field mapping, N/A rules, missing data, reuse of the existing technical calculations,
 // placement (Option B: appended to #detail, Stock Detail block untouched), routing, wording and block isolation.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const researchCode = blocks.find((b) => b.includes("Phase 4 Step 1 - Stock Research"));
 const detailCode = blocks.find((b) => b.includes("Stock Detail view"));

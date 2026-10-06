@@ -4,7 +4,7 @@
 // from Stock Research, growth and CAGR from Financial History) and never invent a value: no margin, no EPS growth, no free cash flow arithmetic, no debt / equity from liabilities,
 // no ownership, no order or capex data. It must appear on Stock Detail only, fetch each existing file at most once, and leave the dashboard and the comparison page exactly as they were.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">', SNAPTAG = '<script type="module" id="stocklens-snapshot">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];
