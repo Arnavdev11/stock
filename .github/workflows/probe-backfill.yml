@@ -11,7 +11,7 @@ jobs:
   backfill:
     runs-on: ubuntu-latest
     env:
-      DO_COMMIT: "false"
+      DO_COMMIT: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4

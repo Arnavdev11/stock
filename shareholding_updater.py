@@ -732,6 +732,8 @@ def merge_record(old, new, day):
     if rec is old and old is not None and old.get("status") == "available" and new.get("status") == "available" and not _nh_ok(old.get("named_holders")) and _nh_ok(new.get("named_holders")):
         old["named_holders"] = new["named_holders"]      # a same-version quarter that had no named holders yet gains them; nothing else changes
         return old, "named-added"
+    if rec is old and old is not None and old.get("status") != "available" and not isinstance(old.get("named_holders"), dict) and isinstance(new.get("named_holders"), dict):
+        old["named_holders"] = new["named_holders"]      # an unavailable quarter records why its holders are unavailable too (nothing else changes)
     if rec is not old:
         _carry_named(old, rec)
     return rec, ev

@@ -257,6 +257,17 @@ class Pipeline(unittest.TestCase):
         self.assertEqual((q["status"], q["named_holders"]["status"]), ("unavailable", "unavailable"))
         self.assertEqual(su.validate_doc(su.build_output(led, {}, "d")), [])
 
+    def test_an_older_unavailable_record_gains_only_the_unavailable_marker(self):
+        rec = index_rec("31-DEC-2025", "9", xbrl=None)
+        led, _ = self.run_stock(FakeNse({"ITC": [rec]}, {}))
+        q = led["stocks"]["ITC"]["quarters"][0]
+        before = {k: copy.deepcopy(v) for k, v in q.items() if k != "named_holders"}
+        q.pop("named_holders")
+        led2, ev = self.run_stock(FakeNse({"ITC": [rec]}, {}), led)
+        q2 = led2["stocks"]["ITC"]["quarters"][0]
+        self.assertEqual(q2["named_holders"]["status"], "unavailable")
+        self.assertEqual({k: v for k, v in q2.items() if k != "named_holders"}, before)
+
     def test_old_format_aggregate_with_holders(self):
         data = with_holders(make_xbrl(old_rows(), REPORT), self.HOLD)
         rec = index_rec("31-DEC-2025", "5")
