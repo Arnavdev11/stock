@@ -8,7 +8,7 @@ try:
     import shareholding_ledger as sl
     
     sym = os.environ["SYM"]
-    ledger = sl.load_ledger("ledger-branch")
+    ledger = sl.load_ledger("ledger-branch/shareholding_ledger.json")
     nse = su.Nse()
     recs, err = nse.index(sym)
     lines, allax = [], set()
