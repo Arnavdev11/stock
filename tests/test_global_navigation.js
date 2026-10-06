@@ -53,14 +53,15 @@ re(srchCode, /document\.querySelector\("header"\)/, "and still mounts under the 
 function loadNav(hash = "", extra = {}) {
   const calls = { scroll: [] }, attrs = {}, listeners = {};
   global.MutationObserver = undefined;
-  const mkEl = (id) => { const e = { id, innerHTML: "", textContent: "", attrs: {}, hidden: false, listeners: {}, setAttribute(k, v) { e.attrs[k] = String(v); }, removeAttribute(k) { delete e.attrs[k]; }, getAttribute(k) { return k in e.attrs ? e.attrs[k] : null; }, hasAttribute(k) { return k in e.attrs; }, addEventListener(t, f) { (e.listeners[t] = e.listeners[t] || []).push(f); }, contains() { return false; }, querySelector() { return null; }, getBoundingClientRect: () => ({ top: 0, height: 50 }),
+  const mkEl = (id) => { const e = { id, innerHTML: "", textContent: "", attrs: {}, hidden: false, listeners: {}, setAttribute(k, v) { e.attrs[k] = String(v); }, removeAttribute(k) { delete e.attrs[k]; }, getAttribute(k) { return k in e.attrs ? e.attrs[k] : null; }, hasAttribute(k) { return k in e.attrs; }, addEventListener(t, f) { (e.listeners[t] = e.listeners[t] || []).push(f); }, removeEventListener(t, f) { e.listeners[t] = (e.listeners[t] || []).filter((x) => x !== f); }, focus() { e.focused = true; }, contains() { return false; }, querySelector() { return null; }, getBoundingClientRect: () => ({ top: 0, height: 50 }),
     querySelectorAll() { const cur = (e.anchors = e.anchors && e.anchorsFor === e.innerHTML ? e.anchors : [...e.innerHTML.matchAll(/<a [^>]*data-gb-(section|compare)="([^"]*)"[^>]*>/g)].map((m) => { const a = { attrs: m[1] === "section" ? { "data-gb-section": m[2] } : { "data-gb-compare": m[2] }, getAttribute(k) { return k in a.attrs ? a.attrs[k] : null; }, setAttribute(k, v) { a.attrs[k] = String(v); }, removeAttribute(k) { delete a.attrs[k]; } }; return a; })); e.anchorsFor = e.innerHTML; return cur; } }; return e; };
   const els = { globalBar: mkEl("globalBar"), gbSections: mkEl("gbSections"), gbToggle: mkEl("gbToggle"), detail: mkEl("detail") };
   els.gbSections.attrs.hidden = ""; els.gbToggle.attrs.hidden = "";
   let h = hash;
   global.window = { location: { get hash() { return h; }, set hash(v) { h = String(v); } }, addEventListener: (t, f) => { listeners[t] = f; }, scrollTo: (x, y) => calls.scroll.push(y), pageYOffset: 0 };
   global.document = { getElementById: (i) => els[i] || null, addEventListener() {}, body: { classList: { add() {}, remove() {}, contains: () => false } } };
-  Object.assign(els.detail, extra.detail || {});
+  Object.assign(els.detail, extra.detail || {}); Object.assign(els, extra.els || {});
+  window.pageYOffset = 0; document.querySelectorAll = (q) => (q === "h3" ? extra.h3s || [] : []); document.querySelector = () => null;
   (0, eval)(navCode);
   return { N: window.SLNav, els, calls, listeners, setHash: (v) => { h = v; } };
 }
@@ -108,8 +109,10 @@ eq(N.parse(null), null, "no address at all");
   ok(/#stock=INFY&section=research/.test(nav.innerHTML.replace(/&amp;/g, "&")), "changing the stock rebuilds the links for the new stock"); eq(t.els.gbToggle.textContent, "Research ▾", "and the active section follows the address");
   t.setHash("#stock=INFY&section=bogus"); t.listeners.hashchange(); eq(t.els.gbToggle.textContent, "Sections ▾", "an unknown section: no section is marked, nothing breaks"); ok(!bar.hasAttribute("data-open"), "and the menu is closed");
   t.setHash(""); t.listeners.hashchange(); ok(!nav.hasAttribute("hidden") && !bar.hasAttribute("data-stock"), "on the dashboard the bar is still there (it is the one header of every view)");
-  eq([...nav.innerHTML.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1]), ["#compare-pick"], "with no stock there are no section links to give (they need a stock): only Compare, the existing comparison picker");
-  { const act = () => nav.querySelectorAll().filter((x) => x.getAttribute("aria-current") === "true").map((x) => x.getAttribute("data-gb-section") || "compare"); t.setHash("#stock=TCS&section=technical"); t.listeners.hashchange(); eq(act(), ["technical"], "exactly the current section carries aria-current"); t.setHash(""); t.listeners.hashchange(); eq(act(), [], "no current item on the dashboard");
+  eq([...nav.innerHTML.replace(/&amp;/g, "&").matchAll(/<a href="([^"]*)" data-gb-(?:section|compare)="([^"]*)"/g)].map((m) => m[2] + "=" + m[1]), ["overview=#home=overview", "fundamentals=#home=fundamentals", "financials=#home=financials", "shareholding=#", "technical=#home=technical", "research=#home=research", "1=#compare-pick"], "the dashboard shows the SAME links as a stock page, each to its dashboard equivalent (Shareholding needs a stock, so it is not a route)");
+  no(nav.innerHTML, /#stock=|&(amp;)?section=/, "and not one stockless stock address: nothing broken to open");
+  eq([...nav.innerHTML.matchAll(/data-gb-pick="1"/g)].length, 1, "only Shareholding asks for a stock first");
+  { const act = () => nav.querySelectorAll().filter((x) => x.getAttribute("aria-current") === "true").map((x) => x.getAttribute("data-gb-section") || "compare"); t.setHash("#stock=TCS&section=technical"); t.listeners.hashchange(); eq(act(), ["technical"], "exactly the current section carries aria-current"); t.setHash(""); t.listeners.hashchange(); eq(act(), ["overview"], "on the plain dashboard Overview is the current item"); t.setHash("#home=technical"); t.listeners.hashchange(); eq(act(), ["technical"], "a dashboard destination is marked current"); t.setHash("#demo"); t.listeners.hashchange(); eq(act(), [], "an old in-page anchor marks nothing and breaks nothing");
     t.setHash("#compare=TCS,INFY"); t.listeners.hashchange(); eq(act(), ["compare"], "on the comparison view Compare is the (only) current item"); t.setHash("#compare-pick"); t.listeners.hashchange(); eq(act(), ["compare"], "and on the comparison picker"); }
   t.setHash("#compare=TCS,INFY"); t.listeners.hashchange(); ok(/data-gb-compare="1"/.test(nav.innerHTML) && nav.hasAttribute("hidden") === false, "on the comparison view the bar stays"); eq(t.els.gbToggle.textContent, "Compare ▾", "and Compare is the current item");
   t.setHash("#compare-pick"); t.listeners.hashchange(); eq(t.els.gbToggle.textContent, "Compare ▾", "also on the comparison picker");
@@ -128,6 +131,36 @@ eq(N.parse(null), null, "no address at all");
   const detail = { querySelector: (q) => (q === "#detailShareholding" ? { getBoundingClientRect: () => ({ top: 900 }) } : null), querySelectorAll: () => [] };
   const t = loadNav("#stock=TCS&section=shareholding", { detail }); t.calls.scroll.length = 0; t.setHash("#stock=TCS"); t.listeners.hashchange(); eq(t.calls.scroll, [0], "going Back to the stock itself returns to its top");
 }
+
+// ---------- 4b. the dashboard: the same bar, each destination an existing dashboard section; Shareholding asks for a stock ----------
+eq(N.HOME.map((h) => h.key), ["overview", "fundamentals", "financials", "technical", "research"], "dashboard destinations: everything except Shareholding, which belongs to a stock");
+ok(N.HOME.every((h) => N.sectionOf(h.key)), "each is one of the bar's own items (same labels as on a stock page)");
+eq([N.parseHome("#home=fundamentals"), N.parseHome("#home=technical"), N.parseHome("#home=research"), N.parseHome("#home=financials"), N.parseHome("#home=overview")], ["fundamentals", "technical", "research", "financials", "overview"], "dashboard routes parse");
+for (const bad of ["", "#", "#home=", "#home=shareholding", "#home=nonsense", "#home=technical&x=1", "#home=Technical", "#stock=TCS", "#compare-pick", "#technical", null]) eq(N.parseHome(bad), null, "not a dashboard route (shareholding has none: no stockless route): " + JSON.stringify(bad));
+eq(N.homeHash("technical"), "#home=technical", "the address of a dashboard destination");
+{ // the destinations are real elements of the page as shipped
+  re(html, /<h3 style="margin-top:1\.4em">Fundamental screen<\/h3>/, "Fundamentals goes to the existing Fundamental screen"); re(html, /<div class="c"><h3>Technical<\/h3>/, "Technical to the existing Technical scan card");
+  re(html, /id="ftabs"/, "Financials to the existing Financial Health / Cash Flow tabs of the Fundamental screen"); re(html, /<h2 id="news">News and filings/, "Research to the existing News and filings area");
+  eq((html.match(/id="ftabs"/g) || []).length + (html.match(/id="news"/g) || []).length, 2, "and each exists once");
+  re(navCode, /"Fundamental screen"/, "found by its heading"); re(navCode, /\$\("ftabs"\)/, "Financials finds #ftabs"); re(navCode, /\$\("news"\)/, "Research finds #news"); }
+{ const h = (top, text) => ({ textContent: text, getBoundingClientRect: () => ({ top }) });
+  const hs = [h(300, "Gainers and losers"), h(700, "Technical"), h(900, "Fundamental screen")];
+  const t = loadNav("#home=technical", { h3s: hs }); eq(t.calls.scroll, [700 - 50 - 8], "a direct dashboard link scrolls to the Technical card, just below the bar");
+  const t2 = loadNav("#home=fundamentals", { h3s: hs }); eq(t2.calls.scroll, [900 - 50 - 8], "Fundamentals to the Fundamental screen");
+  const t3 = loadNav("#home=financials", { els: { ftabs: { getBoundingClientRect: () => ({ top: 1500 }) } } }); eq(t3.calls.scroll, [1500 - 50 - 8], "Financials to the Financial Health / Cash Flow tabs");
+  const t4 = loadNav("#home=research", { els: { news: { getBoundingClientRect: () => ({ top: 2400 }) } } }); eq(t4.calls.scroll, [2400 - 50 - 8], "Research to News and filings");
+  const t5 = loadNav("#home=technical", { h3s: [] }); eq(t5.calls.scroll, [], "a destination that is not on the page scrolls nowhere and does not throw");
+  const t6 = loadNav("#home=nonsense", { h3s: hs }); eq(t6.calls.scroll, [], "an unknown dashboard destination fails safely");
+  const t7 = loadNav("", { h3s: hs }); eq(t7.calls.scroll, [], "the plain dashboard does not scroll"); }
+{ // Shareholding from the dashboard: choose a stock first, with the one existing search
+  const mkIn = () => { const e = { attrs: { placeholder: "Search company or symbol..." }, listeners: {}, focused: false, getAttribute(k) { return k in e.attrs ? e.attrs[k] : null; }, setAttribute(k, v) { e.attrs[k] = String(v); }, addEventListener(t, f) { (e.listeners[t] = e.listeners[t] || []).push(f); }, removeEventListener(t, f) { e.listeners[t] = (e.listeners[t] || []).filter((x) => x !== f); }, focus() { e.focused = true; } }; return e; };
+  const input = mkIn(); const t = loadNav("", { els: { companySearch: input } });
+  const click = t.els.gbSections.listeners.click[0]; let pd = false;
+  click({ target: { closest: (q) => (/data-gb-pick/.test(q) ? { x: 1 } : null) }, preventDefault() { pd = true; } });
+  ok(pd, "the click does not follow a link"); ok(input.focused, "the existing search is focused"); re(input.attrs.placeholder, /Pick a stock to see its Shareholding/, "with a hint");
+  eq(t.els.globalBar.hasAttribute("data-open"), false, "the menu is closed");
+  input.listeners.blur[0](); eq(input.attrs.placeholder, "Search company or symbol...", "and the placeholder is restored on blur");
+  let pd2 = false; click({ target: { closest: () => null }, preventDefault() { pd2 = true; } }); ok(!pd2, "other clicks in the bar are left alone"); }
 
 // ---------- 5. the existing search, reused: finds TCS, opens TCS, mounts in the global bar ----------
 const FUND = { as_of: "2026-10-01", source: "Upstox", stocks: [

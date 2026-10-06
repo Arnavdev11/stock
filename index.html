@@ -2430,7 +2430,8 @@ window.SLShareholding={model:model,summaryHtml:summaryHtml,sectionHtml:sectionHt
    The global bar (#globalBar, in the page itself) holds the ONE company search: the Phase 5F search module mounts into #globalSearchHost, so there is no second search and no second company list. Selecting a result opens the
    existing Stock Detail route. This module adds the stock's section links and the routing around them. Route: #stock=SYMBOL, or #stock=SYMBOL&section=KEY. The stock is always in the address, so a link, a refresh,
    Back and Forward all keep both the stock and the section. A section change never re-renders the stock (the Stock Detail script ignores it); this module only scrolls to the section. A destination appears here only if it
-   exists in SECTIONS below: to add one later (for example quarterly results), add one line to SECTIONS when its section exists. Nothing here is a fake link. An unknown section in the address is ignored; the stock still opens. */
+   exists in SECTIONS below: to add one later (for example quarterly results), add one line to SECTIONS when its section exists. Nothing here is a fake link. An unknown section in the address is ignored; the stock still opens.
+   With no stock (the dashboard) the same bar lists the same items, each going to its existing dashboard section (#home=KEY); Shareholding there only asks for a stock, through the one search. */
 (function(){
 "use strict";
 var $=function(i){return document.getElementById(i)};
@@ -2452,6 +2453,18 @@ var SECTIONS=[
   {key:"technical",label:"Technical",find:function(b){return b.querySelector("#detailTech")}},
   {key:"research",label:"Research",find:function(b){return b.querySelector("#detailResearch")}}];
 function sectionOf(key){for(var i=0;i<SECTIONS.length;i++)if(SECTIONS[i].key===key)return SECTIONS[i];return null}
+/* the same destinations on the dashboard, where no stock is selected: each reuses an existing section of the page (found by its heading, never copied). Shareholding has no
+   dashboard section (it belongs to a stock), so there it only asks for a stock: see pick(). Route: #home=KEY. */
+function h3(text){var l=document.querySelectorAll?document.querySelectorAll("h3"):[];for(var i=0;i<l.length;i++)if(String(l[i].textContent||"").trim()===text)return l[i];return null}
+var HOME=[
+  {key:"overview",find:function(){return document.body}},
+  {key:"fundamentals",find:function(){return h3("Fundamental screen")}},
+  {key:"financials",find:function(){return $("ftabs")}},
+  {key:"technical",find:function(){return h3("Technical")}},
+  {key:"research",find:function(){return $("news")}}];
+function homeOf(key){for(var i=0;i<HOME.length;i++)if(HOME[i].key===key)return HOME[i];return null}
+function parseHome(hash){var m=/^#home=([a-z]{1,30})$/.exec(hash||"");return m&&homeOf(m[1])?m[1]:null}
+function homeHash(key){return"#home="+key}
 function parse(hash){
   var m=ROUTE.exec(hash||"");if(!m)return null;
   var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
@@ -2463,6 +2476,7 @@ function compareHash(sym){return sym?"#compare-pick="+encodeURIComponent(sym):"#
 var bar=null,box=null,navSym=null,activeKey=null,pending=null,prev=null,timer=null;
 function barH(){return bar&&bar.getBoundingClientRect?Math.round(bar.getBoundingClientRect().height):0}
 function elOf(key){var s=sectionOf(key);return s&&box?s.find(box):null}
+function homeEl(key){var h=homeOf(key);return h?h.find():null}
 function topOf(el){return el.getBoundingClientRect().top}
 function goTo(el){var y=topOf(el)+(window.pageYOffset||0)-barH()-8;window.scrollTo(0,Math.max(0,Math.round(y)))}
 
@@ -2481,8 +2495,10 @@ function showBar(sym){
   if(sym)bar.setAttribute("data-stock","1");else{bar.removeAttribute("data-stock");bar.removeAttribute("data-open")}
   nav.removeAttribute("hidden");if(t)t.removeAttribute("hidden");
   if(navSym===k)return;
-  navSym=k;      /* the bar is on every view: the section links need a stock, so without one only Compare (the existing comparison picker) is listed */
-  nav.innerHTML='<ul>'+(sym?SECTIONS.map(function(s){return'<li><a href="'+esc(hashFor(sym,s.key))+'" data-gb-section="'+s.key+'">'+esc(s.label)+'</a></li>'}).join(""):"")
+  navSym=k;      /* the bar is on every view and always lists the same destinations: a stock's sections, or (no stock) their dashboard equivalents */
+  nav.innerHTML='<ul>'+SECTIONS.map(function(x){
+    var href=sym?hashFor(sym,x.key):x.key==="shareholding"?"#":homeHash(x.key);
+    return'<li><a href="'+esc(href)+'" data-gb-section="'+x.key+'"'+(!sym&&x.key==="shareholding"?' data-gb-pick="1"':'')+'>'+esc(x.label)+'</a></li>'}).join("")
     +'<li><a href="'+esc(compareHash(sym))+'" data-gb-compare="1">Compare</a></li></ul>';
   setActive(activeKey)}
 function closeMenu(){if(bar){bar.removeAttribute("data-open");var t=$("gbToggle");if(t)t.setAttribute("aria-expanded","false")}}
@@ -2500,13 +2516,19 @@ function settle(){
   timer=null;
   if(!pending)return;
   if(Date.now()-pending.t0>SETTLE_MS){pending=null;return}
-  var el=elOf(pending.key);
+  var el=pending.home?homeEl(pending.key):elOf(pending.key);
   if(!el)return;
   if(Math.abs(topOf(el)-barH()-8)>2)goTo(el)}
 function later(){if(pending&&!timer)timer=setTimeout(settle,30)}
 function apply(){
   var r=parse(window.location.hash);
-  if(!r){showBar(null);pending=null;prev=null;activeKey=null;setActive(/^#compare(-pick)?(=|$)/.test(window.location.hash||"")?"compare":null);return}
+  if(!r){
+    var hash=window.location.hash||"",hk=parseHome(hash);
+    showBar(null);prev=null;pending=null;closeMenu();
+    activeKey=hk||(/^#compare(-pick)?(=|$)/.test(hash)?"compare":(hash===""||hash==="#")?"overview":null);
+    setActive(activeKey);
+    if(hk){pending={key:hk,t0:Date.now(),home:true};settle()}
+    return}
   showBar(r.symbol);closeMenu();
   if(r.section){
     pending={key:r.section,t0:Date.now()};setActive(r.section);settle()
@@ -2516,6 +2538,12 @@ function apply(){
     setActive(null)}
   prev={symbol:r.symbol,section:r.section}}
 
+/* Shareholding on the dashboard: there is no stock yet, so there is nothing to open and no stockless address to make. The one existing search is the way to choose a stock. */
+function pick(){
+  closeMenu();var i=$("companySearch");if(!i)return;
+  if(i.focus)i.focus();
+  var ph=i.getAttribute("placeholder")||"";i.setAttribute("placeholder","Pick a stock to see its Shareholding");
+  var back=function(){i.setAttribute("placeholder",ph);i.removeEventListener("blur",back)};i.addEventListener("blur",back)}
 function init(){
   bar=$("globalBar");box=$("detail");
   if(!bar||!box)return;
@@ -2523,6 +2551,8 @@ function init(){
   if(t)t.addEventListener("click",function(){
     var open=bar.hasAttribute("data-open");
     if(open)closeMenu();else{bar.setAttribute("data-open","1");t.setAttribute("aria-expanded","true")}});
+  var nv=$("gbSections");
+  if(nv)nv.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a[data-gb-pick]");if(a){e.preventDefault();pick()}});
   document.addEventListener("click",function(e){
     if(!bar.contains||!e.target)return;
     if(!bar.contains(e.target)||(e.target.closest&&e.target.closest("a[data-gb-section],a[data-gb-compare]")))closeMenu()});
@@ -2533,10 +2563,10 @@ function init(){
     if(pending&&!(e.target&&e.target.closest&&e.target.closest("#globalBar")))pending=null},{passive:true})});
   window.addEventListener("hashchange",apply);
   window.addEventListener("scroll",function(){onScroll()},{passive:true});
-  if(typeof MutationObserver!=="undefined")new MutationObserver(later).observe(box,{childList:true,subtree:true});
+  if(typeof MutationObserver!=="undefined"){var mo=new MutationObserver(later);mo.observe(box,{childList:true,subtree:true});var wrap=document.querySelector&&document.querySelector(".w");if(wrap)mo.observe(wrap,{childList:true,subtree:true})}
   apply()}
 init();
-window.SLNav={parse:parse,hashFor:hashFor,compareHash:compareHash,SECTIONS:SECTIONS,sectionOf:sectionOf,apply:apply,init:init,currentKey:currentKey};
+window.SLNav={parseHome:parseHome,homeHash:homeHash,HOME:HOME,parse:parse,hashFor:hashFor,compareHash:compareHash,SECTIONS:SECTIONS,sectionOf:sectionOf,apply:apply,init:init,currentKey:currentKey};
 })();
 </script>
 <script>
