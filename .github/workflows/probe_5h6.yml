@@ -1,0 +1,28 @@
+name: TEMP probe-5h6-xbrl (read-only XBRL structure probe, throwaway)
+"on":
+  push:
+    branches:
+      - probe-5h6-xbrl
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: probe TCS
+        continue-on-error: true
+        run: python probe_5h6.py TCS
+      - name: probe ITC
+        continue-on-error: true
+        run: python probe_5h6.py ITC
+      - name: probe ICICIBANK
+        continue-on-error: true
+        run: python probe_5h6.py ICICIBANK
+      - name: probe HDFCBANK
+        continue-on-error: true
+        run: python probe_5h6.py HDFCBANK
