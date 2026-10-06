@@ -2131,6 +2131,249 @@ fill();
 window.SLGrowth={valid:valid,forSymbol:forSymbol,render:render,fmtValue:fmtValue,fill:fill,TYPES:TYPES,MEASURES:MEASURES,STATUSES:STATUSES};
 })();
 </script>
+<script type="module" id="stocklens-shareholding">
+/* StockLens Phase 5H.4 - Shareholding Pattern: the ownership summary inside the Investor Snapshot and the full Shareholding Pattern section on Stock Detail only.
+   A separate module on purpose: the classic script blocks and the Financial History, comparison, snapshot, search and growth modules are untouched. The Investor Snapshot only provides its Ownership group
+   (data-snap="ownership"); this module fills it, adds the existing "View details" button (which scrolls to #detailShareholding), and places the full section directly after Financial History.
+   Data: out/shareholding.json, the static file written by the shareholding data layer (official NSE filings). It is requested once, and only when a Stock Detail page is open; there is no other request, no API, no token.
+   The stored percentages are shown exactly as stored (two decimals): nothing is recalculated, replaced, corrected, carried forward, estimated or interpolated. A quarter that is unavailable shows "-" and the reason;
+   a quarter missing from the timeline is a gap in the chart, never zero. A data-quality flag is shown as a plain note next to its quarter. The share-count percentages kept for diagnostics are never shown, and no other
+   data source is used. No advice, rating, score, ranking or interpretation. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var KEYS=["promoters","fii","other_dii","mutual_funds","retail_other"];
+var LABEL={promoters:"Promoters",fii:"FII",other_dii:"DII (Other)",mutual_funds:"Mutual Funds",retail_other:"Public / Retail & Other"};
+var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var FORMAT={"old-institutions-fpi":"Older format (a single Institutions subtotal and one foreign portfolio investor row)","new-domestic-foreign":"Newer format (domestic institutions and foreign institutions reported separately)"};
+var SKIP_FLAGS=["xbrl-unavailable","xbrl-unparsable","xbrl-no-rows","xbrl-unmappable"];     /* these only repeat the reason an unavailable quarter already gives */
+
+/* ---------- the rules the data must meet to be shown ---------- */
+function str(v){return typeof v==="string"&&v.trim()?v.trim():null}
+function isDate(s){
+  if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+  var p=s.split("-"),d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+  return d.getUTCFullYear()===+p[0]&&d.getUTCMonth()===+p[1]-1&&d.getUTCDate()===+p[2]}
+function isQuarterEnd(s){
+  if(!isDate(s))return false;
+  var m=+s.slice(5,7),d=+s.slice(8);
+  return(m===3&&d===31)||(m===6&&d===30)||(m===9&&d===30)||(m===12&&d===31)}
+function hostOk(u){return typeof u==="string"&&!/[\s"'<>`\\]/.test(u)&&/^https:\/\/([A-Za-z0-9-]+\.)*nseindia\.com(:\d+)?([\/?#]\S*)?$/.test(u)}
+function pctOk(v){return isn(v)&&v>=0&&v<=100.5}
+function fmtPct(v){return pctOk(v)?v.toFixed(2)+"%":"-"}
+function qLabel(q){return MON[+q.slice(5,7)-1]+" "+q.slice(0,4)}
+function qShort(q){return MON[+q.slice(5,7)-1]+" "+q.slice(2,4)}
+function nextQ(q){var y=+q.slice(0,4),m=+q.slice(5,7)+3;if(m>12){m-=12;y++}return y+"-"+(m<10?"0":"")+m+"-"+(m===6||m===9?"30":"31")}
+function obj(v){return v&&typeof v==="object"&&!Array.isArray(v)?v:{}}
+
+/* the quarters of one stock, newest first; every percentage is a stored number or null, and an unavailable quarter holds nothing */
+function model(doc,sym){
+  var cats=doc&&doc.categories;
+  if(!doc||typeof doc!=="object"||doc.schema!==1||!doc.stocks||typeof doc.stocks!=="object"||!Array.isArray(cats)||cats.length!==KEYS.length||KEYS.some(function(k,i){return cats[i]!==k}))return{state:"unavailable"};
+  var st=Object.prototype.hasOwnProperty.call(doc.stocks,sym)?doc.stocks[sym]:null;
+  if(!st||typeof st!=="object"||!Array.isArray(st.quarters))return{state:"none"};
+  var seen=Object.create(null),qs=[];
+  st.quarters.forEach(function(r){
+    if(!r||typeof r!=="object"||!isQuarterEnd(r.quarter_end)||seen[r.quarter_end])return;
+    seen[r.quarter_end]=1;
+    var avail=r.status==="available",vals=obj(r.values),v={};
+    KEYS.forEach(function(k){v[k]=avail&&pctOk(vals[k])?vals[k]:null});
+    var fl=obj(r.quality).flags;
+    qs.push({q:r.quarter_end,available:avail,reason:str(r.reason),values:v,flags:(Array.isArray(fl)?fl:[]).filter(function(f){return f&&typeof f==="object"&&str(f.code)}),
+      source:obj(r.source),format:str(r.format_version),diag:obj(r.diagnostics)})});
+  qs.sort(function(a,b){return a.q<b.q?1:a.q>b.q?-1:0});
+  if(!qs.length)return{state:"none"};
+  return{state:"ok",sym:sym,qs:qs,latest:qs.filter(function(r){return r.available})[0]||null,asOf:str(doc.as_of)}}
+
+/* ---------- notes: what the data says about its own quality, in plain words ---------- */
+function flagNote(f,r){
+  var code=f.code,d=str(f.detail),n;
+  if(code==="reported-pct-conflicts-with-share-counts"){
+    n=obj(r.diag.conflict).max_abs_diff_pp;
+    return{warn:true,t:"Data-quality warning: the percentages reported to NSE differ from the filing's own share counts"+(isn(n)?" by up to "+n.toFixed(2)+" percentage points":"")+". The reported percentages are shown, unchanged."}}
+  if(code==="old-format-other-institutions-in-other-dii")return{warn:false,t:"Mapping note: this older-format filing has an Other Institutions row that cannot be split between foreign and domestic institutions, so it is included in DII (Other)."};
+  if(code==="five-categories-do-not-sum-to-100")return{warn:true,t:"Data note: "+(d||"the five categories do not add up to 100")+". The values are shown as reported."};
+  if(code==="category-row-missing")return{warn:true,t:"Data note: a category row is missing in the filing"+(d?" ("+d+")":"")+"; it is shown as -."};
+  return{warn:false,t:"Data note: "+(d||code)}}
+function notesOf(r){
+  var n=[];
+  if(!r.available)n.push({warn:true,t:"Unavailable: "+(r.reason||"no reason is recorded")+"."});
+  if(r.source.revised===true)n.push({warn:false,t:"Revised filing"+(isDate(r.source.revision_date)?" (revised "+r.source.revision_date+")":"")+"."});
+  r.flags.forEach(function(f){if(r.available||SKIP_FLAGS.indexOf(f.code)<0)n.push(flagNote(f,r))});
+  return n}
+function notesHtml(list){return list.map(function(x){return'<p class="sh-n'+(x.warn?" warn":"")+'">'+esc(x.t)+'</p>'}).join("")}
+function sourceHtml(r,open){
+  var s=r.source,h='<details class="sh-src"'+(open?" open":"")+'><summary>Source</summary><p>Source: NSE / XBRL</p><ul>';
+  if(str(s.record_id))h+='<li>Record ID: '+esc(s.record_id)+'</li>';
+  if(isDate(s.broadcast_date))h+='<li>Broadcast date: '+esc(s.broadcast_date)+'</li>';
+  if(isDate(s.submission_date))h+='<li>Submission date: '+esc(s.submission_date)+'</li>';
+  if(s.revised===true)h+='<li>Revised filing'+(isDate(s.revision_date)?", revision date: "+esc(s.revision_date):"")+(str(s.revision_remark)?". Remark: "+esc(s.revision_remark):"")+'</li>';
+  if(r.format&&Object.prototype.hasOwnProperty.call(FORMAT,r.format))h+='<li>Filing format: '+esc(FORMAT[r.format])+'</li>';
+  h+='</ul>';
+  if(hostOk(s.xbrl_url))h+='<p><a href="'+esc(s.xbrl_url)+'" target="_blank" rel="noopener noreferrer">View source</a></p>';
+  return h+'</details>'}
+
+/* ---------- the Investor Snapshot ownership group ---------- */
+function summaryHtml(sym,doc){
+  var head='<div class="snap-h"><h4>Ownership</h4>';
+  var m=model(doc,sym);
+  if(m.state==="unavailable")return head+'</div><p class="snap-t">Shareholding data: Unavailable</p>';
+  if(m.state==="none")return head+'</div><p class="snap-t">No shareholding data is on file for '+esc(sym)+'.</p>';
+  head+='<button type="button" class="lk" data-snap-go="detailShareholding">View details</button></div>';
+  if(!m.latest)return head+'<p class="snap-t">No available quarter is on file for '+esc(sym)+'.</p>';
+  var L=m.latest,h=head+'<div class="snap-kv" data-own="values">';
+  KEYS.forEach(function(k){h+='<div class="snap-i" data-own-cat="'+k+'"><span>'+esc(LABEL[k])+'</span><b>'+esc(fmtPct(L.values[k]))+'</b></div>'});
+  h+='</div><p class="snap-n" data-own="asof">As of: '+esc(qLabel(L.q))+'</p>';
+  var warn=notesOf(L).some(function(x){return x.warn});
+  if(m.qs[0].q!==L.q)h+='<p class="snap-n">The newest quarter on file ('+esc(qLabel(m.qs[0].q))+') is unavailable.</p>';
+  if(warn)h+='<p class="snap-n" data-own="quality">This quarter carries a data-quality note; see Shareholding Pattern for details.</p>';
+  return h+'<p class="snap-n">Percent of shares as reported to NSE. Source: NSE / XBRL.</p>'}
+
+/* ---------- the trend chart (inline SVG; it only reads the model) ---------- */
+var CW=320,CH=230,CT=16,CB=34,CR=20,CL=40;
+var SER={promoters:["--sh1",""],fii:["--sh2","6 3"],other_dii:["--sh3","2 2"],mutual_funds:["--sh4","8 3 2 3"],retail_other:["--sh5","0.1 4"]};
+function f1(v){return v.toFixed(1)}
+function axisOf(max){
+  var steps=[5,10,20,25],st=25;
+  for(var i=0;i<steps.length;i++){if(Math.ceil(Math.max(max,1)/steps[i])<=5){st=steps[i];break}}
+  var hi=Math.max(st,Math.ceil(max/st-1e-9)*st),t=[];
+  for(var v=0;v<=hi+1e-9;v+=st)t.push(v);
+  return{max:hi,ticks:t}}
+function slotsOf(m){
+  var asc=m.qs.slice().reverse(),by=Object.create(null),out=[],q=asc[0].q,last=asc[asc.length-1].q,g=0;
+  asc.forEach(function(r){by[r.q]=r});
+  while(q<=last&&g++<400){out.push({q:q,r:by[q]||null});q=nextQ(q)}
+  return out}
+function chartHtml(m){
+  var slots=slotsOf(m),n=slots.length,vals=[],avail=0;
+  slots.forEach(function(s){if(s.r&&s.r.available){avail++;KEYS.forEach(function(k){if(s.r.values[k]!==null)vals.push(s.r.values[k])})}});
+  if(avail<2)return'<p class="note sh-p" data-chart-state="unavailable">Not enough quarters on file to draw a trend (needs at least two available quarters).</p>';
+  var ax=axisOf(Math.max.apply(null,vals)),pw=CW-CL-CR,ph=CH-CT-CB;
+  var X=function(i){return CL+(n===1?pw/2:pw*i/(n-1))},Y=function(v){return CT+(ax.max-v)/ax.max*ph};
+  var step=n>1?pw/(n-1):pw,k=Math.max(1,Math.ceil(38/step));
+  var g='<svg viewBox="0 0 '+CW+' '+CH+'" role="img" aria-label="__ARIA__" data-sh="chart" style="display:block;width:100%;height:auto" font-size="11">';
+  g+='<text x="'+CL+'" y="9" style="fill:var(--mute)">% of shares</text>';
+  ax.ticks.forEach(function(t){var y=Y(t);
+    g+='<line x1="'+CL+'" x2="'+(CW-CR)+'" y1="'+f1(y)+'" y2="'+f1(y)+'" data-grid="'+t+'" style="stroke:var(--line)" stroke-width="'+(t===0?1.4:1)+'"/>';
+    g+='<text x="'+(CL-5)+'" y="'+f1(y+3.5)+'" text-anchor="end" style="fill:var(--mute)">'+t+'%</text>'});
+  var gaps=0;
+  slots.forEach(function(s,i){
+    var ok=s.r&&s.r.available&&KEYS.some(function(c){return s.r.values[c]!==null});
+    if(!ok){gaps++;g+='<line data-gap="'+s.q+'" x1="'+f1(X(i))+'" x2="'+f1(X(i))+'" y1="'+CT+'" y2="'+(CH-CB)+'" style="stroke:var(--mute)" stroke-width="1" stroke-dasharray="1 3"/>'}
+    if((n-1-i)%k===0)g+='<text data-xlabel="'+s.q+'" x="'+f1(X(i))+'" y="'+(CH-CB+14)+'" text-anchor="middle" style="fill:var(--mute)">'+esc(qShort(s.q))+'</text>'});
+  var aria=[];
+  KEYS.forEach(function(key){
+    var col=SER[key][0],dash=SER[key][1],seg=[],segs=[],pts='',cnt=0;
+    slots.forEach(function(s,i){
+      var v=s.r&&s.r.available?s.r.values[key]:null;
+      if(v===null){if(seg.length)segs.push(seg);seg=[];return}
+      seg.push([X(i),Y(v)]);cnt++;
+      pts+='<circle data-q="'+s.q+'" data-v="'+v+'" cx="'+f1(X(i))+'" cy="'+f1(Y(v))+'" r="2.3" style="fill:var('+col+')"><title>'+esc(LABEL[key]+", "+qLabel(s.q)+": "+fmtPct(v))+'</title></circle>'});
+    if(seg.length)segs.push(seg);
+    g+='<g data-series="'+key+'" style="stroke:var('+col+')">';
+    segs.forEach(function(sg){if(sg.length>1)g+='<polyline fill="none" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"'+(dash?' stroke-dasharray="'+dash+'"':"")+' points="'+sg.map(function(p){return f1(p[0])+","+f1(p[1])}).join(" ")+'"/>'});
+    g+=pts+'</g>';
+    aria.push(LABEL[key]+": "+cnt+" quarters")});
+  g=g.replace("__ARIA__",esc("Shareholding pattern, percent of shares by quarter, "+qLabel(slots[0].q)+" to "+qLabel(slots[n-1].q)+". "+aria.join("; ")+". The table below gives every value."))+'</svg>';
+  var leg='<ul class="sh-leg" data-sh="legend">'+KEYS.map(function(key){
+    return'<li data-legend="'+key+'"><svg width="26" height="8" viewBox="0 0 26 8" aria-hidden="true" focusable="false"><line x1="1" y1="4" x2="25" y2="4" stroke-width="2" stroke-linecap="round" style="stroke:var('+SER[key][0]+')"'+(SER[key][1]?' stroke-dasharray="'+SER[key][1]+'"':"")+'/></svg><span>'+esc(LABEL[key])+'</span></li>'}).join("")+'</ul>';
+  var cap='<p class="note sh-p" data-sh="chartnote">Quarterly, '+esc(qLabel(slots[0].q))+' to '+esc(qLabel(slots[n-1].q))+'. Each point is a stored value; a line stops where a quarter has no value and is never joined across it'+(gaps?'. Dotted vertical lines mark quarters with no data on file.':'.')+'</p>';
+  return'<div class="sh-chart">'+g+'</div>'+leg+cap}
+
+/* ---------- the full section ---------- */
+function latestHtml(m){
+  var h='<h5 class="sh-h">Latest ownership snapshot</h5>';
+  if(!m.latest)return h+'<p class="note sh-p">No available quarter is on file.</p>';
+  var L=m.latest;
+  h+='<p class="sh-asof" data-sh="asof">As of: '+esc(qLabel(L.q))+' <span>(quarter ended '+esc(L.q)+')</span></p>';
+  if(m.qs[0].q!==L.q)h+='<p class="note sh-p">The newest quarter on file ('+esc(qLabel(m.qs[0].q))+') is unavailable; the latest available quarter is shown.</p>';
+  h+='<div class="sh-cards" data-sh="latest">';
+  KEYS.forEach(function(k){h+='<div class="sh-card" data-cat="'+k+'"><span>'+esc(LABEL[k])+'</span><b>'+esc(fmtPct(L.values[k]))+'</b></div>'});
+  h+='</div>'+notesHtml(notesOf(L))+sourceHtml(L,false);
+  return h}
+function tableHtml(m){
+  var h='<h5 class="sh-h">Quarterly history</h5><div class="scroll"><table id="shTable" data-sh="table"><thead><tr><th>Quarter</th>'+KEYS.map(function(k){return'<th>'+esc(LABEL[k])+'</th>'}).join("")+'</tr></thead><tbody>';
+  m.qs.forEach(function(r){
+    h+='<tr data-q="'+r.q+'"'+(r.available?"":' data-status="unavailable"')+'><td>'+esc(qLabel(r.q))+'</td>'+KEYS.map(function(k){return'<td class="n">'+esc(fmtPct(r.values[k]))+'</td>'}).join("")+'</tr>';
+    var nn=notesOf(r);
+    h+='<tr class="sh-sub" data-q-note="'+r.q+'"><td colspan="6"><div class="sh-subin">'+notesHtml(nn)+sourceHtml(r,false)+'</div></td></tr>'});
+  return h+'</tbody></table></div>'}
+function sectionHtml(sym,doc){
+  var head='<h4 style="margin:0 0 .2em">Shareholding Pattern</h4>',w=function(x){return'<div class="panel" style="padding:16px;margin-top:14px">'+x+'</div>'};
+  var m=model(doc,sym);
+  if(m.state==="unavailable")return w(head+'<p class="note sh-p">Shareholding data: Unavailable.</p>');
+  if(m.state==="none")return w(head+'<p class="note sh-p">No shareholding data is on file for '+esc(sym)+'.</p>');
+  var h=head+'<p class="note sh-p">Percent of shares, as reported to NSE'+(m.asOf?" · Data updated: "+esc(m.asOf):"")+' · Source: NSE / XBRL. "-" means the value is not available; nothing is estimated, carried forward or interpolated.</p>';
+  h+=latestHtml(m);
+  h+='<h5 class="sh-h">Five-Year Trend</h5>'+chartHtml(m);
+  h+=tableHtml(m);
+  var nt=['Promoters = promoter and promoter group. FII = foreign institutions / foreign portfolio investors. DII (Other) = domestic institutions other than mutual funds. Mutual Funds = mutual funds and UTI. Public / Retail & Other = non-institutions and governments, plus employee benefit trusts where the filing reports them separately.',
+    'The definitions differ between the older filing format (Sep 2021 to Jun 2022, a single Institutions subtotal) and the newer format (from Sep 2022); the two are not claimed to be identical. Each quarter\'s format is listed under its Source.'];
+  if(m.qs.some(function(r){return r.available&&r.diag.promoter_row_absent===true}))nt.push("0.00% means the filing reports no holding in that category (for example, no promoter group).");
+  h+=nt.filter(Boolean).map(function(x){return'<p class="note sh-p">'+esc(x)+'</p>'}).join("");
+  return w(h)}
+
+/* ---------- loading and placement: one static file, once, only when a Stock Detail page is open ---------- */
+var STYLE='#detailShareholding .sh-p{padding:0 0 6px;margin:0;overflow-wrap:anywhere}'
+ +'#detailShareholding .sh-h{margin:16px 0 4px;font-size:.95rem}'
+ +'#detailShareholding .sh-asof{margin:0 0 6px;font-weight:600}#detailShareholding .sh-asof span{color:var(--mute);font-weight:400;font-size:.85rem}'
+ +'#detailShareholding .sh-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:10px}'
+ +'#detailShareholding .sh-card{min-width:0;border:1px solid var(--line);border-radius:10px;padding:10px}'
+ +'#detailShareholding .sh-card span{display:block;color:var(--mute);font-size:.78rem;overflow-wrap:anywhere}'
+ +'#detailShareholding .sh-card b{display:block;font-size:1.15rem;font-variant-numeric:tabular-nums}'
+ +'#detailShareholding .sh-n{margin:6px 0 0;padding:4px 8px;border-left:3px solid var(--ac);font-size:.8rem;color:var(--mute);overflow-wrap:anywhere}'
+ +'#detailShareholding .sh-n.warn{border-left-color:var(--shw);color:var(--ink)}'
+ +'#detailShareholding .sh-src{margin:6px 0 0;font-size:.78rem;color:var(--mute)}#detailShareholding .sh-src summary{cursor:pointer}'
+ +'#detailShareholding .sh-src ul{margin:4px 0;padding-left:18px}#detailShareholding .sh-src p{margin:4px 0;overflow-wrap:anywhere}#detailShareholding .sh-src a{overflow-wrap:anywhere;word-break:break-all}'
+ +'#detailShareholding .sh-chart{max-width:480px}'
+ +'#detailShareholding .sh-leg{list-style:none;display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;padding:0;font-size:.82rem}'
+ +'#detailShareholding .sh-leg li{display:flex;align-items:center;gap:6px;min-width:0}#detailShareholding .sh-leg span{overflow-wrap:anywhere}'
+ +'#detailShareholding table{min-width:440px}#detailShareholding th,#detailShareholding td{padding:8px 8px;font-size:.85rem}'
+ +'#detailShareholding .scroll{container-type:inline-size}#detailShareholding .sh-subin{position:sticky;left:0;box-sizing:border-box;width:100cqw;max-width:100cqw;padding:0 8px 8px;overflow-wrap:anywhere}'
+ +'#detailShareholding tr.sh-sub td{padding:0;border-bottom:1px solid var(--line)}#detailShareholding tr.sh-sub .sh-n{margin:2px 0 0}'
+ +'#detailShareholding{--sh1:#3B4CCA;--sh2:#C2570C;--sh3:#0E8F5E;--sh4:#B4348C;--sh5:#4B5563;--shw:#C2570C}'
+ +'@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) #detailShareholding{--sh1:#8C9AFF;--sh2:#F59E5B;--sh3:#3DD598;--sh4:#F08BC8;--sh5:#C4CBDD;--shw:#F59E5B}}'
+ +':root[data-theme="dark"] #detailShareholding{--sh1:#8C9AFF;--sh2:#F59E5B;--sh3:#3DD598;--sh4:#F08BC8;--sh5:#C4CBDD;--shw:#F59E5B}';
+function addStyle(){
+  if(!document.head||!document.createElement||$("shareholdingStyle"))return;
+  var st=document.createElement("style");st.id="shareholdingStyle";st.textContent=STYLE;document.head.appendChild(st)}
+var DATA=null;
+function load(){
+  if(DATA)return DATA;
+  DATA=fetch("out/shareholding.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return DATA}
+function routeSymbol(){
+  var m=/^#stock=([^&]+)$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+var node=null,nodeSym=null;
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box||!box.querySelector)return;
+  if(String(box.innerHTML||"").indexOf('id="detailChart"')<0)return;           /* the detail view has not finished rendering */
+  var g=box.querySelector('[data-snap="ownership"]');
+  if(g&&g.getAttribute("data-own-for")!==s){
+    g.setAttribute("data-own-for",s);addStyle();
+    load().then(function(doc){if(routeSymbol()!==s||!g.parentNode)return;g.innerHTML=summaryHtml(s,doc)})}
+  var fh=$("detailFinancialHistory");
+  if(!fh||fh.parentNode!==box)return;                                           /* Financial History is not placed yet */
+  if(node&&node.parentNode===box&&nodeSym===s)return;                           /* already placed for this render */
+  addStyle();
+  var el=document.createElement("section");
+  el.id="detailShareholding";
+  el.innerHTML='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Shareholding Pattern</h4><p class="note sh-p">Loading…</p></div>';
+  box.insertBefore(el,fh.nextSibling);node=el;nodeSym=s;
+  load().then(function(doc){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=sectionHtml(s,doc)})}
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true,subtree:true})}
+check();
+window.SLShareholding={model:model,summaryHtml:summaryHtml,sectionHtml:sectionHtml,chartHtml:chartHtml,slotsOf:slotsOf,axisOf:axisOf,check:check,notesOf:notesOf,hostOk:hostOk,fmtPct:fmtPct,KEYS:KEYS,LABEL:LABEL};
+})();
+</script>
 <script>
 /* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
 (function(){

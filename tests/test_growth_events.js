@@ -62,7 +62,7 @@ const E = (o = {}) => Object.assign({ symbol: "TCS", date: "2026-07-09", event_t
 (async () => {
   // ================= 0. structure and protection =================
   eq(grCode.length > 0 && html.split(GROWTAG).length, 2, "one growth module, with the exact tag");
-  eq(blocks.length, 7, "still exactly the seven classic script blocks"); eq((html.match(/<script/g) || []).length, 12, "twelve script elements in all (Phase 5F: search, Phase 5G.2: growth)");
+  eq(blocks.length, 7, "still exactly the seven classic script blocks"); eq((html.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all (Phase 5F: search, Phase 5G.2: growth)");
   ok(html.indexOf(GROWTAG) > html.indexOf(SRCHTAG) && html.indexOf(GROWTAG) > html.indexOf(SNAPTAG), "the growth module comes after the snapshot and search modules");
   let base = ""; try { base = cp.execSync("git show be3940b:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
@@ -71,7 +71,7 @@ const E = (o = {}) => Object.assign({ symbol: "TCS", date: "2026-07-09", event_t
     eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical"); eq(cmpCode, modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(srchCode, modOf(base, SRCHTAG), "the search module is byte-identical");
     const OLD = `'<p class="snap-t">Detailed orders, capex, capacity expansion and management guidance will be added through the News &amp; Announcements research layer.</p>'`, NEW = `'<div data-growth-for="'+esc(s)+'"><p class="snap-t">Unavailable</p></div>'`;
     ok(modOf(base, SNAPTAG).includes(OLD), "the old placeholder is in the base"); eq(snapCode, modOf(base, SNAPTAG).replace(OLD, NEW), "the Investor Snapshot module differs from be3940b only by its Future Growth Evidence placeholder, which is now the empty spot for the growth module");
-    eq(html.replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, ""), base.replace(OLD, NEW), "the page without the growth module is identical to be3940b apart from that one placeholder: markup, tables, styles, everything");
+    eq(html.replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""), base.replace(OLD, NEW), "the page without the growth module is identical to be3940b apart from that one placeholder: markup, tables, styles, everything");
   }
   eq(RAW, RAW_OUT, "data/growth_events.json and out/growth_events.json are the same file, byte for byte");
   eq(fs.readdirSync(ROOT + "/out"), ["growth_events.json"], "out/ holds only the curated file (no generated data is shipped)"); eq(fs.readdirSync(ROOT + "/data"), ["growth_events.json"], "and so does data/");
