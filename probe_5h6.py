@@ -37,6 +37,10 @@ facts = collections.defaultdict(list)
 for el in root:
     cr = el.get("contextRef")
     if cr in ctx: facts[cr].append((lt(el.tag), (el.text or "").strip()))
+merged = collections.defaultdict(list)          # (axis, member, period) -> facts of BOTH contexts (the "D_" descriptive one and the numeric one)
+for cid, (dims, per) in ctx.items():
+    if len(dims) == 1 and dims[0][0] == "T": merged[(dims[0][1], dims[0][2], per)] += facts[cid]
+fvl = lambda fl, name: next((t for n, t in fl if n == name), None)
 fv = lambda cid, name: next((t for n, t in facts[cid] if n == name), None)
 num = lambda s: float(s) if s not in (None, "") and re.match(r"^-?[\d.]+(E-?\d+)?$", s) else None
 rep = next((t for cid in ctx for n, t in facts[cid] if n == "DateOfReport"), None)
@@ -66,29 +70,25 @@ for a in [x for x, v in ax.items() if "T" in v["kind"]][:3]: L += example(a, 0)
 note("C one member, all its contexts", L)
 # D. per typed axis: named rows for the report period (rows, nonzero, top 12 by percentage)
 rows = collections.defaultdict(list)
-for a, v in ax.items():
-    if "T" not in v["kind"]: continue
-    for cid in v["ctx"]:
-        dims, per = ctx[cid]
-        if rep and per != rep: continue
-        name = fv(cid, "NameOfTheShareholder")
-        if name is None and not any(n.startswith("Category") or n.startswith("Whether") for n, _ in facts[cid]): continue
-        cat = next((t for n, t in facts[cid] if n.startswith("CategoryOf")), None)
-        rows[a].append((name, cat, num(fv(cid, "NumberOfShares")), num(fv(cid, "ShareholdingAsAPercentageOfTotalNumberOfShares")), fv(cid, "WhetherACategoryOrMoreThan1PercentageOfShareholding"), [m for k, aa, m in dims if aa == a][0]))
+for (a, m, per), fl in merged.items():
+    if rep and per != rep: continue
+    name = fvl(fl, "NameOfTheShareholder")
+    cat = next((t for n, t in fl if n.startswith("CategoryOf")), None)
+    rows[a].append((name, cat, num(fvl(fl, "NumberOfShares")), num(fvl(fl, "ShareholdingAsAPercentageOfTotalNumberOfShares")), fvl(fl, "WhetherACategoryOrMoreThan1PercentageOfShareholding"), m, len([1 for cid in ax[a]["ctx"] if any(mm == m for k, aa, mm in ctx[cid][0])])))
 L = []
 for a, r in rows.items():
     nz = [x for x in r if (x[2] or 0) > 0]
     L.append("AXIS %s: %d rows in the report period, %d with shares>0, %d with a name, %d names unique" % (a, len(r), len(nz), sum(1 for x in r if x[0]), len({x[0] for x in r if x[0]})))
     for x in sorted(nz, key=lambda x: -(x[3] or 0))[:10]:
-        L.append("   %s | cat=%s | shares=%s | pct=%s | %s | %s" % (short(x[0] or "(no name)", 55), x[1], None if x[2] is None else int(x[2]), x[3], x[4], x[5]))
+        L.append("   %s | cat=%s | shares=%s | pct=%s | %s | %s | contexts=%d" % (short(x[0] or "(no name)", 55), x[1], None if x[2] is None else int(x[2]), x[3], x[4], x[5], x[6]))
 note("D named rows per axis (report period)", L)
 # E. search for well-known holder words: where do they sit?
 pat = re.compile(r"(life insurance|\bLIC\b|SBI |ICICI Prudential|Nifty|Vanguard|Government of Singapore|Tata Sons|Mutual Fund|ETF)", re.I)
 L = []
-for cid, fl in facts.items():
-    for n, t in fl:
-        if t and pat.search(t) and n in ("NameOfTheShareholder",) or (t and n.startswith("Disclosure") and pat.search(t)):
-            L.append("  %s=%s | ctx %s period %s dims %s | shares=%s pct=%s | cat=%s %s" % (n, short(t, 70), cid, ctx[cid][1], [(a, m) for k, a, m in ctx[cid][0]], fv(cid, "NumberOfShares"), fv(cid, "ShareholdingAsAPercentageOfTotalNumberOfShares"), next((t2 for n2, t2 in facts[cid] if n2.startswith("CategoryOf")), None), fv(cid, "WhetherACategoryOrMoreThan1PercentageOfShareholding")))
+for (a, m, per), fl in merged.items():
+    t = fvl(fl, "NameOfTheShareholder")
+    if t and pat.search(t):
+        L.append("  %s | axis %s member %s | shares=%s pct=%s | cat=%s | %s" % (short(t, 70), a, m, fvl(fl, "NumberOfShares"), fvl(fl, "ShareholdingAsAPercentageOfTotalNumberOfShares"), next((t2 for n2, t2 in fl if n2.startswith("CategoryOf")), None), fvl(fl, "WhetherACategoryOrMoreThan1PercentageOfShareholding")))
 raw = data.decode("utf-8", "ignore")
 L.insert(0, "raw-file word hits: " + ", ".join("%s x%d" % kv for kv in collections.Counter(m.group(1).lower() for m in pat.finditer(raw)).most_common(10)))
 note("E where well-known holder words occur", L[:30])
