@@ -4,7 +4,9 @@
 // the share-count percentages kept for diagnostics and any other source are never shown; nothing is advice.
 const fs = require("fs"), assert = require("assert"), cp = require("child_process");
 const ROOT = __dirname + "/..";
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(ROOT + "/index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(ROOT + "/index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const SHTAG = '<script type="module" id="stocklens-shareholding">', SNAPTAG = '<script type="module" id="stocklens-snapshot">', GROWTAG = '<script type="module" id="stocklens-growth">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];
 const shCode = modOf(html, SHTAG), snapCode = modOf(html, SNAPTAG), grCode = modOf(html, GROWTAG);
@@ -241,9 +243,9 @@ const fmt = (v) => v.toFixed(2) + "%";
   { const P = await open("TCS", { failFetch: true }); re(un(P.grp().innerHTML), /Shareholding data: Unavailable/, "when the file cannot be loaded the snapshot says Unavailable"); no(P.grp().innerHTML, /data-snap-go/, "with no link to a section that has no data"); re(un(P.sectionHtml()), /Shareholding data: Unavailable/, "and so does the section");
     const P2 = await open("TCS", { status: 404 }); re(un(P2.sectionHtml()), /Shareholding data: Unavailable/, "an absent file (HTTP 404, before the first publish) is Unavailable, not an error"); }
   { // the snapshot module itself is exactly as committed
-    let committed = ""; try { committed = cp.execSync("git show HEAD:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { committed = ""; }
-    if (committed) { const same = (tag) => modOf(committed, tag) === modOf(html, tag); ok(same(SNAPTAG), "the Investor Snapshot module is byte-for-byte as committed"); ok(same(GROWTAG), "the growth module is byte-for-byte as committed"); ok(same('<script type="module" id="stocklens-compare">'), "the comparison module is as committed"); ok(same('<script type="module" id="stocklens-search">'), "the search module is as committed"); ok(same('<script type="module">'), "the Financial History module is as committed");
-      const rest = (s) => s.replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""); eq(rest(html), rest(committed), "everything outside the new module is identical to the committed page"); }
+    let committed = ""; try { committed = cp.execSync("git show HEAD:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { committed = ""; } committed = require("./legacy_5i.js").legacy(committed);
+    if (committed) { const same = (tag) => modOf(committed, tag) === modOf(PINHTML, tag); ok(same(SNAPTAG), "the Investor Snapshot module is byte-for-byte as committed"); ok(same(GROWTAG), "the growth module is byte-for-byte as committed"); ok(same('<script type="module" id="stocklens-compare">'), "the comparison module is as committed"); ok(same('<script type="module" id="stocklens-search">'), "the search module is as committed"); ok(same('<script type="module">'), "the Financial History module is as committed");
+      const rest = (s) => s.replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""); eq(rest(PINHTML), rest(committed), "everything outside the new module is identical to the committed page"); }
     re(snapCode, /grp\("ownership","Ownership",'<p class="snap-t">Shareholding history will be added in the Shareholding Pattern phase\.<\/p>'\)/, "the snapshot still builds its Ownership placeholder; this module is what replaces it when the data is present"); }
 
   // ================= 10. no advice, no interpretation =================

@@ -5,7 +5,9 @@
 // and nothing is advice. The page makes no request except the one static file.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
 const ROOT = __dirname + "/..";
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(ROOT + "/index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(ROOT + "/index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">', SNAPTAG = '<script type="module" id="stocklens-snapshot">', SRCHTAG = '<script type="module" id="stocklens-search">', GROWTAG = '<script type="module" id="stocklens-growth">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];
@@ -62,16 +64,16 @@ const E = (o = {}) => Object.assign({ symbol: "TCS", date: "2026-07-09", event_t
 (async () => {
   // ================= 0. structure and protection =================
   eq(grCode.length > 0 && html.split(GROWTAG).length, 2, "one growth module, with the exact tag");
-  eq(blocks.length, 7, "still exactly the seven classic script blocks"); eq((html.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all (Phase 5F: search, Phase 5G.2: growth)");
+  eq(PINBLOCKS.length, 7, "still exactly the seven classic script PINBLOCKS"); eq((PINHTML.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all (Phase 5F: search, Phase 5G.2: growth)");
   ok(html.indexOf(GROWTAG) > html.indexOf(SRCHTAG) && html.indexOf(GROWTAG) > html.indexOf(SNAPTAG), "the growth module comes after the snapshot and search modules");
   let base = ""; try { base = cp.execSync("git show be3940b:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
     const ob = base.split("<script>").slice(1).map((x) => x.split("</script>")[0]);
-    eq(blocks.map(sha), ob.map(sha), "the seven classic blocks are byte-identical to be3940b (Phase 5F): dashboard, Stock Detail, charts, technicals, research, checklist");
-    eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical"); eq(cmpCode, modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(srchCode, modOf(base, SRCHTAG), "the search module is byte-identical");
+    eq(PINBLOCKS.map(sha), ob.map(sha), "the seven classic PINBLOCKS are byte-identical to be3940b (Phase 5F): dashboard, Stock Detail, charts, technicals, research, checklist");
+    eq(sha(modOf(PINHTML, FHTAG)), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical"); eq(modOf(PINHTML, CMPTAG), modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(modOf(PINHTML, SRCHTAG), modOf(base, SRCHTAG), "the search module is byte-identical");
     const OLD = `'<p class="snap-t">Detailed orders, capex, capacity expansion and management guidance will be added through the News &amp; Announcements research layer.</p>'`, NEW = `'<div data-growth-for="'+esc(s)+'"><p class="snap-t">Unavailable</p></div>'`;
-    ok(modOf(base, SNAPTAG).includes(OLD), "the old placeholder is in the base"); eq(snapCode, modOf(base, SNAPTAG).replace(OLD, NEW), "the Investor Snapshot module differs from be3940b only by its Future Growth Evidence placeholder, which is now the empty spot for the growth module");
-    eq(html.replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""), base.replace(OLD, NEW), "the page without the growth module is identical to be3940b apart from that one placeholder: markup, tables, styles, everything");
+    ok(modOf(base, SNAPTAG).includes(OLD), "the old placeholder is in the base"); eq(modOf(PINHTML, SNAPTAG), modOf(base, SNAPTAG).replace(OLD, NEW), "the Investor Snapshot module differs from be3940b only by its Future Growth Evidence placeholder, which is now the empty spot for the growth module");
+    eq(PINHTML.replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""), base.replace(OLD, NEW), "the page without the growth module is identical to be3940b apart from that one placeholder: markup, tables, styles, everything");
   }
   eq(RAW, RAW_OUT, "data/growth_events.json and out/growth_events.json are the same file, byte for byte");
   eq(fs.readdirSync(ROOT + "/out"), ["growth_events.json"], "out/ holds only the curated file (no generated data is shipped)"); eq(fs.readdirSync(ROOT + "/data"), ["growth_events.json"], "and so does data/");

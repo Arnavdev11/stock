@@ -2,7 +2,9 @@
 // Tests the Phase 4 Step 1 Stock Research section: field mapping, N/A rules, missing data, reuse of the existing technical calculations,
 // placement (Option B: appended to #detail, Stock Detail block untouched), routing, wording and block isolation.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto");
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const researchCode = blocks.find((b) => b.includes("Phase 4 Step 1 - Stock Research"));
 const detailCode = blocks.find((b) => b.includes("Stock Detail view"));
@@ -85,11 +87,11 @@ const liOf = (h, title) => { const m = h.match(new RegExp("<li[^>]*><b>" + esc(t
   eq(blocks.length, 7, "seven script blocks: dashboard, detail, chart, snapshot, research, checklist, Phase 2B tabs");
   eq(blocks.indexOf(researchCode), 4, "research block sits after the Technical Snapshot block");
   eq(blocks.indexOf(techCode), 3, "Technical Snapshot block is just before it"); ok(blocks.indexOf(researchCode) < blocks.length - 1, "research block is before the final Phase 2B block");
-  eq(sha(blocks[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
-  eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical (not modified)");
+  eq(sha(PINBLOCKS[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
+  eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical (not modified)");
   eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
-  eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
+  eq(sha(PINBLOCKS[PINBLOCKS.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
   re(researchCode, /window\.SLResearch=/, "research module exposes its API");
 
   // ================= 2. placement (Option B) and layout =================

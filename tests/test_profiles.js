@@ -13,7 +13,9 @@ const eq = (a, b, m) => { checks++; assert.deepStrictEqual(a, b, m); }, ok = (c,
 const BANNED = /\b(buy|sell|strong|bullish|bearish|signals?|rating|score|target|undervalued|overvalued|recommend\w*|tally|composite|overall)\b/i;
 const isDate = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && new Date(x + "T00:00:00Z").toISOString().slice(0, 10) === x;
 
-const html = require("./legacy_5i.js").legacy(read("index.html")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = read("index.html");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const has = (m) => blocks.find((b) => b.includes(m));
 const researchCode = has("Phase 4 Step 1 - Stock Research"), checkCode = has("Phase 4 Step 2 - Investment Checklist"),
@@ -158,7 +160,7 @@ const GOLDEN = "cdae1bbf378a2b58e10028459f12e9e277819819d0784bbd150ec8cf76bf8710
     no(text(page + cpage), BANNED, p.symbol + ": no advice / rating wording on the rendered page");
   });
   // golden: nothing changes for a stock without a profile
-  eq(sha(golden(html)), GOLDEN, "no-profile output is identical to the Phase 4 Step 2 output (one phrase normalised)");
+  eq(sha(golden(PINHTML)), GOLDEN, "no-profile output is identical to the Phase 4 Step 2 output (one phrase normalised)");
 
   // ================= C. end-to-end placement with the fourth data file =================
   const fixtures = (withProf) => Object.assign({ "fundamentals.json": FUND, "financials.json": FIN, "historical.json": HIST }, withProf ? { "company_profiles.json": prof({}) } : {});
@@ -192,11 +194,11 @@ const GOLDEN = "cdae1bbf378a2b58e10028459f12e9e277819819d0784bbd150ec8cf76bf8710
   t = await boot("#stock=ITC", real2); re(t.byId("detailResearch").innerHTML, /One of India's foremost private sector companies/, "end-to-end ITC: shipped profile shown");
 
   // ================= D. isolation =================
-  eq(sha(blocks[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
-  eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical");
+  eq(sha(PINBLOCKS[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
+  eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical");
   eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
-  eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
+  eq(sha(PINBLOCKS[PINBLOCKS.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
   eq(blocks.length, 7, "still seven script blocks");
   eq((researchCode.match(/fetch\(/g) || []).length, 1, "research: still one fetch helper"); eq((checkCode.match(/fetch\(/g) || []).length, 1, "checklist: still one fetch helper");
   eq([...new Set(researchCode.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json"], "research reads only the four static files");

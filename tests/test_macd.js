@@ -1,7 +1,9 @@
 // Run: node tests/test_macd.js   (no network, no browser; stubs the DOM, fetch and the TradingView library)
 // Tests the Phase 3 Step 4 MACD (12, 26, 9) panel inside the chart. Expected values are hand-calculated (closed forms below).
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto");
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const chartCode = blocks.find((b) => b.includes("Phase 3 Step 2 - historical price chart"));
 const detailCode = blocks.find((b) => b.includes("Stock Detail view"));
@@ -153,7 +155,7 @@ const last = (t, id) => t.charts.filter((c) => c.el.id === id).pop();
   // ---------- security / scope / untouched blocks ----------
   no(html, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization/i, "no token or auth header in the page"); no(html, /api\.upstox\.com/, "no Upstox call in the browser"); no(chartCode, /WebSocket|EventSource|setInterval|XMLHttpRequest/, "no live data in the chart module");
   eq((chartCode.match(/fetch\(/g) || []).length, 1, "the chart module still makes exactly one fetch"); re(chartCode, /fetch\("out\/historical\.json"/, "...of out/historical.json");
-  eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block unchanged (byte-identical)"); eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block is the Phase 5D.1 version (byte-identical to it)");
-  eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block unchanged (byte-identical)");
+  eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block unchanged (byte-identical)"); eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block is the Phase 5D.1 version (byte-identical to it)");
+  eq(sha(PINBLOCKS[PINBLOCKS.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block unchanged (byte-identical)");
   console.log("MACD tests passed (" + checks + " checks)");
 })().catch((e) => { console.error(e); process.exit(1); });

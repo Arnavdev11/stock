@@ -3,7 +3,9 @@
 // (case-insensitive, trimmed, exact / partial symbol and name), lists at most 10 results in a fixed text-based order (never by any financial value), opens the existing #stock=SYMBOL route,
 // says "No matching company found." (and goes nowhere) for an unknown company, works from the keyboard, and leaves the rest of the page exactly as it was.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">', SNAPTAG = '<script type="module" id="stocklens-snapshot">', SRCHTAG = '<script type="module" id="stocklens-search">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];
@@ -96,14 +98,14 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
 
 (async () => {
   // ================= 0. structure and protection =================
-  eq(blocks.length, 7, "still exactly seven classic script blocks"); eq((html.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all"); eq(html.split(SRCHTAG).length, 2, "one search module, with its own tag");
+  eq(PINBLOCKS.length, 7, "still exactly seven classic script PINBLOCKS"); eq((PINHTML.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all"); eq(PINHTML.split(SRCHTAG).length, 2, "one search module, with its own tag");
   ok(html.indexOf(SNAPTAG) < html.indexOf(SRCHTAG), "the search module comes after the snapshot module");
   let base = ""; try { base = cp.execSync("git show 6edaf45:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
     const ob = base.split("<script>").slice(1).map((x) => x.split("</script>")[0]);
-    eq(blocks.map(sha), ob.map(sha), "the seven classic blocks are byte-identical to 6edaf45 (Phase 5E): dashboard, Stock Detail, charts, technicals, research, checklist"); eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical");
-    eq(cmpCode, modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(snapCode, modOf(base, SNAPTAG).replace(OLDSPOT, NEWSPOT), "the Investor Snapshot module is byte-identical to 6edaf45 except the Future Growth Evidence placeholder (Phase 5G.2), now an empty spot for the growth module");
-    eq(html.replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""), base.replace(OLDSPOT, NEWSPOT), "the page without the search and growth modules is identical to 6edaf45 (apart from the Future Growth Evidence placeholder): the markup, the tables, the styles, everything");
+    eq(PINBLOCKS.map(sha), ob.map(sha), "the seven classic PINBLOCKS are byte-identical to 6edaf45 (Phase 5E): dashboard, Stock Detail, charts, technicals, research, checklist"); eq(sha(modOf(PINHTML, FHTAG)), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical");
+    eq(modOf(PINHTML, CMPTAG), modOf(base, CMPTAG), "the comparison module is byte-identical"); eq(modOf(PINHTML, SNAPTAG), modOf(base, SNAPTAG).replace(OLDSPOT, NEWSPOT), "the Investor Snapshot module is byte-identical to 6edaf45 except the Future Growth Evidence placeholder (Phase 5G.2), now an empty spot for the growth module");
+    eq(PINHTML.replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, ""), base.replace(OLDSPOT, NEWSPOT), "the page without the search and growth modules is identical to 6edaf45 (apart from the Future Growth Evidence placeholder): the markup, the tables, the styles, everything");
   }
   for (const id of ['id="rows"', 'id="tabs"', 'id="detail"', 'id="demo"', 'id="stat"']) ok(html.includes(id), "the dashboard still has " + id);
   re(html, /\.detail-mode \.w>\*:not\(#detail\)\{display:none!important\}/, "the page's own rule hides every dashboard child (the search box too) while a stock is open");
@@ -260,7 +262,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
   no(code, /Investor Snapshot|data-snap|detailSnapshot|SLSnapshot|SLCompare|SLFinHistory|SLChart|SLTech|detailTech|detailChart/, "the search code does not touch the Investor Snapshot, comparison, Financial History or chart code");
   no(code, /document\.addEventListener\("(keydown|hashchange)|addEventListener\("hashchange"|\.location\.hash\s*=\s*""|replaceState|pushState/, "no second router: only the existing #stock= hash is set");
   eq((code.match(/location\.hash\s*=/g) || []).length, 1, "the hash is assigned in exactly one place"); re(code, /location\.hash="stock="\+encodeURIComponent\(sym\)/, "to the existing #stock=SYMBOL form, the same as Stock Detail's own go()");
-  ok(!html.slice(0, html.indexOf(SRCHTAG)).includes("stockSearch") || html.slice(0, html.indexOf(SRCHTAG)).split("stockSearch").length === 1, "no search markup was added to the static page: the box is created by the module");
+  no(html.split(SRCHTAG)[0] + html.split(SRCHTAG)[1].split("</script>").slice(1).join("</script>"), /id="(stockSearch|companySearch)"/, "no search markup is in the static page: the box is created by the module (Phase 5I: into the global bar's empty host)");
   { const x = load({ files: FILES() }); await x.focus(30); await x.type("tata"); eq(x.box.innerHTML, "", "searching writes nothing into the Stock Detail area"); eq(x.classes.size, 0, "and does not change the page mode"); }
 
   // ================= F. wording =================

@@ -3,7 +3,9 @@
 // provenance and reconciliation markers, change/CAGR rules (including the ITC FY2022/FY2023 boundary), the unavailable state, placement
 // under Stock Research, and that every other script block of the page is byte-for-byte what it was before this step.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);          // the seven classic blocks the other suites pin
 const MARK = "Phase 4 Step 4E - Financial History", MOD = '<script type="module">';
 const fhCode = (html.split(MOD)[1] || "").split("</script>")[0], detailCode = blocks.find((b) => b.includes("Stock Detail view")),
@@ -255,11 +257,11 @@ async function boot(hash, { fh = DOC(), delay = 0, settle = null, extra = true }
 
   // ---- every other script block is exactly what it was ----
   eq(blocks.length, 7, "the page still has exactly the seven classic script blocks the other suites pin"); eq(html.split(MOD).length, 2, "the new code is exactly one separate module script");
-  let headHtml = ""; try { headHtml = cp.execSync("git show HEAD:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { headHtml = ""; }
+  let headHtml = ""; try { headHtml = cp.execSync("git show HEAD:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { headHtml = ""; } headHtml = require("./legacy_5i.js").legacy(headHtml);
   if (headHtml) { const hb = headHtml.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
-    eq(blocks.filter((b) => !b.includes("Stock Detail view")).map(sha), hb.filter((b) => !b.includes("Stock Detail view")).map(sha), "every classic script block except the Stock Detail block (Phase 5D.1) is byte-for-byte identical to the committed page");
+    eq(PINBLOCKS.filter((b) => !b.includes("Stock Detail view")).map(sha), hb.filter((b) => !b.includes("Stock Detail view")).map(sha), "every classic script block except the Stock Detail block (Phase 5D.1) is byte-for-byte identical to the committed page");
     const strip = (x) => x.replace(/<script type="module" id="stocklens-compare">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, "").replace(/<script type="module">\n\/\* StockLens Phase 4 Step 4E[\s\S]*?<\/script>\n/, "");
-    const ND = ((x) => x.split("<script>").map((q, i) => (i && q.split("</script>")[0].includes("Stock Detail view") ? "</script>" + q.split("</script>").slice(1).join("</script>") : q)).join("<script>")); eq(ND(strip(html)), ND(strip(headHtml)), "everything outside the new module script (and the Stock Detail block, Phase 5D.1) is identical to the committed page"); }
+    const ND = ((x) => x.split("<script>").map((q, i) => (i && q.split("</script>")[0].includes("Stock Detail view") ? "</script>" + q.split("</script>").slice(1).join("</script>") : q)).join("<script>")); eq(ND(strip(PINHTML)), ND(strip(headHtml)), "everything outside the new module script (and the Stock Detail block, Phase 5D.1) is identical to the committed page"); }
   eq((fhCode.match(/fetch\(/g) || []).length, 1, "the new code makes exactly one fetch call"); eq([...new Set(fhCode.match(/out\/[a-z_]+\.json/g))], ["out/financial_history.json"], "and reads only the history file");
   no(fhCode, /localStorage|sessionStorage|indexedDB|XMLHttpRequest|eval\(|innerHTML\s*\+=/, "no storage, no eval, no unsafe patterns");
   console.log("Financial history UI tests passed (" + checks + " checks)");

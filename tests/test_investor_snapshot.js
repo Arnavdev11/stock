@@ -4,7 +4,9 @@
 // from Stock Research, growth and CAGR from Financial History) and never invent a value: no margin, no EPS growth, no free cash flow arithmetic, no debt / equity from liabilities,
 // no ownership, no order or capex data. It must appear on Stock Detail only, fetch each existing file at most once, and leave the dashboard and the comparison page exactly as they were.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const FHTAG = '<script type="module">', CMPTAG = '<script type="module" id="stocklens-compare">', SNAPTAG = '<script type="module" id="stocklens-snapshot">';
 const modOf = (src, tag) => (src.split(tag)[1] || "").split("</script>")[0];
@@ -123,15 +125,15 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
 (async () => {
   // ================= 1. structure: the page is protected, the snapshot is a separate module =================
   eq(blocks.length, 7, "still exactly seven classic script blocks"); eq(html.split(FHTAG).length, 2, "one Financial History module"); eq(html.split(CMPTAG).length, 2, "one compare module"); eq(html.split(SNAPTAG).length, 2, "one snapshot module, with its own tag");
-  eq((html.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all (Phase 5F adds the search module, Phase 5G.2 the growth module)");
+  eq((PINHTML.match(/<script/g) || []).length, 13, "thirteen script elements (Phase 5H.4 adds the shareholding module); previously twelve in all (Phase 5F adds the search module, Phase 5G.2 the growth module)");
   ok(html.indexOf(CMPTAG) < html.indexOf(SNAPTAG), "the snapshot module comes after the modules it reads (Financial History, comparison)");
   let base = ""; try { base = cp.execSync("git show f7e8d14:index.html", { cwd: __dirname + "/..", encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
   if (base) {
     const ob = base.split("<script>").slice(1).map((x) => x.split("</script>")[0]);
-    eq(blocks.map(sha), ob.map(sha), "the seven classic blocks are byte-identical to f7e8d14 (Phase 5D.1), Stock Detail included");
-    eq(sha(fhCode), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical to f7e8d14");
-    eq(cmpCode.replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={"), modOf(base, CMPTAG), "the comparison module differs from f7e8d14 only by one added export name, priceFor");
-    const rest = html.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, "").replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={");
+    eq(PINBLOCKS.map(sha), ob.map(sha), "the seven classic PINBLOCKS are byte-identical to f7e8d14 (Phase 5D.1), Stock Detail included");
+    eq(sha(modOf(PINHTML, FHTAG)), sha(modOf(base, FHTAG)), "the Financial History module is byte-identical to f7e8d14");
+    eq(modOf(PINHTML, CMPTAG).replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={"), modOf(base, CMPTAG), "the comparison module differs from f7e8d14 only by one added export name, priceFor");
+    const rest = PINHTML.replace(/<script type="module" id="stocklens-snapshot">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-growth">[\s\S]*?<\/script>\n/, "").replace(/<script type="module" id="stocklens-shareholding">[\s\S]*?<\/script>\n/, "").replace("window.SLCompare={priceFor:priceFor,", "window.SLCompare={");
     eq(rest, base, "the page without the snapshot module (and that one export) is identical to f7e8d14: dashboard, Stock Detail, comparison all untouched");
   }
 

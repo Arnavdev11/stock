@@ -3,7 +3,9 @@
 // "-" and "N/A" rules, debt and free cash flow never inferred, reuse of the existing technical calculations, placement after Stock Research,
 // routing, wording (no advice, no score, no tally) and isolation of every other script block.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto");
-const html = require("./legacy_5i.js").legacy(fs.readFileSync(__dirname + "/../index.html", "utf8")); /* Phase 5I: byte-identity pins are checked against the page minus the 5I layer (see legacy_5i.js) */
+const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
+// Phase 5I: behaviour is tested on the page as shipped (html). The byte-identity pins below are tested on PINHTML = the page minus the Phase 5I layer (legacy_5i.js, proven exact against aa4ace1 by test_global_navigation.js), because Phase 5I deliberately changes the route readers and the search mount.
+const PINHTML = require("./legacy_5i.js").legacy(html), PINBLOCKS = PINHTML.split("<script>").slice(1).map((b) => b.split("</script>")[0]), PINDETAIL = PINBLOCKS.find((b) => b.includes("Stock Detail view"));
 const blocks = html.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
 const checkCode = blocks.find((b) => b.includes("Phase 4 Step 2 - Investment Checklist"));
 const researchCode = blocks.find((b) => b.includes("Phase 4 Step 1 - Stock Research"));
@@ -62,12 +64,12 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   eq(blocks.length, 7, "seven script blocks: dashboard, detail, chart, snapshot, research, checklist, Phase 2B tabs");
   eq(blocks.indexOf(researchCode), 4, "Stock Research block is 5th, unchanged position"); eq(blocks.indexOf(checkCode), 5, "Investment Checklist block is 6th, right after Stock Research");
   ok(blocks.indexOf(checkCode) < blocks.length - 1, "checklist block is before the final Phase 2B block");
-  eq(sha(blocks[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
-  eq(sha(detailCode), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical");
+  eq(sha(PINBLOCKS[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
+  eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical");
   eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
-  eq(sha(researchCode), "575598c575493f0d587c2c531e576f8c1ba85c1fffb183e079732f66e93682f9", "Stock Research block pinned (re-pinned in Phase 4 Step 3: Business Profile)");
-  eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
+  eq(sha(PINBLOCKS.find((b) => b.includes("Phase 4 Step 1 - Stock Research"))), "575598c575493f0d587c2c531e576f8c1ba85c1fffb183e079732f66e93682f9", "Stock Research block pinned (re-pinned in Phase 4 Step 3: Business Profile)");
+  eq(sha(PINBLOCKS[PINBLOCKS.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
   re(checkCode, /window\.SLChecklist=/, "checklist module exposes its API");
 
   // ================= 2. section order, rows and the exact heading text =================
