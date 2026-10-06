@@ -1,0 +1,47 @@
+name: probe-5h6-backfill
+on:
+  push:
+    branches: [probe-5h6-inv]
+permissions:
+  contents: write
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    env:
+      DO_COMMIT: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Run the updater (gap-fill only, no commit yet)
+        env:
+          SHAREHOLDING_LEDGER_DIR: ledger-branch
+          SHAREHOLDING_LEDGER_OUT: ledger-out/shareholding_ledger.json
+          SHAREHOLDING_MAX_DOWNLOADS: "320"
+        run: python shareholding_updater.py
+      - name: Strict diff against the live ledger
+        run: python backfill_check.py ledger-branch/shareholding_ledger.json ledger-out/shareholding_ledger.json
+      - name: Verify nothing was lost (production check)
+        run: python shareholding_ledger.py verify ledger-branch/shareholding_ledger.json ledger-out/shareholding_ledger.json
+      - name: Commit the shareholding ledger to the data branch
+        if: ${{ env.DO_COMMIT == 'true' }}
+        run: |
+          cd ledger-branch
+          cp ../ledger-out/shareholding_ledger.json shareholding_ledger.json
+          git add shareholding_ledger.json
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          if [ "$(git diff --cached --name-only)" != "shareholding_ledger.json" ]; then echo "::error::must contain exactly shareholding_ledger.json"; exit 1; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Add named holders to the shareholding ledger (Phase 5H.6 one-time backfill, run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data
+          echo "::notice title=commit::$(git rev-parse HEAD)"
