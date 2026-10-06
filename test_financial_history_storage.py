@@ -370,7 +370,7 @@ class WorkflowTests(unittest.TestCase):
             t = wf(name)
             for step in re.split(r"\n      - ", t):
                 if "UPSTOX_ANALYTICS_TOKEN" in step:
-                    self.assertRegex(step, r"python (fundamentals_updater|financials_updater|financial_history_updater)\.py", name)
+                    self.assertRegex(step, r"python (fundamentals_updater|financials_updater|financial_history_updater|shareholding_updater)\.py", name)
         self.assertNotIn("UPSTOX", job_block(wf("update.yml"), "deploy"))
 
     def test_9_only_the_save_job_can_write(self):
@@ -378,7 +378,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertRegex(upd, r'(?m)^permissions:\n  contents: read\n')                                    # the workflow-level default is unchanged
         self.assertNotIn("contents: write", job_block(upd, "build")); self.assertNotIn("contents: write", job_block(upd, "deploy"))
         self.assertIn("pages: write", job_block(upd, "deploy")); self.assertIn("id-token: write", job_block(upd, "deploy"))
-        self.assertEqual(upd.count("contents: write"), 1)
+        self.assertEqual(upd.count("contents: write"), 2)                                                   # save-history (reusable call) and, since Phase 5H.5, save-shareholding: nothing else can write
+        self.assertIn("contents: write", job_block(upd, "save-shareholding"))
         hist = wf("financial_history.yml")
         self.assertNotIn("contents: write", job_block(hist, "history"))
         self.assertEqual(hist.count("contents: write"), 1)
