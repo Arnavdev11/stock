@@ -1,14 +1,12 @@
-"""TEMP read-only probe (Phase 5H.6, throwaway branch only): the STRUCTURE of the per-holder information inside one NSE shareholding XBRL filing.
-Uses the existing updater's NSE access (Nse, select_filings, fetch_xbrl). Reads only; writes nothing; no token is used or printed."""
+"""TEMP read-only probe v2 (Phase 5H.6, throwaway branch only): the per-holder structure inside one NSE shareholding XBRL filing.
+Uses the existing updater's NSE access. Reads only; writes nothing; no token is used or printed."""
 import sys, re, collections
 import xml.etree.ElementTree as ET
 import shareholding_updater as su
 
 sym = sys.argv[1]
-OUT = []
 def note(title, lines):
     msg = "\n".join(lines)
-    OUT.append((title, msg))
     print("\n===== %s %s =====\n%s" % (sym, title, msg))
     print("::notice title=%s %s::%s" % (sym, title, msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A")))
 
@@ -17,97 +15,92 @@ recs, err = nse.index(sym)
 if err:
     note("FAILED", ["index: " + err]); sys.exit(1)
 keep, skipped = su.select_filings(recs)
-d = max(keep); rec = keep[d]
-url = rec.get("xbrl")
+d = max(keep); rec = keep[d]; url = rec.get("xbrl")
 data, used, e = su.fetch_xbrl(nse, url) if isinstance(url, str) and url.startswith("https://") else (None, None, "no xbrl url")
 if data is None:
-    note("FAILED", ["xbrl download: %s" % e, "record %s" % rec.get("recordId")]); sys.exit(1)
+    note("FAILED", ["xbrl download: %s" % e]); sys.exit(1)
 lt = lambda t: t.rsplit("}", 1)[-1] if isinstance(t, str) else str(t)
+dn = lambda s: re.sub(r"^.*:", "", s or "")
+short = lambda s, n=60: (s if len(s) <= n else s[:n] + "...")
 root = ET.fromstring(data)
 ctx = {}
 for el in root.iter():
     if lt(el.tag) == "context":
-        mem, per = [], None
+        dims, per = [], None
         for c in el.iter():
             n = lt(c.tag)
-            if n in ("explicitMember", "typedMember"):
-                if n == "typedMember":
-                    inner = [(lt(x.tag), (x.text or "").strip()) for x in c.iter() if x is not c]
-                    mem.append((n, c.get("dimension", ""), inner))
-                else:
-                    mem.append((n, c.get("dimension", ""), (c.text or "").strip()))
-            elif n in ("instant", "endDate"):
-                per = (c.text or "").strip()
-        ctx[el.get("id")] = (mem, per)
-facts = [(lt(el.tag), el.get("contextRef"), (el.text or "").strip()) for el in root if el.get("contextRef") in ctx]
-short = lambda s, n=70: (s if len(s) <= n else s[:n] + "...")
-dimname = lambda s: re.sub(r"^.*:", "", s)
-sig = lambda cid: tuple(sorted((m[0][:1], dimname(m[1])) for m in ctx[cid][0]))
-L = ["record %s | quarter %s | broadcast %s | bytes %d | host used %s" % (rec.get("recordId"), d, rec.get("broadcastDate"), len(data), re.sub(r"^https://([^/]+)/.*", r"\1", used)),
-     "filing URL: %s" % used, "root element: %s | contexts %d | facts %d" % (lt(root.tag), len(ctx), len(facts)),
-     "namespaces in file: " + ", ".join(sorted(set(re.findall(r'xmlns:(\w+)=', data.decode("utf-8", "ignore"))))[:25])]
-note("A overview", L)
-# B. context signatures (dimensions) and how many contexts / facts each has
-bysig = collections.defaultdict(list)
-for cid in ctx: bysig[sig(cid)].append(cid)
-factsby = collections.defaultdict(list)
-for n, cr, t in facts: factsby[cr].append((n, t))
+            if n == "explicitMember": dims.append(("E", dn(c.get("dimension")), dn((c.text or "").strip())))
+            elif n == "typedMember": dims.append(("T", dn(c.get("dimension")), "|".join((x.text or "").strip() for x in c.iter() if x is not c)))
+            elif n in ("instant", "endDate"): per = (c.text or "").strip()
+        ctx[el.get("id")] = (dims, per)
+facts = collections.defaultdict(list)
+for el in root:
+    cr = el.get("contextRef")
+    if cr in ctx: facts[cr].append((lt(el.tag), (el.text or "").strip()))
+fv = lambda cid, name: next((t for n, t in facts[cid] if n == name), None)
+num = lambda s: float(s) if s not in (None, "") and re.match(r"^-?[\d.]+(E-?\d+)?$", s) else None
+rep = next((t for cid in ctx for n, t in facts[cid] if n == "DateOfReport"), None)
+note("A overview", ["record %s | quarter %s | DateOfReport %s | broadcast %s | bytes %d | host %s" % (rec.get("recordId"), d, rep, rec.get("broadcastDate"), len(data), re.sub(r"^https://([^/]+)/.*", r"\1", used)),
+                    "filing: %s" % used, "contexts %d | context periods: %s" % (len(ctx), dict(collections.Counter(p for _, p in ctx.values())))])
+# B. every axis, kind, contexts, distinct members, periods, fact elements
+ax = collections.defaultdict(lambda: {"kind": set(), "ctx": [], "mem": set(), "per": collections.Counter()})
+for cid, (dims, per) in ctx.items():
+    for k, a, m in dims:
+        ax[a]["kind"].add(k); ax[a]["ctx"].append(cid); ax[a]["mem"].add(m); ax[a]["per"][per] += 1
+L = ["AXES (name | kind E=explicit T=typed | contexts | distinct members | periods):"]
+for a, v in sorted(ax.items(), key=lambda kv: -len(kv[1]["ctx"])):
+    L.append("  %s | %s | %d | %d | %s" % (a, "".join(sorted(v["kind"])), len(v["ctx"]), len(v["mem"]), dict(v["per"])))
+note("B axes", L)
+# C. one member with all its contexts: shows the duplicate contexts and the facts
+def example(axis, which=0):
+    mems = sorted({m for cid in ax[axis]["ctx"] for k, a, m in ctx[cid][0] if a == axis})
+    if len(mems) <= which: return ["(none)"]
+    m = mems[which]; out = ["axis %s member %s" % (axis, m)]
+    for cid in ax[axis]["ctx"]:
+        if any(a == axis and mm == m for k, a, mm in ctx[cid][0]):
+            out.append("  ctx id %s period %s dims %s" % (cid, ctx[cid][1], [(a, mm) for k, a, mm in ctx[cid][0]]))
+            out.append("    " + "; ".join("%s=%s" % (n, short(t, 40)) for n, t in facts[cid]))
+    return out
 L = []
-for s, ids in sorted(bysig.items(), key=lambda kv: -len(kv[1])):
-    members = collections.Counter()
-    for cid in ids:
-        for m in ctx[cid][0]:
-            members[re.sub(r"^.*:", "", m[2] if isinstance(m[2], str) else "|".join(x[1] for x in m[2]))] += 1
-    els = collections.Counter(n for cid in ids for n, _ in factsby.get(cid, []))
-    L.append("DIMENSION SET %s: %d contexts, %d distinct members. members sample: %s" % (list(s) if s else "(none)", len(ids), len(members), ", ".join(list(members)[:8])))
-    L.append("   fact elements on these contexts: " + ", ".join("%s x%d" % (k, v) for k, v in els.most_common(12)))
-note("B context dimension sets", L)
-# C. the per-holder detail members the current parser skips: _ContextNN / Details...
+for a in [x for x, v in ax.items() if "T" in v["kind"]][:3]: L += example(a, 0)
+note("C one member, all its contexts", L)
+# D. per typed axis: named rows for the report period (rows, nonzero, top 12 by percentage)
+rows = collections.defaultdict(list)
+for a, v in ax.items():
+    if "T" not in v["kind"]: continue
+    for cid in v["ctx"]:
+        dims, per = ctx[cid]
+        if rep and per != rep: continue
+        name = fv(cid, "NameOfTheShareholder")
+        if name is None and not any(n.startswith("Category") or n.startswith("Whether") for n, _ in facts[cid]): continue
+        cat = next((t for n, t in facts[cid] if n.startswith("CategoryOf")), None)
+        rows[a].append((name, cat, num(fv(cid, "NumberOfShares")), num(fv(cid, "ShareholdingAsAPercentageOfTotalNumberOfShares")), fv(cid, "WhetherACategoryOrMoreThan1PercentageOfShareholding"), [m for k, aa, m in dims if aa == a][0]))
 L = []
-det = [cid for cid in ctx if any(isinstance(m[2], str) and ("_Context" in m[2] or re.sub(r"^.*:", "", m[2]).startswith("Details")) for m in ctx[cid][0])]
-L.append("contexts whose member has _Context or starts Details: %d" % len(det))
-kinds = collections.Counter()
-for cid in det:
-    for m in ctx[cid][0]:
-        mm = re.sub(r"^.*:", "", m[2]) if isinstance(m[2], str) else "typed"
-        kinds[re.sub(r"\d+", "NN", mm)] += 1
-L.append("member name patterns (digits -> NN): " + ", ".join("%s x%d" % kv for kv in kinds.most_common(10)))
-for cid in det[:6]:
-    L.append("  ctx %s dims %s period %s" % (cid, [(dimname(m[1]), re.sub(r'^.*:', '', m[2]) if isinstance(m[2], str) else m[2]) for m in ctx[cid][0]], ctx[cid][1]))
-    L.append("     facts: " + "; ".join("%s=%s" % (n, short(t, 50)) for n, t in factsby.get(cid, [])[:10]))
-note("C detail-context rows", L)
-# D. every text-valued (non-numeric) fact: where do holder NAMES live?
-txt = collections.defaultdict(list)
-for n, cr, t in facts:
-    if t and not re.match(r"^-?[\d.,]+(E-?\d+)?$", t) and not re.match(r"^\d{4}-\d{2}-\d{2}$", t) and t.lower() not in ("true", "false"):
-        txt[n].append((cr, t))
-L = ["text-valued fact elements (name, count, sample values):"]
-for n, v in sorted(txt.items(), key=lambda kv: -len(kv[1]))[:25]:
-    L.append("  %s x%d: %s" % (n, len(v), " | ".join(short(t, 45) for _, t in v[:4])))
-note("D text-valued facts", L)
-# E. typed members (a holder name can be carried as a typed dimension member)
-tm = [(cid, m) for cid in ctx for m in ctx[cid][0] if m[0] == "typedMember"]
-L = ["typed-member contexts: %d" % len(tm)]
-for cid, m in tm[:10]:
-    L.append("  ctx %s dim %s typed %s" % (cid, dimname(m[1]), m[2]))
-note("E typed members", L)
-# F. which element names carry shares / percentages, with the dimension sets they sit on
-num = collections.defaultdict(collections.Counter)
-for n, cr, t in facts:
-    if re.match(r"^-?[\d.]+(E-?\d+)?$", t): num[n][str(list(dict.fromkeys(dimname(m[1]) for m in ctx[cr][0])))] += 1
-L = ["numeric fact elements -> dimension axes they appear with:"]
-for n, c in sorted(num.items(), key=lambda kv: -sum(kv[1].values()))[:14]:
-    L.append("  %s: %s" % (n, "; ".join("%s x%d" % kv for kv in c.most_common(3))))
-note("F numeric elements", L)
-# G. search the whole file (element text, attribute values, member names) for the typical named-holder words, without assuming any name
-hay = data.decode("utf-8", "ignore")
-pat = re.compile(r"(Tata Sons|Life Insurance|LIC |SBI |ICICI Prudential|HDFC|Mutual Fund|Nifty|Vanguard|BlackRock|Government of Singapore|Trust|Limited|Ltd\.?|Private|Fund|Insurance)", re.I)
-hits = collections.Counter(m.group(1).lower() for m in pat.finditer(hay))
-L = ["word hits in the raw file: " + ", ".join("%s x%d" % kv for kv in hits.most_common(12))]
-names = []
-for n, v in txt.items():
-    for cr, t in v:
-        if re.search(r"(limited|ltd|private|fund|insurance|trust|bank|company|corporation|llc|inc|plc|life)", t, re.I): names.append((n, t))
-L.append("name-like text values found: %d (element: value, first 25)" % len(names))
-for n, t in names[:25]: L.append("  %s: %s" % (n, short(t, 90)))
-note("G named-holder search", L)
+for a, r in rows.items():
+    nz = [x for x in r if (x[2] or 0) > 0]
+    L.append("AXIS %s: %d rows in the report period, %d with shares>0, %d with a name, %d names unique" % (a, len(r), len(nz), sum(1 for x in r if x[0]), len({x[0] for x in r if x[0]})))
+    for x in sorted(nz, key=lambda x: -(x[3] or 0))[:10]:
+        L.append("   %s | cat=%s | shares=%s | pct=%s | %s | %s" % (short(x[0] or "(no name)", 55), x[1], None if x[2] is None else int(x[2]), x[3], x[4], x[5]))
+note("D named rows per axis (report period)", L)
+# E. search for well-known holder words: where do they sit?
+pat = re.compile(r"(life insurance|\bLIC\b|SBI |ICICI Prudential|Nifty|Vanguard|Government of Singapore|Tata Sons|Mutual Fund|ETF)", re.I)
+L = []
+for cid, fl in facts.items():
+    for n, t in fl:
+        if t and pat.search(t) and n in ("NameOfTheShareholder",) or (t and n.startswith("Disclosure") and pat.search(t)):
+            L.append("  %s=%s | ctx %s period %s dims %s | shares=%s pct=%s | cat=%s %s" % (n, short(t, 70), cid, ctx[cid][1], [(a, m) for k, a, m in ctx[cid][0]], fv(cid, "NumberOfShares"), fv(cid, "ShareholdingAsAPercentageOfTotalNumberOfShares"), next((t2 for n2, t2 in facts[cid] if n2.startswith("CategoryOf")), None), fv(cid, "WhetherACategoryOrMoreThan1PercentageOfShareholding")))
+raw = data.decode("utf-8", "ignore")
+L.insert(0, "raw-file word hits: " + ", ".join("%s x%d" % kv for kv in collections.Counter(m.group(1).lower() for m in pat.finditer(raw)).most_common(10)))
+note("E where well-known holder words occur", L[:30])
+# F. reconciliation: named rows (report period) vs the aggregate category row with the same core name
+agg = {}
+for cid, (dims, per) in ctx.items():
+    if len(dims) == 1 and dims[0][1] == "CategoryOfShareholdersAxis" and per == rep:
+        agg[dims[0][2]] = (num(fv(cid, "NumberOfShares")), num(fv(cid, "ShareholdingAsAPercentageOfTotalNumberOfShares")))
+core = lambda s: re.sub(r"(Member|Axis|DetailsOfSharesHeldBy|Details|s$)", "", s).lower()
+L = ["aggregate category rows in the report period: %d" % len(agg)]
+for a, r in rows.items():
+    tot = sum(x[2] or 0 for x in r); totp = sum(x[3] or 0 for x in r)
+    cands = [(k, v) for k, v in agg.items() if core(k) == core(a) or core(a) in core(k) or core(k) in core(a)]
+    L.append("  %s: named-rows sum shares=%d pct=%.4f | same-core aggregate rows: %s" % (a, tot, totp, "; ".join("%s shares=%s pct=%s" % (k, None if v[0] is None else int(v[0]), v[1]) for k, v in cands[:3]) or "none"))
+note("F named rows vs aggregate rows", L)
