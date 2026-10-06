@@ -297,7 +297,13 @@ HOLDER_AXES = {
     "overseasdepositories": ("overseas_depositories", "FII", L_FII, "overseasdepositories"),
     "otherinstitutionsforeign": ("other_institutions_foreign", "FII", L_FII, "otherinstitutionsforeign"),
     "custodianordrholder": ("custodian_dr_holder", "Other", L_OTHER, "custodianordrholder"),
+    # Verified by the live inventory (named shares reconcile EXACTLY with the aggregate row of the promoter table, or the axis is the FPI row of the old format):
+    "detailssharesheldbyindividualsorhuf": ("promoter_individuals", "Promoter", L_PROMOTER, "individualsorhinduundividedfamily"),
+    "centralgovernmentorstategovernments": ("promoter_central_state_government", "Promoter", L_PROMOTER, "centralgovernmentorstategovernments"),
+    "institutionsforeignportfolioinvestor": ("fpi_old_format", "FII", L_FII, "institutionsforeignportfolioinvestor"),
 }
+# NOT mapped on purpose (they stay counted in unmapped_axes and are never shown): OtherNonInstitutions (category rows such as Bodies Corporate / HUF / NRI, not holders),
+# OtherInstitutions in the old format (rows are named "Other"), SignificantBeneficialOwners (they repeat holdings reported elsewhere).
 # axes that are never holders: they repeat holders already listed elsewhere, or are not holders at all
 HOLDER_SKIP_AXES = {"shareholdersactingaspersonsinconcertforpublic": "persons_in_concert", "shareswhichremainunclaimedforpublicshareholders": "unclaimed"}
 HOLDER_NAME_EL, HOLDER_SHARES_EL, HOLDER_PCT_EL = "NameOfTheShareholder", "NumberOfFullyPaidUpEquityShares", "ShareholdingAsAPercentageOfTotalNumberOfShares"

@@ -59,7 +59,7 @@ def main():
                      dict(labs), ex, ",".join("%s:%d" % (short(a), n) for a, n in nh["unmapped_axes"].items()), [f["code"][:12] for f in nh["flags"]]))
         P = pairs_of(data, su.parse_xbrl(data)["report_date"] or q)
         allax.update(short(a) + ("" if su._axis_key(a) in su.HOLDER_AXES or su._axis_key(a) in su.HOLDER_SKIP_AXES else "*") for a, m in P)
-        if i in (0, len(ds) - 1) or (new["format_version"] or "").startswith("old") and not any(x.startswith("OLD") for x in detail):
+        if False and (i in (0, len(ds) - 1)) or (new["format_version"] or "").startswith("old") and not any(x.startswith("OLD") for x in detail):
             for (a, m), f in sorted(P.items()):
                 if su._axis_key(a) not in su.HOLDER_AXES and su._axis_key(a) not in su.HOLDER_SKIP_AXES:
                     sh = su.fnum(f.get(su.HOLDER_SHARES_EL))

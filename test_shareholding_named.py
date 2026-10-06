@@ -67,6 +67,19 @@ class Extract(unittest.TestCase):
         self.assertEqual(lab["Epsilon"], su.L_FII)
         self.assertEqual(lab["Zeta"], su.L_DII)
 
+    def test_axes_verified_by_the_live_inventory(self):
+        nh = named([H("DetailsSharesHeldByIndividualsOrHUFAxis", 1, "Person One", 300, 0.3),
+                    H("DetailsOfSharesHeldByCentralGovernmentOrStateGovernmentsAxis", 1, "Government Holder", 200, 0.2),
+                    H("DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorAxis", 1, "Old Fund", 100, 0.1),
+                    H("DetailsOfSharesHeldByOtherNonInstitutionsAxis", 1, "Bodies Corporate", 90, 0.09),
+                    H("DetailsOfSharesHeldByOtherInstitutionsAxis", 1, "Other", 80, 0.08)])
+        lab = {h["holder_name"]: (h["label"], h["section"]) for h in nh["holders"]}
+        self.assertEqual(lab["Person One"], (su.L_PROMOTER, "promoter_individuals"))
+        self.assertEqual(lab["Government Holder"], (su.L_PROMOTER, "promoter_central_state_government"))
+        self.assertEqual(lab["Old Fund"], (su.L_FII, "fpi_old_format"))
+        self.assertEqual(sorted(lab), ["Government Holder", "Old Fund", "Person One"])      # category rows and placeholder-named rows are not holders
+        self.assertEqual(sorted(nh["unmapped_axes"]), ["DetailsOfSharesHeldByOtherInstitutionsAxis", "DetailsOfSharesHeldByOtherNonInstitutionsAxis"])
+
     def test_percent_is_the_reported_value_converted_by_unit(self):
         nh = named([H("DetailsOfSharesHeldByInsuranceCompaniesAxis", 15, "A", 55200, 0.0552)])
         self.assertEqual(nh["holders"][0]["percentage"], 5.52)
