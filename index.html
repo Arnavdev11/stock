@@ -57,11 +57,11 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 #globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
 #globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1040px;margin:0 auto;padding:8px 18px}
 #globalBar .gb-brand{flex:0 0 auto;font-weight:800;font-size:1.1rem;color:var(--ink);text-decoration:none}
-#globalBar .gb-search{flex:1 1 200px;min-width:0;max-width:380px}
+#globalBar .gb-search{flex:0 1 190px;min-width:0;max-width:380px;margin-left:auto}
 #globalBar #stockSearch{margin:0}#globalBar #stockSearch .ss-box{padding:0;border:0;background:none;border-radius:0}
-#globalBar #stockSearch input{padding:8px 12px;font-size:.95rem}#globalBar #stockSearch .ss-list{max-height:50vh;overflow-y:auto}
+#globalBar #stockSearch input{padding:8px 10px;font-size:.9rem}#globalBar #stockSearch .ss-list{max-height:50vh;overflow-y:auto}
 #globalBar .gb-toggle{display:none;align-items:center;min-height:40px;max-width:100%;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:600 .88rem Manrope,sans-serif;cursor:pointer;overflow-wrap:anywhere}
-#globalBar .gb-sections{display:block;padding:0;gap:0;flex:1 1 auto;min-width:0}#globalBar .gb-sections ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 2px}
+#globalBar .gb-sections{display:block;padding:0;gap:0;flex:1 1 0;min-width:0}#globalBar .gb-sections ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-start;gap:2px 2px}
 #globalBar .gb-sections a{display:block;min-height:36px;padding:8px 10px;border-radius:8px;color:var(--mute);font-size:.88rem;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
 #globalBar .gb-sections a:hover{color:var(--ac)}#globalBar .gb-sections a[aria-current=true]{background:var(--ac);color:#fff}
 @container (max-width:1000px){#globalBar .gb-toggle{display:inline-flex;margin-left:auto}#globalBar[data-stock] .gb-search{flex:1 1 100%;max-width:none;order:3}
@@ -69,7 +69,7 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 #globalBar .gb-sections ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:6px}
 #globalBar .gb-sections a{min-height:44px;padding:11px 12px;border:1px solid var(--line);background:var(--card)}#globalBar .gb-sections a[aria-current=true]{border-color:var(--ac)}}
 </style></head><body>
-<div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><div class="gb-search" id="globalSearchHost"></div><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav></div></div>
+<div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav><div class="gb-search" id="globalSearchHost"></div></div></div>
 <div class="w">
 <nav aria-label="Main"><b>StockLens India</b><a href="#demo">Demo</a><a href="#all">All scans</a><a href="#more">More data</a><a href="#news">News &amp; filings</a><a href="#stock">Stock page</a><a href="#tools">More tools</a><a href="#road">Roadmap</a><a href="#cost">Costs</a><a href="#money">Earning</a><a href="#pc">Pros &amp; cons</a><a href="#law">SEBI rules</a></nav>
 

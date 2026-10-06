@@ -25,6 +25,10 @@ eq((html.match(/<script/g) || []).length, 14, "fourteen script elements: thirtee
 const bodyAt = html.indexOf("<body>"), wAt = html.indexOf('<div class="w">'), barAt = html.indexOf('<div id="globalBar">');
 ok(barAt > bodyAt && barAt < wAt, "the global bar sits right after <body>, outside .w (so .detail-mode and .compare-mode, which hide .w's children, never hide it)");
 re(html, /<div class="gb-search" id="globalSearchHost"><\/div>/, "the bar has the host for the global search");
+{ const barHtml = html.slice(barAt, wAt), at = (t) => barHtml.indexOf(t);
+  ok(at('id="gbBrand"') > -1 && at('id="gbBrand"') < at('id="gbSections"') && at('id="gbSections"') < at('id="globalSearchHost"'), "order of the bar: brand, then the section links, then the search at the far end (reading and tab order match the picture)");
+  re(css, /#globalBar \.gb-search\{[^}]*margin-left:auto/, "the search is pushed to the extreme right of the bar");
+  re(css, /#globalBar \.gb-sections ul\{[^}]*justify-content:flex-start/, "the section links sit together, next to the brand"); }
 eq((html.match(/id="companySearch"/g) || []).length, 1, "the search input is written in exactly one place (the existing module): no second implementation");
 eq((html.match(/SLSearch\s*=/g) || []).length, 1, "one search module");
 no(navCode, /fundamentals\.json|company_profiles\.json|fetch\(|XMLHttpRequest|localStorage/, "the navigation reads no data, fetches nothing and stores nothing: it reuses the search module's own data");
