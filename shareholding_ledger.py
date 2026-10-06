@@ -71,6 +71,14 @@ def _quarters(stock):
     return [r for r in ((stock or {}).get("quarters") or []) if isinstance(r, dict)]
 
 
+def _holders_core(nh):
+    """What a named_holders record says, without the fetch date and without the presentation labels (category / label / section / version), which are
+    derived from each holder's stored XBRL axis and may be refined. Names, shares, percentages, axes and members must not change."""
+    out = {k: v for k, v in nh.items() if k not in ("fetched", "version")}
+    out["holders"] = [{k: v for k, v in h.items() if k not in ("category", "label", "section")} if isinstance(h, dict) else h for h in nh.get("holders") or []]
+    return out
+
+
 def no_loss_problems(old, new):
     """List of reasons the new ledger loses something the old one held (empty = nothing lost)."""
     if not (isinstance(old, dict) and isinstance(new, dict) and isinstance(old.get("stocks"), dict) and isinstance(new.get("stocks"), dict)):
@@ -109,7 +117,7 @@ def no_loss_problems(old, new):
                 if not isinstance(nnh, dict) or nnh.get("status") not in ("available", "none-disclosed", "not-in-filing"):
                     if same_version:
                         p.append(w + "named holders were lost")
-                elif same_version and {k: v for k, v in onh.items() if k != "fetched"} != {k: v for k, v in nnh.items() if k != "fetched"}:
+                elif same_version and _holders_core(onh) != _holders_core(nnh):
                     p.append(w + "named holders changed under the same NSE record id")
                 elif not same_version and not any(isinstance(rv, dict) and rv.get("named_holders") == onh for rv in added):
                     p.append(w + "named holders changed with a new NSE record id without a revision recording the old holders")

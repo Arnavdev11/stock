@@ -278,10 +278,11 @@ def parse_xbrl(data):
 # by reconciling the named shares with the aggregate category row); a name is never used to classify, and an axis that is not in the table is
 # counted and left out, never guessed. The filing lists institutional holders only where they hold 1% or more, so the named rows are
 # a PART of a category, never the whole of it; they are kept apart from the aggregate ownership and never added to it.
-NAMED_VERSION = 1
+NAMED_VERSION = 2   # 2: the foreign axes are split into FPI / FDI / other foreign (category 'Foreign Investor'); version-1 records are relabelled from their stored axis
 HOLDER_BASIS = ("Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. "
                 "The aggregate ownership categories are reported separately and are not the sum of these rows.")
-L_PROMOTER, L_MF, L_INS, L_DII, L_FII, L_PUBLIC, L_OTHER = "Promoter", "DII – Mutual Fund", "DII – Insurance", "DII – Other", "FII/FPI", "Public – Disclosed", "Other – Custodian / DR holder"
+L_PROMOTER, L_MF, L_INS, L_DII, L_PUBLIC, L_OTHER = "Promoter", "DII – Mutual Fund", "DII – Insurance", "DII – Other", "Public – Disclosed", "Other – Custodian / DR holder"
+C_FOREIGN, L_FPI, L_FDI, L_FOREIGN = "Foreign Investor", "FPI", "FDI", "Foreign – Other"   # the label follows the XBRL axis; FDI is not FPI
 # axis (lower case, without "DetailsOfSharesHeldBy" and "Axis") -> (section, category, investor label, the aggregate row to reconcile with)
 HOLDER_AXES = {
     "othersindianshareholders": ("promoter_group_indian", "Promoter", L_PROMOTER, "otherindianshareholders"),
@@ -291,16 +292,16 @@ HOLDER_AXES = {
     "providentfundsorpensionfunds": ("provident_pension_funds", "DII", L_DII, "providentfundsorpensionfunds"),
     "otherfinancialinstitutions": ("other_financial_institutions", "DII", L_DII, "otherfinancialinstitutions"),
     "otherinstitutionsdomestic": ("other_institutions_domestic", "DII", L_DII, "otherinstitutionsdomestic"),
-    "institutionsforeignportfolioinvestorone": ("fpi_category_one", "FII", L_FII, None),
-    "institutionsforeignportfolioinvestortwo": ("fpi_category_two", "FII", L_FII, None),
-    "foreigndirectinvestment": ("foreign_direct_investment", "FII", L_FII, "foreigndirectinvestment"),
-    "overseasdepositories": ("overseas_depositories", "FII", L_FII, "overseasdepositories"),
-    "otherinstitutionsforeign": ("other_institutions_foreign", "FII", L_FII, "otherinstitutionsforeign"),
+    "institutionsforeignportfolioinvestorone": ("fpi_category_one", C_FOREIGN, L_FPI, None),
+    "institutionsforeignportfolioinvestortwo": ("fpi_category_two", C_FOREIGN, L_FPI, None),
+    "foreigndirectinvestment": ("foreign_direct_investment", C_FOREIGN, L_FDI, "foreigndirectinvestment"),
+    "overseasdepositories": ("overseas_depositories", C_FOREIGN, L_FOREIGN, "overseasdepositories"),
+    "otherinstitutionsforeign": ("other_institutions_foreign", C_FOREIGN, L_FOREIGN, "otherinstitutionsforeign"),
     "custodianordrholder": ("custodian_dr_holder", "Other", L_OTHER, "custodianordrholder"),
     # Verified by the live inventory (named shares reconcile EXACTLY with the aggregate row of the promoter table, or the axis is the FPI row of the old format):
     "detailssharesheldbyindividualsorhuf": ("promoter_individuals", "Promoter", L_PROMOTER, "individualsorhinduundividedfamily"),
     "centralgovernmentorstategovernments": ("promoter_central_state_government", "Promoter", L_PROMOTER, "centralgovernmentorstategovernments"),
-    "institutionsforeignportfolioinvestor": ("fpi_old_format", "FII", L_FII, "institutionsforeignportfolioinvestor"),
+    "institutionsforeignportfolioinvestor": ("fpi_old_format", C_FOREIGN, L_FPI, "institutionsforeignportfolioinvestor"),
 }
 # NOT mapped on purpose (they stay counted in unmapped_axes and are never shown): OtherNonInstitutions (category rows such as Bodies Corporate / HUF / NRI, not holders),
 # OtherInstitutions in the old format (rows are named "Other"), SignificantBeneficialOwners (they repeat holdings reported elsewhere).
@@ -423,6 +424,19 @@ def build_named_holders(data, report_date, unit, rows, day):
     st = nh_state(status, None if holders else "the filing lists no individually disclosed holder with shares for %s" % report_date, day)
     st.update(holders=holders, excluded=excluded, unmapped_axes=dict(sorted(unmapped.items())), section_totals=totals, flags=flags)
     return st
+
+
+def relabel_named(nh):
+    """Version-1 records carry the same holders under the older foreign label. The category / label / section come from the holder's stored XBRL axis (never its name);
+    names, shares, percentages, axes and members are not touched. Returns True if anything changed."""
+    if not isinstance(nh, dict) or nh.get("version", 1) >= NAMED_VERSION:
+        return False
+    for h in nh.get("holders") or []:
+        m = HOLDER_AXES.get(_axis_key(h.get("axis")))
+        if m:
+            h["section"], h["category"], h["label"] = m[0], m[1], m[2]
+    nh["version"] = NAMED_VERSION
+    return True
 
 
 def nh_core(nh):
@@ -823,7 +837,7 @@ def process_stock(nse, ledger, symbol, day, budget, refresh_all=False):
         rid = str(rec.get("recordId")) if rec.get("recordId") not in (None, "") else None
         same_version = bool(old and old.get("status") == "available" and (old.get("source") or {}).get("record_id") == rid)
         if same_version and not refresh_all and _nh_ok(old.get("named_holders")):
-            events[q] = "unchanged"
+            events[q] = "relabelled" if relabel_named(old["named_holders"]) else "unchanged"
             continue
         listed = rec.get("xbrl") if isinstance(rec.get("xbrl"), str) and rec.get("xbrl", "").startswith("https://") else None
         if budget[0] <= 0:
@@ -950,7 +964,7 @@ def validate_named(nh, status):
     if status != "available" and nh.get("status") == "available":
         p.append("holders on an unavailable quarter")
     for h in hs:
-        if not isinstance(h, dict) or not h.get("holder_name") or h.get("label") not in (L_PROMOTER, L_MF, L_INS, L_DII, L_FII, L_PUBLIC, L_OTHER):
+        if not isinstance(h, dict) or not h.get("holder_name") or h.get("label") not in (L_PROMOTER, L_MF, L_INS, L_DII, L_FPI, L_FDI, L_FOREIGN, L_PUBLIC, L_OTHER):
             p.append("holder without a name or a known label")
         elif not (h.get("shares") is None or (isnum(h["shares"]) and h["shares"] > 0)):
             p.append("%s: shares must be positive" % h["holder_name"])

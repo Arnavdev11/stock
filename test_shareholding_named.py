@@ -63,8 +63,9 @@ class Extract(unittest.TestCase):
         self.assertEqual(lab["Alpha Insurance Corp"], su.L_MF)
         self.assertEqual(lab["Beta Mutual Fund"], su.L_INS)
         self.assertEqual(lab["Gamma Public Ltd"], su.L_PROMOTER)
-        self.assertEqual(lab["Delta Promoter Holdings"], su.L_FII)
-        self.assertEqual(lab["Epsilon"], su.L_FII)
+        self.assertEqual(lab["Delta Promoter Holdings"], su.L_FDI)      # FDI is not FPI
+        self.assertEqual(lab["Epsilon"], su.L_FOREIGN)
+        self.assertEqual({h["category"] for h in nh["holders"] if h["label"] in (su.L_FDI, su.L_FOREIGN)}, {su.C_FOREIGN})
         self.assertEqual(lab["Zeta"], su.L_DII)
 
     def test_axes_verified_by_the_live_inventory(self):
@@ -76,9 +77,13 @@ class Extract(unittest.TestCase):
         lab = {h["holder_name"]: (h["label"], h["section"]) for h in nh["holders"]}
         self.assertEqual(lab["Person One"], (su.L_PROMOTER, "promoter_individuals"))
         self.assertEqual(lab["Government Holder"], (su.L_PROMOTER, "promoter_central_state_government"))
-        self.assertEqual(lab["Old Fund"], (su.L_FII, "fpi_old_format"))
+        self.assertEqual(lab["Old Fund"], (su.L_FPI, "fpi_old_format"))
         self.assertEqual(sorted(lab), ["Government Holder", "Old Fund", "Person One"])      # category rows and placeholder-named rows are not holders
         self.assertEqual(sorted(nh["unmapped_axes"]), ["DetailsOfSharesHeldByOtherInstitutionsAxis", "DetailsOfSharesHeldByOtherNonInstitutionsAxis"])
+
+    def test_fpi_axes_are_fpi(self):
+        nh = named([H("DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis", 15, "A", 10, 0.01), H("DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorTwoAxis", 15, "B", 10, 0.01)])
+        self.assertEqual({(h["category"], h["label"]) for h in nh["holders"]}, {(su.C_FOREIGN, su.L_FPI)})
 
     def test_percent_is_the_reported_value_converted_by_unit(self):
         nh = named([H("DetailsOfSharesHeldByInsuranceCompaniesAxis", 15, "A", 55200, 0.0552)])
@@ -268,6 +273,17 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(q2["named_holders"]["status"], "unavailable")
         self.assertEqual({k: v for k, v in q2.items() if k != "named_holders"}, before)
 
+    def test_refreshed_same_version_keeps_the_holders_already_read(self):
+        rec, files = fake(new_rows, holders=self.HOLD)
+        led, _ = self.run_stock(FakeNse({"ITC": [rec]}, files))
+        old = led["stocks"]["ITC"]["quarters"][0]
+        new = copy.deepcopy(old)
+        new["source"]["broadcast_date"] = "2026-02-01"                     # same values, same record id: only the explanation changed
+        new["named_holders"] = su.nh_state("unavailable", "x", "d")
+        merged, ev = su.merge_record(old, new, "d")
+        self.assertEqual(ev, "refreshed")
+        self.assertEqual(merged["named_holders"]["status"], "available")
+
     def test_old_format_aggregate_with_holders(self):
         data = with_holders(make_xbrl(old_rows(), REPORT), self.HOLD)
         rec = index_rec("31-DEC-2025", "5")
@@ -277,8 +293,49 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(q["named_holders"]["status"], "available")
 
 
+class Relabel(unittest.TestCase):
+    def v1(self):
+        nh = named([H("DetailsOfSharesHeldByForeignDirectInvestmentAxis", 15, "Holder X", 100, 0.1), H("DetailsOfSharesHeldByInsuranceCompaniesAxis", 15, "Holder Y", 50, 0.05)])
+        nh["version"] = 1
+        for h in nh["holders"]:
+            if h["category"] == su.C_FOREIGN:
+                h["category"], h["label"] = "FII", "FII/FPI"
+        return nh
+
+    def test_version_one_records_are_relabelled_from_the_axis_only(self):
+        nh = self.v1()
+        before = [{k: v for k, v in h.items() if k not in ("category", "label")} for h in nh["holders"]]
+        self.assertTrue(su.relabel_named(nh))
+        lab = {h["holder_name"]: (h["category"], h["label"]) for h in nh["holders"]}
+        self.assertEqual(lab["Holder X"], (su.C_FOREIGN, su.L_FDI))
+        self.assertEqual(lab["Holder Y"], ("DII", su.L_INS))
+        self.assertEqual([{k: v for k, v in h.items() if k not in ("category", "label")} for h in nh["holders"]], before)
+        self.assertEqual(nh["version"], su.NAMED_VERSION)
+        self.assertFalse(su.relabel_named(nh))
+
+    def test_the_ledger_accepts_a_relabel_but_not_a_changed_holder(self):
+        old = NoLoss().doc(self.v1())
+        new = copy.deepcopy(old)
+        su.relabel_named(new["stocks"]["ITC"]["quarters"][0]["named_holders"])
+        self.assertEqual(sl.no_loss_problems(old, new), [])
+        new["stocks"]["ITC"]["quarters"][0]["named_holders"]["holders"][0]["shares"] += 1
+        self.assertTrue(sl.no_loss_problems(old, new))
+
+    def test_process_stock_relabels_without_downloading(self):
+        rec, files = fake(new_rows, holders=[H("DetailsOfSharesHeldByForeignDirectInvestmentAxis", 15, "Holder X", 100, 10.0)])
+        led = sl.new_ledger()
+        su.process_stock(FakeNse({"ITC": [rec]}, files), led, "ITC", "d", [100])
+        q = led["stocks"]["ITC"]["quarters"][0]
+        q["named_holders"]["version"] = 1
+        q["named_holders"]["holders"][0].update(category="FII", label="FII/FPI")
+        nse = FakeNse({"ITC": [rec]}, files)
+        ev, _, _ = su.process_stock(nse, led, "ITC", "d", [100])
+        self.assertEqual((ev["2025-12-31"], nse.downloads), ("relabelled", 0))
+        self.assertEqual(q["named_holders"]["holders"][0]["label"], su.L_FDI)
+
+
 class NoLoss(unittest.TestCase):
-    def doc(self, nh, rid="1"):
+    def doc(self, nh=None, rid="1"):
         return {"stocks": {"ITC": {"quarters": [{"quarter_end": REPORT, "status": "available", "source": {"record_id": rid, "xbrl_url": "https://x"}, "values": {}, "revisions": [], "named_holders": nh}]}}}
 
     def test_rules(self):

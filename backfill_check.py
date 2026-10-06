@@ -13,8 +13,11 @@ for sym, ost in old["stocks"].items():
         b = {k: v for k, v in n.items() if k != "named_holders"}
         if a != b:
             bad.append("%s %s: a field other than named_holders changed: %s" % (sym, o["quarter_end"], [k for k in set(a) | set(b) if a.get(k) != b.get(k)]))
-        if o.get("named_holders") is not None and o["named_holders"] != n.get("named_holders"):
+        if o.get("named_holders") is not None and sl._holders_core(o["named_holders"]) != sl._holders_core(n["named_holders"]):
             bad.append("%s %s: existing named_holders changed" % (sym, o["quarter_end"]))
+        for h in (n.get("named_holders") or {}).get("holders", []):
+            if h["label"] in ("FII/FPI",) or h["category"] == "FII" or (h["axis"].endswith("ForeignDirectInvestmentAxis") != (h["label"] == "FDI")):
+                bad.append("%s %s: wrong foreign label %s" % (sym, o["quarter_end"], h["holder_name"]))
         nh = n.get("named_holders") or {}
         row.append("%s=%s%s" % (o["quarter_end"][2:7], len(nh.get("holders") or []), "" if nh.get("status") == "available" else "(%s)" % (nh.get("status") or "none")[:5]))
         if nh.get("status") != "available":
