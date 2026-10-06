@@ -2283,6 +2283,30 @@ function chartHtml(m){
   var cap='<p class="note sh-p" data-sh="chartnote">Quarterly, '+esc(qLabel(slots[0].q))+' to '+esc(qLabel(slots[n-1].q))+'. Each point is a stored value; a line stops where a quarter has no value and is never joined across it'+(gaps?'. Dotted vertical lines mark quarters with no data on file.':'.')+'</p>';
   return'<div class="sh-chart">'+g+'</div>'+leg+cap}
 
+/* ---------- Major Disclosed Shareholders (Phase 5H.6): only the stock-level major_holders of out/shareholding.json, in the order the data layer supplies it ---------- */
+var MH_NONE="Major shareholder names are unavailable for this filing.";
+var MH_NOTE="Only individually disclosed holders are shown. This is not a complete ownership list. Disclosure coverage varies by filing.";
+var NF=typeof Intl!=="undefined"&&Intl.NumberFormat?new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}):null;
+function fmtShares(v){return isn(v)&&v>0?(NF?NF.format(v):String(v)):"-"}
+function holderCat(h){                                                       /* the data layer's category and label, exactly; never derived from the name */
+  var c=str(h.category),l=str(h.label);
+  if(c==="Foreign Investor"&&l)return c+" – "+l.replace(/^Foreign\s+[–-]\s+/,"");
+  return l||c||"-"}
+function majorOf(doc,sym){
+  var st=doc&&doc.stocks&&typeof doc.stocks==="object"&&Object.prototype.hasOwnProperty.call(doc.stocks,sym)?doc.stocks[sym]:null;
+  var mj=st&&typeof st==="object"?obj(st.major_holders):{};
+  var list=mj.status==="available"&&Array.isArray(mj.holders)?mj.holders.filter(function(h){return h&&typeof h==="object"&&str(h.holder_name)}).slice(0,10):[];
+  return{q:isQuarterEnd(mj.quarter_end)?mj.quarter_end:null,holders:list}}
+function majorHtml(sym,doc){
+  var mj=majorOf(doc,sym);
+  var h='<div data-sh="major"><h5 class="sh-h">Major Disclosed Shareholders</h5><p class="note sh-p" data-mh="sub">Latest quarter — individually disclosed holders only</p>';
+  if(!mj.holders.length)return h+'<p class="note sh-p" data-mh="none">'+esc(MH_NONE)+'</p></div>';
+  if(mj.q)h+='<p class="note sh-p" data-mh="asof">As of: '+esc(qLabel(mj.q))+'</p>';
+  h+='<table class="mh" data-mh="table" role="table"><thead role="rowgroup"><tr role="row"><th>Holder</th><th>Category</th><th class="n">Holding</th><th class="n">Shares</th></tr></thead><tbody role="rowgroup">';
+  mj.holders.forEach(function(x){
+    h+='<tr role="row" data-mh="row"><td role="cell" class="mh-h">'+esc(str(x.holder_name))+'</td><td role="cell" class="mh-c">'+esc(holderCat(x))+'</td><td role="cell" class="n mh-p">'+esc(fmtPct(x.percentage))+'</td><td role="cell" class="n mh-s">'+esc(fmtShares(x.shares))+'</td></tr>'});
+  return h+'</tbody></table><p class="note sh-p mh-note" data-mh="note">'+esc(MH_NOTE)+'</p></div>'}
+
 /* ---------- the full section ---------- */
 function latestHtml(m){
   var h='<h5 class="sh-h">Latest ownership snapshot</h5>';
@@ -2308,6 +2332,7 @@ function sectionHtml(sym,doc){
   if(m.state==="none")return w(head+'<p class="note sh-p">No shareholding data is on file for '+esc(sym)+'.</p>');
   var h=head+'<p class="note sh-p">Percent of shares, as reported to NSE'+(m.asOf?" · Data updated: "+esc(m.asOf):"")+' · Source: NSE / XBRL. "-" means the value is not available; nothing is estimated, carried forward or interpolated.</p>';
   h+=latestHtml(m);
+  h+=majorHtml(sym,doc);
   h+='<h5 class="sh-h">Five-Year Trend</h5>'+chartHtml(m);
   h+=tableHtml(m);
   var nt=['Promoters = promoter and promoter group. FII = foreign institutions / foreign portfolio investors. DII (Other) = domestic institutions other than mutual funds. Mutual Funds = mutual funds and UTI. Public / Retail & Other = non-institutions and governments, plus employee benefit trusts where the filing reports them separately.',
@@ -2329,6 +2354,14 @@ var STYLE='#detailShareholding .sh-p{padding:0 0 6px;margin:0;overflow-wrap:anyw
  +'#detailShareholding .sh-src{margin:6px 0 0;font-size:.78rem;color:var(--mute)}#detailShareholding .sh-src summary{cursor:pointer}'
  +'#detailShareholding .sh-src ul{margin:4px 0;padding-left:18px}#detailShareholding .sh-src p{margin:4px 0;overflow-wrap:anywhere}#detailShareholding .sh-src a{overflow-wrap:anywhere;word-break:break-all}'
  +'#detailShareholding .sh-chart{max-width:480px}'
+ +'#detailShareholding table.mh{width:100%;min-width:0;table-layout:fixed}#detailShareholding table.mh th:nth-child(1){width:42%}#detailShareholding table.mh th:nth-child(2){width:26%}#detailShareholding table.mh th:nth-child(3){width:14%}#detailShareholding table.mh th:nth-child(4){width:18%}'
+ +'#detailShareholding table.mh th,#detailShareholding table.mh td{overflow-wrap:anywhere;word-break:break-word;min-width:0;vertical-align:top;text-align:left}#detailShareholding table.mh th.n,#detailShareholding table.mh td.n{text-align:right;font-variant-numeric:tabular-nums}'
+ +'#detailShareholding .mh-note{margin-top:6px;font-size:.8rem}'
+ +'#detailShareholding [data-sh="major"]{container-type:inline-size}'
+ +'@container (max-width:560px){#detailShareholding table.mh,#detailShareholding table.mh tbody,#detailShareholding table.mh tr,#detailShareholding table.mh td{display:block;width:100%;max-width:100%;box-sizing:border-box}'
+ +'#detailShareholding table.mh thead{display:none}#detailShareholding table.mh tr{padding:8px 0;border-bottom:1px solid var(--line)}#detailShareholding table.mh td{padding:1px 0;border:0;text-align:left}'
+ +'#detailShareholding table.mh td.n{text-align:left}#detailShareholding table.mh td.mh-h{font-weight:600}#detailShareholding table.mh td.mh-c,#detailShareholding table.mh td.mh-p{display:inline;width:auto}#detailShareholding table.mh td.mh-c::after{content:" · ";color:var(--mute)}'
+ +'#detailShareholding table.mh td.mh-p{font-weight:600}#detailShareholding table.mh td.mh-s{color:var(--mute)}#detailShareholding table.mh td.mh-s::before{content:"Shares: "}}'
  +'#detailShareholding .sh-leg{list-style:none;display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;padding:0;font-size:.82rem}'
  +'#detailShareholding .sh-leg li{display:flex;align-items:center;gap:6px;min-width:0}#detailShareholding .sh-leg span{overflow-wrap:anywhere}'
  +'#detailShareholding table{min-width:440px}#detailShareholding th,#detailShareholding td{padding:8px 8px;font-size:.85rem}'
