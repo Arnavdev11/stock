@@ -17,6 +17,9 @@ name: Market data (Phase 5K) - derive, validate, publish
 
 "on":
   workflow_dispatch: {}
+  push:                                   # TEMPORARY - registers this workflow and runs it once on phase1; remove after the real-data validation
+    branches: [phase1]
+    paths: [".github/workflows/market_data.yml"]
 
 permissions:
   contents: read
