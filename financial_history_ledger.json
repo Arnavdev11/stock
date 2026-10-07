@@ -465,7 +465,7 @@
       ]
      },
      "first_seen": "2026-10-04",
-     "last_confirmed": "2026-10-06",
+     "last_confirmed": "2026-10-07",
      "revisions": [],
      "notes": [
       "EPS is reported as ONE combined basic-and-diluted line; it is stored in eps_basic and eps_diluted is left null (no separate diluted figure exists in the statement).",
@@ -1691,7 +1691,7 @@
       ]
      },
      "first_seen": "2026-10-04",
-     "last_confirmed": "2026-10-06",
+     "last_confirmed": "2026-10-07",
      "revisions": [],
      "notes": [
       "PRESENTATION DIFFERENCE, NOT A CHANGE TO THE UNDERLYING FIGURES: the FY2022 Annual Report (consolidated Statement of Profit and Loss) adds the share of profit of associates and joint ventures (line V, 17.48 crore) BEFORE profit before tax, so 'Profit before tax (VI + VII)' = 20,740.47 and 'Profit for the year' = 15,503.13 both include that share.",
@@ -2318,5 +2318,5 @@
    }
   }
  },
- "updated": "2026-10-06"
+ "updated": "2026-10-07"
 }
