@@ -1,0 +1,31 @@
+name: Diagnostic - raw cache duplicates (TEMPORARY, read-only)
+
+# TEMPORARY, read-only: restores the saved NSE cache (it does not save one), prints a report, writes no data and publishes nothing.
+# Registers itself via the push trigger below and runs once on phase1. Delete this file after the diagnostic.
+"on":
+  workflow_dispatch: {}
+  push:
+    branches: [phase1]
+    paths: [".github/workflows/diag_cache_5k.yml", "diag_cache_5k.py"]
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pandas requests
+      - name: Restore saved data (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-diag-${{ github.run_id }}
+          restore-keys: nse-data-
+      - run: python diag_cache_5k.py
