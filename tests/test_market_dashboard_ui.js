@@ -38,11 +38,11 @@ no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /Strong Buy|Bearish|Bullish|Target pri
 global.window = {}; global.document = { getElementById: () => null, addEventListener() {} }; global.fetch = () => { throw new Error("no fetch in this test"); };
 (0, eval)(code);
 const M = window.SLMarket;
-eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "breadth", "cleanCandles", "events", "fiidii", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "perfOf", "relative", "sectionHtml", "shockers", "sig3", "tracked", "vol"], "the public surface is small and fixed");
+eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "breadth", "cleanCandles", "events", "fiidii", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "perfOf", "relative", "sectionHtml", "sectorsOf", "shockers", "sig3", "stocksOf", "tracked", "vol"], "the public surface is small and fixed");
 eq(M.IDS, SECTIONS.map((s) => s[0]), "the module draws exactly the sections in the page");
 eq(M.WINDOWS.map((w) => w.label), ["1D", "1W", "30D", "90D"], "the windows are 1D, 1W, 30D, 90D"); eq([M.LARGE_MOVE, M.VOL_MULT, M.HV_GAIN], [5, 2, 3], "the thresholds");
 no(code, /Upstox|api\.|access_token|Bearer|apikey|api_key|secret|localStorage|sessionStorage|XMLHttpRequest|WebSocket|eval\(|new Function/i, "no API, token, storage, socket or dynamic code in the module");
-eq([...code.matchAll(/getJson\("([^"]*)"\)/g)].map((m) => m[1]), ["out/scans.json", "out/historical.json", "out/fiidii_history.json"], "it reads only the three files the site already publishes");
+eq([...code.matchAll(/getJson\("([^"]*)"\)/g)].map((m) => m[1]), ["out/market_sector_stocks.json", "out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json"], "it reads the three files the site already publishes, plus the two sector files that exist on the site only when sector display is approved (otherwise the fetch fails and the blocks say Sector data unavailable)");
 no(html, /Bearer\s|access_token|UPSTOX_[A-Z_]+\s*=|api\.upstox\.com|Authorization/i, "no token or Upstox call anywhere in the page");
 
 // --- perfOf: windows, calendar days, gaps ---
@@ -120,8 +120,8 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
 { const h = draw("mk-happening");
   ok(hrefs(h).length >= 8, "the feed has clickable stocks"); for (const [href, s] of hrefs(h)) eq(href, "#stock=" + encodeURIComponent(s), "feed link routes to the Stock Detail: " + s);
   re(h, /Rules: new 52-week high; move of 5% or more; volume 2x the 20-day average or more/, "the rules are written on the feed"); re(draw("mk-happening", empty), /Data unavailable/, "no scan: unavailable"); }
-{ for (const id of ["mk-sectors", "mk-sectorlead", "mk-ath"]) { const h = draw(id); re(h, /Data unavailable/, id + " says Data unavailable"); re(h, /needs /, id + " says what is missing"); no(h, /<table|class="up"|class="dn"|[+-]\d+\.\d\d%/, id + " shows no invented numbers"); }
-  re(draw("mk-sectors"), /needs daily prices for all NSE stocks/, "sectors: what a future data phase needs"); }
+{ for (const id of ["mk-ath"]) { const h = draw(id); re(h, /Data unavailable/, id + " says Data unavailable"); re(h, /needs /, id + " says what is missing"); no(h, /<table|class="up"|class="dn"|[+-]\d+\.\d\d%/, id + " shows no invented numbers"); }
+  for (const id of ["mk-sectors", "mk-sectorlead"]) { const h = draw(id); eq(h, '<p class="mk-na">Sector data unavailable</p>', id + " says exactly Sector data unavailable while no approved sector file is loaded"); } }
 { const h = draw("mk-movers"), a = h.split("Top Losers")[0], b = h.split("Top Losers")[1];
   eq(hrefs(a).map((x) => x[1]), ["G3", "G1", "G2"], "Top Gainers rows"); eq(hrefs(b).map((x) => x[1]), ["L1", "L3", "L2"], "Top Losers rows");
   for (const l of ["Stock", "Price", "Change", "Vol vs avg"]) re(h, new RegExp("<th[^>]*>" + l + "</th>"), "column " + l);

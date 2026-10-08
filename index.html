@@ -84,7 +84,7 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 .mk-t th{font-size:.72rem;text-transform:none;color:var(--mute);font-weight:600}
 .mk-t th.n,.mk-t td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.mk-t td.s{overflow-wrap:anywhere}
 .mk-t tr:last-child td{border-bottom:0}
-.mk-sym{color:var(--ac);font-weight:700;text-decoration:none}.mk-sym:hover{text-decoration:underline}
+.mk-sym{color:var(--ac);font-weight:700;text-decoration:none}button.mk-sym{background:none;border:0;padding:0;font:inherit;font-weight:700;cursor:pointer;text-align:left}.mk-sym:hover{text-decoration:underline}
 @container (max-width:330px){.mk-t .c3{display:none}}
 .mk-idx-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
 .mk-idx{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;container-type:inline-size;min-width:0}
@@ -2537,7 +2537,39 @@ S_["mk-happening"]=function(m){
   if(!m.events.length)return na("no events in the latest scan");
   return'<ul class="mk-feed">'+m.events.slice(0,24).map(function(e){return'<li><span class="mk-k">'+esc(e.type)+'</span>'+link(e.symbol)+'<span class="mk-ft">'+esc(e.text)+'</span></li>'}).join("")+'</ul>'
     +'<p class="mk-sub">Rules: new 52-week high; move of '+LARGE_MOVE+'% or more; volume '+VOL_MULT+'x the 20-day average or more; 50/200-day average cross. From the latest NSE end-of-day scan.</p>'}
-S_["mk-sectors"]=function(){return na(NEED_ALL+" (sector performance is not in the current data)")}
+/* Sector blocks. They draw ONLY a document that says public_display_approved===true and available===true (set by the gated sector_publish.py);
+   anything else, including a missing file, shows the plain text below. No reason, no partial figures. */
+function sna(){return'<p class="mk-na">Sector data unavailable</p>'}
+function sectorsOf(D){
+  if(!D||typeof D!=="object"||D.kind!=="sectors"||D.public_display_approved!==true||D.available!==true||!Array.isArray(D.sectors)||!isDay(D.as_of))return null;
+  var ok=true,rows=[];
+  D.sectors.forEach(function(x){
+    if(!x||typeof x!=="object"||typeof x.key!=="string"||typeof x.label!=="string"){ok=false;return}
+    if(x.eligible!==true)return;
+    var r={key:x.key,label:x.label,count:num(x.stock_count),adv:num(x.advances),dec:num(x.declines),unch:num(x.unchanged),breadth:num(x.breadth_pct),med:num(x.median_1d_pct),mean:num(x.mean_1d_pct),volume:num(x.volume)};
+    if(r.count===null||r.adv===null||r.dec===null||r.unch===null||r.med===null){ok=false;return}
+    rows.push(r)});
+  if(!ok||!rows.length)return null;
+  function pick(L){return(Array.isArray(L)?L:[]).filter(function(x){return x&&typeof x.key==="string"&&typeof x.label==="string"&&num(x.median_1d_pct)!==null}).slice(0,5).map(function(x){return{key:x.key,label:x.label,med:num(x.median_1d_pct),count:num(x.stock_count)}})}
+  rows.sort(function(a,b){return a.label<b.label?-1:a.label>b.label?1:0});
+  return{asOf:D.as_of,rows:rows,leaders:pick(D.leaders),laggards:pick(D.laggards)}}
+function stocksOf(D,key){
+  if(!D||typeof D!=="object"||D.kind!=="sector_stocks"||D.public_display_approved!==true||!D.sectors||typeof D.sectors!=="object")return null;
+  var v=D.sectors[key];if(!v||!Array.isArray(v.members))return null;
+  var out=v.members.filter(function(x){return x&&typeof x.symbol==="string"&&num(x.change_pct)!==null}).map(function(x){return{symbol:x.symbol,close:num(x.close),chg:num(x.change_pct)}});
+  out.sort(function(a,b){return b.chg-a.chg||(a.symbol<b.symbol?-1:1)});return out}
+function sectorStocksHtml(m,st){
+  if(!st.sector)return"";
+  var list=m.sectorStocks?stocksOf(m.sectorStocks,st.sector):null;
+  if(!list||!list.length)return'<div class="mk-card">'+sna()+'</div>';
+  var row=function(r){return[link(r.symbol),fmt(r.close),chg(r.chg)]},head=[["Stock","s"],["Close","n"],["Change","n"]];
+  return'<div class="mk-2">'+card("Top 5 in sector","1-day change",table(head,list.slice(0,5).map(row)))+card("Bottom 5 in sector","1-day change",table(head,list.slice(-5).reverse().map(row)))+'</div>'}
+S_["mk-sectors"]=function(m,st){
+  var x=m.sec;if(!x)return sna();
+  var h='<p class="mk-status">Sector performance, end of day, <b>'+esc(x.asOf)+'</b> · equal-weight median of each stock\'s 1-day change</p>';
+  h+='<div class="mk-card">'+table([["Sector","s"],["Stocks","n"],["Median 1D","n"],["Advances","n c3"],["Declines","n c3"],["Breadth","n c3"]],
+    x.rows.map(function(r){return['<button type="button" class="mk-sym" data-mk-sector="'+esc(r.key)+'">'+esc(r.label)+'</button>',fmt(r.count,0),chg(r.med),fmt(r.adv,0),fmt(r.dec,0),r.breadth===null?"-":fmt(r.breadth,1)+"%"]}))+'</div>';
+  return h+sectorStocksHtml(m,st)}
 S_["mk-movers"]=function(m){
   return'<div class="mk-2">'+moversCard("Top Gainers",m.gainers,"Latest close vs previous close","no gainers in the latest scan")+moversCard("Top Losers",m.losers,"Latest close vs previous close","no losers in the latest scan")+'</div>'}
 S_["mk-trending"]=function(m,st){
@@ -2568,7 +2600,10 @@ S_["mk-fiidii"]=function(m){
   var f=m.fiidii;if(!f)return na("FII/DII figures are not loaded");
   function row(n,v){return v?'<tr><td class="s">'+n+'</td><td class="n c3">'+fmt(v.buy,0)+'</td><td class="n c3">'+fmt(v.sell,0)+'</td><td class="n"><span class="'+cls(v.net)+'">'+(v.net>0?"+":"")+fmt(v.net,0)+'</span></td></tr>':'<tr><td class="s">'+n+'</td><td class="n c3">-</td><td class="n c3">-</td><td class="n">-</td></tr>'}
   return'<p class="mk-status">NSE figures for <b>'+esc(f.date)+'</b> · end of day, ₹ crore</p><div class="mk-card"><table class="mk-t"><thead><tr>'+th("","s")+th("Buy","n c3")+th("Sell","n c3")+th("Net","n")+'</tr></thead><tbody>'+row("FII / FPI",f.fii)+row("DII",f.dii)+'</tbody></table></div>'}
-S_["mk-sectorlead"]=function(){return'<div class="mk-2">'+card("Sector Leaders","",na(NEED_ALL))+card("Sector Laggards","",na(NEED_ALL))+'</div>'}
+S_["mk-sectorlead"]=function(m){
+  var x=m.sec;if(!x)return sna();
+  var t=function(L){return L.length?table([["Sector","s"],["Median 1D","n"],["Stocks","n c3"]],L.map(function(r){return[esc(r.label),chg(r.med),fmt(r.count,0)]})):sna()};
+  return'<div class="mk-2">'+card("Sector Leaders","Top 5 by median 1-day change",t(x.leaders))+card("Sector Laggards","Bottom 5 by median 1-day change",t(x.laggards))+'</div>'}
 S_["mk-swing"]=function(m,st){
   var k=st.swing||"d1",h='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="swing">'+WINDOWS.map(function(w){return'<button type="button" role="tab" data-tab="'+w.key+'" aria-selected="'+(w.key===k)+'">'+w.label+'</button>'}).join("")+'</div>',L=labelOf(k),cards=[];
   if(k==="d1"){
@@ -2587,8 +2622,8 @@ S_["mk-swing"]=function(m,st){
   return h+'<div class="mk-g">'+cards.join("")+'</div>'}
 
 /* ---------- the model: everything above, computed once from the three files ---------- */
-function model(S,H,F){
-  var tr=tracked(H),m={S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
+function model(S,H,F,X,Y){
+  var tr=tracked(H),m={sec:sectorsOf(X),sectorStocks:Y||null,S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
   WINDOWS.forEach(function(w){m.rel[w.key]=relative(H,w.key)});return m}
 var IDS=["mk-today","mk-breadth","mk-happening","mk-sectors","mk-movers","mk-trending","mk-52w","mk-ath","mk-volume","mk-hvgain","mk-hvloss","mk-relative","mk-fiidii","mk-sectorlead","mk-swing"];
 function sectionHtml(id,m,st){try{return S_[id](m,st||{})}catch(e){return na("this block could not be drawn")}}
@@ -2603,9 +2638,14 @@ function init(){
     var b=e.target&&e.target.closest&&e.target.closest("[data-mk-tabs] [data-tab]");if(!b||!M)return;
     var sec=b.closest("section"),grp=b.parentNode.getAttribute("data-mk-tabs");STATE[grp]=b.getAttribute("data-tab");
     if(sec&&sec.id)paint(sec.id)});
-  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json")]).then(function(r){M=model(r[0],r[1],r[2]);paintAll()})}
+  document.addEventListener("click",function(e){
+    var b=e.target&&e.target.closest&&e.target.closest("[data-mk-sector]");if(!b||!M||!M.sec)return;
+    STATE.sector=b.getAttribute("data-mk-sector");
+    if(M.sectorStocks!==null){paint("mk-sectors");return}
+    getJson("out/market_sector_stocks.json").then(function(d){M.sectorStocks=d||false;paint("mk-sectors")})});
+  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json"),getJson("out/market_sectors.json")]).then(function(r){M=model(r[0],r[1],r[2],r[3]);paintAll()})}
 if(typeof document!=="undefined"&&document.getElementById)init();
-window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
+window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
 })();
 </script>
 <script>
