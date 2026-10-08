@@ -9,7 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: "Optional comma list for a small first run, e.g. TCS. Empty = all 10 development stocks."
+        description: "Optional comma list for a small first run, e.g. TCS. Empty = the whole configured universe."
+        required: false
+        default: ""
+      max_calls:
+        description: "Upstox call budget for this run (about 2 s per call). Empty = 120. A NIFTY 500 fill is spread over several runs."
         required: false
         default: ""
       create_data_branch:
@@ -29,6 +33,7 @@ concurrency:
 jobs:
   history:
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     outputs:
       ledger_ready: ${{ steps.ledgerout.outputs.ready }}
     steps:
@@ -62,6 +67,16 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      - name: Select the coverage universe
+        run: |
+          # Stage 1 = NIFTY 500, Stage 2 = all NSE EQ: the only difference is which universe.json sits on the data branch (built by the "Build coverage universe" workflow).
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
+
       - name: Restore saved data
         uses: actions/cache@v4
         with:
@@ -75,6 +90,7 @@ jobs:
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           HISTORY_SYMBOLS: ${{ inputs.symbols }}
+          HISTORY_MAX_CALLS: ${{ inputs.max_calls }}
           FINANCIAL_HISTORY_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
           FINANCIAL_HISTORY_LEDGER_OUT: ledger-out/financial_history_ledger.json
         run: python financial_history_updater.py

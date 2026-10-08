@@ -12,7 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: "Optional comma list for a small run, e.g. ITC. Empty = all 10 development stocks."
+        description: "Optional comma list for a small run, e.g. ITC. Empty = the whole configured universe (stalest stocks first)."
+        required: false
+        default: ""
+      max_stocks:
+        description: "How many stocks this run reads (about 1.5 s per stock for the filing index, plus the downloads). Empty = all of them."
+        required: false
+        default: ""
+      max_downloads:
+        description: "How many XBRL filings this run may download (about 1.5 s each). Empty = 320."
         required: false
         default: ""
       init_ledger:
@@ -37,6 +45,7 @@ concurrency:
 jobs:
   shareholding:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     outputs:
       ledger_ready: ${{ steps.ledgerout.outputs.ready }}
     steps:
@@ -69,6 +78,16 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      - name: Select the coverage universe
+        run: |
+          # Stage 1 = NIFTY 500, Stage 2 = all NSE EQ: the only difference is which universe.json sits on the data branch (built by the "Build coverage universe" workflow).
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
+
       - name: Restore saved data
         uses: actions/cache@v4
         with:
@@ -82,6 +101,8 @@ jobs:
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           SHAREHOLDING_SYMBOLS: ${{ inputs.symbols }}
+          SHAREHOLDING_MAX_STOCKS: ${{ inputs.max_stocks }}
+          SHAREHOLDING_MAX_DOWNLOADS: ${{ inputs.max_downloads }}
           SHAREHOLDING_INIT: ${{ inputs.init_ledger && 'true' || 'false' }}
           SHAREHOLDING_REFRESH: ${{ inputs.refresh_all && 'all' || '' }}
           SHAREHOLDING_LEDGER_DIR: ledger-branch

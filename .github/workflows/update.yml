@@ -3,7 +3,16 @@ name: Update data and publish site
 "on":
   schedule:
     - cron: "15 15 * * 1-5"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      fundamentals_calls:
+        description: "Upstox call budget for fundamentals (about 2 s per call). Empty = 150 (a normal day)."
+        required: false
+        default: ""
+      financials_calls:
+        description: "Upstox call budget for financial statements. Empty = 120. A big first fill of the wider universe can use up to about 1500 (50 min)."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -16,6 +25,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     outputs:
       ledger_ready: ${{ steps.ledgerout.outputs.ready }}
       shareholding_ready: ${{ steps.shpout.outputs.ready }}
@@ -48,6 +58,16 @@ jobs:
 
       - run: pip install pandas requests
 
+      - name: Select the coverage universe
+        run: |
+          # Stage 1 = NIFTY 500, Stage 2 = all NSE EQ: the only difference is which universe.json sits on the data branch (built by the "Build coverage universe" workflow).
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
+
       - name: Restore saved data
         uses: actions/cache@v4
         with:
@@ -63,12 +83,14 @@ jobs:
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FUNDAMENTALS_MAX_CALLS: ${{ inputs.fundamentals_calls || '150' }}
         run: python fundamentals_updater.py
 
       - name: Update financial statements (Upstox)
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FINANCIALS_MAX_CALLS: ${{ inputs.financials_calls || '120' }}
         run: python financials_updater.py
 
       - name: Update financial history (Upstox)
@@ -108,6 +130,7 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           SHAREHOLDING_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
           SHAREHOLDING_LEDGER_OUT: shareholding-ledger-out/shareholding_ledger.json
+          SHAREHOLDING_MAX_STOCKS: "60"      # the stalest 60 stocks of the universe per day (a 500-stock universe is covered about every 9 days)
         run: python shareholding_updater.py
 
       - name: Check the shareholding ledger output
@@ -139,6 +162,7 @@ jobs:
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
+          if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
           cp company_profiles.json _site/out/
 
       - name: Upload Pages artifact

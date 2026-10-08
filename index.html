@@ -143,6 +143,69 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 <section id="detail" aria-live="polite"></section>
 <footer>End-of-day market data. Not investment advice.</footer>
 </div>
+<script id="stocklens-shards">
+/* StockLens stock-data coverage: per-stock files. The single files out/historical.json, out/financial_history.json and out/shareholding.json hold the
+   10 development stocks only; every other covered stock has its own small file out/by_symbol/<kind>/<SYMBOL>.json (the same document shape, one stock).
+   This layer sits in front of fetch() for those three URLs. It returns the single file exactly as before and, only when the open route (#stock=SYMBOL or
+   #compare=A,B,...) names a stock that the single file does not hold, adds that stock's own file to the returned document. The Stock Detail modules,
+   the charts and the Compare view are not changed and see the same document shape. A stock with no file stays absent (they already say "not available").
+   The page holds a document in memory once per load, so when the route later needs a stock that document lacks, or returns to the home page after a
+   stock file was added, the page is reloaded once so every module starts from a clean document. No request is made for a covered 10-stock route.
+   Pure helpers are exposed as window.SLShards for the tests. No estimate, no API, no token. */
+(function(){
+"use strict";
+if(typeof window==="undefined"||typeof window.fetch!=="function")return;
+var orig=window.fetch.bind(window);
+var KIND={"out/historical.json":"historical","out/financial_history.json":"financial_history","out/shareholding.json":"shareholding"};
+var SYM=/^(?=.*[A-Z0-9])[A-Z0-9&._-]{1,30}$/;
+var have={},missing={},served={},polluted=false;
+function routeSymbols(hash){
+  var m=/^#stock=([^&]+)/.exec(hash||"");
+  if(m){try{var s=decodeURIComponent(m[1]).toUpperCase();return SYM.test(s)?[s]:[]}catch(e){return[]}}
+  m=/^#compare=([^&]*)$/.exec(hash||"");
+  if(!m)return[];
+  var out=[];
+  m[1].split(",").forEach(function(p){try{var s=decodeURIComponent(p).toUpperCase();if(SYM.test(s)&&out.indexOf(s)<0&&out.length<5)out.push(s)}catch(e){}});
+  return out}
+function isRoute(hash){return /^#(stock=|compare=)/.test(hash||"")}
+function answer(doc){return{ok:true,status:200,json:function(){return Promise.resolve(doc)}}}
+function shardUrl(kind,sym){return"out/by_symbol/"+kind+"/"+encodeURIComponent(sym)+".json"}
+function oneShard(kind,sym){
+  return orig(shardUrl(kind,sym),{cache:"no-store"}).then(function(r){return r&&r.ok?r.json():null}).then(function(d){
+    var st=d&&d.stocks&&typeof d.stocks==="object"&&!Array.isArray(d.stocks)?d.stocks[sym]:null;
+    return st&&typeof st==="object"?{doc:d,stock:st}:null}).catch(function(){return null})}
+window.fetch=function(u,o){
+  var kind=typeof u==="string"?KIND[u.split("?")[0]]:null;
+  if(!kind)return orig(u,o);
+  var hash=window.location&&window.location.hash||"",syms=routeSymbols(hash);
+  if(!syms.length)return orig(u,o);                                   /* the home page and every 10-stock route: the single file, untouched */
+  return orig(u,o).then(function(r){
+    var base=null;
+    return(r&&r.ok?r.json():Promise.resolve(null)).catch(function(){return null}).then(function(j){
+      base=j&&typeof j==="object"&&j.stocks&&typeof j.stocks==="object"&&!Array.isArray(j.stocks)?j:null;
+      var need=syms.filter(function(s){return!base||!Object.prototype.hasOwnProperty.call(base.stocks,s)});
+      served[kind]=true;
+      have[kind]=have[kind]||{};missing[kind]=missing[kind]||{};
+      if(base)Object.keys(base.stocks).forEach(function(s){have[kind][s]=1});
+      if(!need.length)return base?answer(base):r;
+      return Promise.all(need.map(function(s){return oneShard(kind,s)})).then(function(got){
+        var doc=base,added=0;
+        got.forEach(function(g,i){
+          if(!g){missing[kind][need[i]]=1;return}
+          if(!doc){doc={};Object.keys(g.doc).forEach(function(k){if(k!=="stocks")doc[k]=g.doc[k]});doc.stocks={}}
+          doc.stocks[need[i]]=g.stock;have[kind][need[i]]=1;added++});
+        if(added)polluted=true;
+        return doc?answer(doc):r})})})};
+function route(){
+  var hash=window.location&&window.location.hash||"";
+  if(!isRoute(hash)){if(polluted)window.location.reload();return}
+  var syms=routeSymbols(hash);
+  var stale=Object.keys(served).some(function(k){return syms.some(function(s){return!(have[k]&&have[k][s])&&!(missing[k]&&missing[k][s])})});
+  if(stale)window.location.reload()}
+window.addEventListener("hashchange",route);
+window.SLShards={routeSymbols:routeSymbols,isRoute:isRoute,state:function(){return{polluted:polluted,served:Object.keys(served)}}};
+})();
+</script>
 <script>
 let FD=[],fsort={k:"roe",dir:-1};
 const fesc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));

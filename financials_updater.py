@@ -16,12 +16,13 @@ import copy
 import json
 import re
 
+import universe
 from upstox_common import (ROOT, SYMBOLS, Upstox, fail, get_token, is_stale, latest, load_instruments,
                            log, num, period_key, today, write_json)
 
 CACHE_FILE = ROOT / "data" / "financials_cache.json"
 OUT_FILE = ROOT / "out" / "financials.json"
-MAX_CALLS_PER_RUN = 120
+MAX_CALLS_PER_RUN = universe.budget("FINANCIALS_MAX_CALLS", 120)   # a NIFTY 500 fill is set by the workflow
 STATEMENT_MAX_AGE_DAYS = 30
 SCHEMA_VERSION = 2            # cached sections with another version are refetched once
 CASHFLOW_PATH = "cash-flow"   # confirmed: /v2/fundamentals/{ISIN}/cash-flow
@@ -266,7 +267,18 @@ def main():
     instruments = load_instruments()
     api = Upstox(token, MAX_CALLS_PER_RUN)
 
-    for sym in SYMBOLS:
+    try:
+        symbols = universe.load()
+    except universe.UniverseError as err:
+        fail(str(err))
+    # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time
+    symbols = universe.order_stalest(symbols, {x: min([((stocks.get(x) or {}).get(n) or {}).get("fetched") or "" for n, *_ in SECTIONS]) for x in symbols})
+    log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
+    pending = 0
+    for sym in symbols:
+        if api.calls >= MAX_CALLS_PER_RUN:
+            pending += 1                     # not reached this run: not an error, keeps its previous data, goes first next time
+            continue
         e = stocks.setdefault(sym, {})
         m = instruments.get(sym)
         if not m:
@@ -280,6 +292,8 @@ def main():
             if not needs_refresh(sec):
                 continue
             data, basis, err = fetch_section(api, m["isin"], path, extra, parser, fy_month(e))
+            if err and "call limit" in err:
+                break                         # budget used up in the middle of a stock: keep what it had, retry next run
             if err:
                 sec["error"] = err
                 problems.append(name + ": " + err)
@@ -288,8 +302,10 @@ def main():
         e["last_error"] = "; ".join(problems) or None
         log(sym, "- ok" if not problems else "- problem: " + e["last_error"])
 
+    if pending:
+        log("Not reached in this run (call budget):", pending, "stock(s)")
     rows, errors, dates = [], [], []
-    for sym in SYMBOLS:
+    for sym in symbols:
         e = stocks.get(sym, {})
         if e.get("last_error"):
             errors.append({"symbol": sym, "error": e["last_error"]})
@@ -316,7 +332,7 @@ def main():
     log("Wrote", OUT_FILE, "-", len(rows), "stocks,", len(errors), "with problems, API calls:", api.calls)
 
     log("=== CAPEX CHECK (line labels only; no values, no secrets) ===")
-    for r in rows:
+    for r in [x for x in rows if x["symbol"] in universe.TEST_SYMBOLS]:      # diagnostic lines for the 10 development stocks only (a 500-stock log would be unreadable)
         cf = r["cash_flow"]
         log("%s: capex_status=%s | FCF=%s | candidates=%s" % (
             r["symbol"], cf.get("capex_status"), "yes" if cf.get("free_cash_flow") is not None else "null",

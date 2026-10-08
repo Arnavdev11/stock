@@ -28,6 +28,8 @@ from pathlib import Path
 
 import requests
 
+import universe
+
 ROOT = Path(os.environ.get("DATA_DIR", "."))
 CACHE_FILE = ROOT / "data" / "fundamentals_cache.json"
 OUT_FILE = ROOT / "out" / "fundamentals.json"
@@ -35,11 +37,10 @@ OUT_FILE = ROOT / "out" / "fundamentals.json"
 INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
 API_BASE = "https://api.upstox.com/v2/fundamentals"
 
-SYMBOLS = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
-           "SBIN", "ITC", "BHARTIARTL", "LT", "MARUTI"]
+SYMBOLS = list(universe.TEST_SYMBOLS)   # the 10 development stocks; the stocks actually processed come from universe.load()
 
 DELAY_SECONDS = 2.0        # pause after every call
-MAX_CALLS_PER_RUN = 60     # hard stop for one run (test needs about 20)
+MAX_CALLS_PER_RUN = universe.budget("FUNDAMENTALS_MAX_CALLS", 60)   # hard stop for one run (10 stocks need about 20; a NIFTY 500 fill is set by the workflow)
 RATIOS_MAX_AGE_DAYS = 7    # refresh ratios weekly
 PROFILE_MAX_AGE_DAYS = 90  # sector rarely changes
 RETRIES = 3
@@ -174,7 +175,18 @@ def main():
     log("NSE equity instruments loaded:", len(instruments))
     api = Upstox(token)
 
-    for sym in SYMBOLS:
+    try:
+        symbols = universe.load()
+    except universe.UniverseError as err:
+        fail(str(err))
+    # stalest first: a run that stops at its call budget carries on with the rest next time, so the whole universe rotates
+    symbols = universe.order_stalest(symbols, {x: min((stocks.get(x) or {}).get("profile_fetched") or "", (stocks.get(x) or {}).get("ratios_fetched") or "") for x in symbols})
+    log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
+    pending = 0
+    for sym in symbols:
+        if api.calls >= MAX_CALLS_PER_RUN:
+            pending += 1                     # not reached this run: not an error, it keeps its previous data and goes first next time
+            continue
         e = stocks.setdefault(sym, {})
         m = instruments.get(sym)
         if not m:
@@ -187,7 +199,8 @@ def main():
         if is_stale(e.get("profile_fetched"), PROFILE_MAX_AGE_DAYS):
             body, err = api.get(m["isin"] + "/profile")
             if err:
-                errs.append("profile: " + err)
+                if "call limit" not in err:       # running out of budget mid-stock is not a data problem
+                    errs.append("profile: " + err)
             else:
                 sector = (body.get("data") or {}).get("sector")
                 e["sector"] = sector.strip() if isinstance(sector, str) and sector.strip() else None
@@ -196,7 +209,8 @@ def main():
         if is_stale(e.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS):
             body, err = api.get(m["isin"] + "/key-ratios")
             if err:
-                errs.append("key-ratios: " + err)
+                if "call limit" not in err:
+                    errs.append("key-ratios: " + err)
             else:
                 e["ratios"] = parse_ratios(body)
                 e["ratios_fetched"] = today()
@@ -204,8 +218,10 @@ def main():
         e["last_error"] = "; ".join(errs) or None
         log(sym, "- ok" if not errs else "- problem: " + e["last_error"])
 
+    if pending:
+        log("Not reached in this run (call budget):", pending, "stock(s)")
     rows, errors, dates = [], [], []
-    for sym in SYMBOLS:
+    for sym in symbols:
         e = stocks.get(sym, {})
         if e.get("last_error"):
             errors.append({"symbol": sym, "error": e["last_error"]})
@@ -215,7 +231,7 @@ def main():
         dates.append(e["ratios_fetched"])
         rows.append({
             "symbol": sym, "isin": e["isin"], "company_name": e.get("company_name"),
-            "sector": e.get("sector"),
+            "sector": e.get("sector") if sym in universe.TEST_SYMBOLS else None,   # sector stays private for the wider universe until the sector approval gate is opened
             "pe": r.get("pe"), "pb": r.get("pb"), "roa": r.get("roa"), "roe": r.get("roe"),
             "roce": r.get("roce"), "ev_ebitda": r.get("ev_ebitda"),
             "revenue_growth": None, "profit_growth": None,   # not fetched in this version

@@ -19,7 +19,7 @@ ok(navCode.length > 2000 && srchCode.length > 2000 && detailCode.length > 2000, 
 // ---------- 1. the 5I layer is the ONLY change to the Phase 5H.6 page ----------
 let base = ""; try { base = cp.execSync("git show aa4ace1:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
 if (base) eq(legacy(html) === base, true, "the page minus the Phase 5I layer is byte-for-byte the Phase 5H.6 page: nothing else changed");
-eq((html.match(/<script/g) || []).length, 15, "fifteen script elements: thirteen before, plus the navigation module (5I) and the market module (5J)");
+eq((html.match(/<script/g) || []).length, 16, "sixteen script elements: thirteen before, plus the navigation module (5I), the market module (5J) and the per-stock-file layer (Stage 1 coverage)");
 
 // ---------- 2. the global bar: one search, persistent, outside the views that are hidden by detail/compare mode ----------
 const bodyAt = html.indexOf("<body>"), wAt = html.indexOf('<div class="w">'), barAt = html.indexOf('<div id="globalBar">');

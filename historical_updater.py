@@ -4,13 +4,15 @@ Runs server-side only (GitHub Actions). The token is read from the environment a
 
 Source : Upstox historical candle API  GET /v2/historical-candle/{instrument_key}/day/{to_date}/{from_date}
 Output : out/historical.json   (clean daily candles only - indicators are calculated in the browser)
-Stocks : the same 10 test symbols as the other updaters (override with HISTORICAL_SYMBOLS="TCS,INFY,...").
-         Adding a stock later = add the symbol; nothing else changes.
+Stocks : the configured universe (universe.py; default = the 10 development stocks; override one run with HISTORICAL_SYMBOLS="TCS,INFY,...").
+Output : out/by_symbol/historical/<SYMBOL>.json for every stock (one small file each, written as soon as that stock is done) and
+         out/historical.json for the 10 development stocks + the NIFTY 50 benchmark (what Page 1 and the older loaders read).
 Index  : NIFTY 50 is stored as "benchmark" for Relative Strength. Its instrument key is looked up in the official
          Upstox NSE instrument file (segment NSE_INDEX, name "Nifty 50"); the run stops if it is not found exactly once.
-Safety : any failed request (401/403/404/429/5xx/bad data) makes the run exit 1 BEFORE anything is written, so a
-         known-good out/historical.json is never replaced and the cache is not saved. Every failure is listed with
-         the symbol and the request (without the token). Symbols not requested in this run keep their old candles.
+Safety : a stock whose request fails keeps its old candles and is listed with the symbol and the request (without the token); the other
+         stocks are still saved. A 401/403 stops the run at once. The run exits 1 only when nothing could be updated.
+         Stocks are processed stalest first and only when the remaining call budget covers them (HISTORICAL_MAX_CALLS), so a big first fill
+         spreads over several runs without ever storing a half-fetched history.
 Nothing is estimated or filled in: a day without a valid candle is simply absent.
 Incremental: an existing out/historical.json is extended (last ~10 days are re-fetched and replaced),
 so a normal run needs only 1-2 calls per instrument.
@@ -25,6 +27,8 @@ from urllib.parse import quote
 
 import requests
 
+import shards
+import universe
 from upstox_common import INSTRUMENTS_URL, ROOT, SYMBOLS, fail, get_token, log, num, write_json
 
 OUT_FILE = ROOT / "out" / "historical.json"
@@ -37,13 +41,18 @@ WINDOW_DAYS = 360          # one request covers at most this many days (keeps ev
 OVERLAP_DAYS = 10          # re-fetch the last days of an existing file so late corrections are picked up
 DELAY_SECONDS = 1.0        # pause after every call (conservative)
 RETRIES = 3
-MAX_CALLS_PER_RUN = 150
+MAX_CALLS_PER_RUN = universe.budget("HISTORICAL_MAX_CALLS", 150)   # a NIFTY 500 fill is set by the workflow
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 
 
 def symbols():
     raw = os.environ.get("HISTORICAL_SYMBOLS", "").strip()
-    return [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else list(SYMBOLS)
+    if raw:
+        return [s.strip().upper() for s in raw.split(",") if s.strip()]
+    try:
+        return universe.load()
+    except universe.UniverseError as e:
+        fail(str(e))
 
 
 def load_instrument_file():
@@ -210,6 +219,29 @@ def summary(lines):
             f.write("\n".join(lines) + "\n")
 
 
+def calls_needed(prior, end):
+    """How many requests this stock needs now (a first fill of ~5 years needs several; an update needs one)."""
+    if prior:
+        frm = max(dt.date.fromisoformat(prior[-1]["date"]) - dt.timedelta(days=OVERLAP_DAYS), end - dt.timedelta(days=365 * YEARS))
+    else:
+        frm = end - dt.timedelta(days=365 * YEARS)
+    return len(windows(frm, end))
+
+
+def prior_candles(old_stocks, sym):
+    """Stored candles of one stock: its own file first, else the single file. Damaged or missing -> []."""
+    doc = shards.read_shard(OUT_FILE.parent.parent, "historical", sym)
+    got = (((doc or {}).get("stocks") or {}).get(sym) or {}).get("candles")
+    if not got:
+        got = (old_stocks.get(sym) or {}).get("candles")
+    if not isinstance(got, list):
+        return []
+    try:
+        return [c for c in got if isinstance(c, dict) and dt.date.fromisoformat(c["date"])]
+    except (KeyError, TypeError, ValueError):
+        return []
+
+
 def main():
     token = get_token()
     old = {}
@@ -225,32 +257,20 @@ def main():
     log("NIFTY 50 resolved from the instrument file to key:", bench_key)
     client = Client(token)
     end = last_complete_day()
+    wanted = symbols()
+    prior_all = {sym: prior_candles(old_stocks, sym) for sym in wanted}
+    # stalest first (last candle date; never-fetched first) so that a run that stops at its call budget carries on with the rest next time
+    wanted = universe.order_stalest(wanted, {s: (prior_all[s][-1]["date"] if prior_all[s] else "") for s in wanted})
+    log("Universe:", len(wanted), "stocks | call budget:", MAX_CALLS_PER_RUN)
 
-    stocks, errors, rows = dict(old_stocks), [], []      # symbols not requested this run keep their old candles
-    for sym in symbols():
-        meta = equities.get(sym)
-        if not meta:
-            errors.append({"symbol": sym, "request": "instrument lookup", "error": "Symbol not found in Upstox NSE equity instruments"})
-            continue
-        key = meta["instrument_key"]
-        log(sym, "->", key)
-        prior = (old_stocks.get(sym) or {}).get("candles") or []
-        fresh, err = fetch_history(client, key, prior, end)
-        if err:
-            errors.append({"symbol": sym, "request": key, "error": err})
-            continue
-        candles = merge(prior, fresh)
-        if not candles:
-            errors.append({"symbol": sym, "request": key, "error": "Upstox returned no valid candles"})
-            continue
-        stocks[sym] = {"symbol": sym, "isin": meta["isin"], "instrument_key": key, "candles": candles}
-        rows.append("| %s | %s | %d candles | %s to %s |" % (sym, key, len(candles), candles[0]["date"], candles[-1]["date"]))
-        log(sym, "- ok,", len(candles), "candles")
-
-    fresh, err = fetch_history(client, bench_key, old_bench, end)
+    errors, rows, done, pending = [], [], {}, 0
     bench = None
+    fresh, err = fetch_history(client, bench_key, old_bench, end)       # one request, so Relative Strength stays current
     if err:
-        errors.append({"symbol": BENCHMARK_SYMBOL, "request": bench_key, "error": err})
+        if "call limit" not in err:               # running out of budget is not a data problem
+            errors.append({"symbol": BENCHMARK_SYMBOL, "request": bench_key, "error": err})
+        if old_bench:
+            bench = {"symbol": BENCHMARK_SYMBOL, "instrument_key": bench_key, "candles": old_bench}      # keep the last good benchmark
     else:
         merged = merge(old_bench, fresh)
         if merged:
@@ -260,28 +280,79 @@ def main():
         else:
             errors.append({"symbol": BENCHMARK_SYMBOL, "request": bench_key, "error": "Upstox returned no valid candles"})
 
-    if errors:      # strict: one failed request = nothing is written, the old file (if any) stays exactly as it was
-        lines = ["### Historical data: FAILED - nothing was written, no data was invented", ""]
-        for e in errors:
-            msg = "%s: %s (request: %s)" % (e["symbol"], e["error"], e["request"])
-            print("::error::" + msg)
-            lines.append("- " + msg)
-        summary(lines)
-        fail("%d request(s) failed; out/historical.json was NOT changed. See the errors above." % len(errors))
+    meta_doc = {"updated": dt.date.today().isoformat(), "source": "Upstox", "interval": "1day",
+                "notes": {"candles": "Daily OHLCV, prices in INR, ascending dates, exactly as provided by Upstox. "
+                                     "Days without a valid candle are absent, never filled in.",
+                          "benchmark": "NIFTY 50 index daily candles, used for Relative Strength. Index volume is not used."}}
+    for sym in wanted:
+        meta = equities.get(sym)
+        if not meta:
+            errors.append({"symbol": sym, "request": "instrument lookup", "error": "Symbol not found in Upstox NSE equity instruments"})
+            continue
+        prior = prior_all[sym]
+        if client.calls + calls_needed(prior, end) > MAX_CALLS_PER_RUN:
+            pending += 1                    # not enough budget left for this stock: no partial fetch, it goes first next time
+            continue
+        key = meta["instrument_key"]
+        got, err = fetch_history(client, key, prior, end)
+        if err:
+            errors.append({"symbol": sym, "request": key, "error": err})      # this stock keeps its old data; the others carry on
+            continue
+        candles = merge(prior, got)
+        if not candles:
+            errors.append({"symbol": sym, "request": key, "error": "Upstox returned no valid candles"})
+            continue
+        entry = {"symbol": sym, "isin": meta["isin"], "instrument_key": key, "candles": candles}
+        one = {"stocks": {sym: entry}, "benchmark": None}
+        bad = check_doc(dict(one, benchmark=None))
+        if bad:
+            errors.append({"symbol": sym, "request": key, "error": bad[0]})
+            continue
+        try:
+            shards.write_shard(OUT_FILE.parent.parent, "historical", sym, meta_doc, entry)      # saved at once: a later failure cannot lose it
+        except (OSError, ValueError) as e:
+            errors.append({"symbol": sym, "request": key, "error": "could not write its file: " + type(e).__name__})
+            continue
+        done[sym] = entry
+        rows.append("| %s | %s | %d candles | %s to %s |" % (sym, key, len(candles), candles[0]["date"], candles[-1]["date"]))
+        log(sym, "- ok,", len(candles), "candles")
 
-    doc = {"updated": dt.date.today().isoformat(), "source": "Upstox", "interval": "1day",
-           "notes": {"candles": "Daily OHLCV, prices in INR, ascending dates, exactly as provided by Upstox. "
-                                "Days without a valid candle are absent, never filled in.",
-                     "benchmark": "NIFTY 50 index daily candles, used for Relative Strength. Index volume is not used."},
-           "benchmark": bench, "stocks": stocks, "errors": errors}
+    # the single file keeps the 10 development stocks only (Page 1 and the older loaders read it unchanged)
+    core = {}
+    for sym in universe.TEST_SYMBOLS:
+        c = done.get(sym) or ({"symbol": sym, **old_stocks[sym]} if isinstance(old_stocks.get(sym), dict) else None)
+        if c is None:
+            sh = ((shards.read_shard(OUT_FILE.parent.parent, "historical", sym) or {}).get("stocks") or {}).get(sym)
+            c = sh
+        if c and c.get("candles"):
+            core[sym] = c
+    core_errors = [e for e in errors if e["symbol"] in universe.TEST_SYMBOLS or e["symbol"] == BENCHMARK_SYMBOL]
+    doc = dict(meta_doc, benchmark=bench, stocks=core, errors=core_errors)
     problems = check_doc(doc)
     if problems:
         for x in problems[:20]:
             print("::error::historical.json: " + x)
         fail("historical.json failed its checks and was NOT written.")
-    write_json(OUT_FILE, doc)
-    summary(["### Historical data: OK", "", "| Series | Instrument key | Candles | Range |", "|---|---|---|---|"] + rows)
-    log("Wrote", OUT_FILE, "-", len(stocks), "stocks, API calls:", client.calls)
+    if core or bench:
+        write_json(OUT_FILE, doc)
+    try:
+        shards.write_index(OUT_FILE.parent.parent, meta_doc["updated"])
+    except OSError as e:
+        log("warning: index of per-stock files not written:", type(e).__name__)
+
+    lines = ["### Historical data: %s" % ("OK" if not errors else "PARTIAL - %d problem(s); the other stocks were saved" % len(errors)), "",
+             "| Series | Instrument key | Candles | Range |", "|---|---|---|---|"] + rows
+    for e in errors:
+        msg = "%s: %s (request: %s)" % (e["symbol"], e["error"], e["request"])
+        print("::warning::" + msg)
+        lines.append("- " + msg)
+    if pending:
+        lines.append("- %d stock(s) not reached in this run (call budget %d); they go first next time" % (pending, MAX_CALLS_PER_RUN))
+        log("Not reached in this run (call budget):", pending, "stock(s)")
+    summary(lines)
+    log("Saved", len(done), "stock file(s); problems:", len(errors), "| API calls:", client.calls)
+    if errors and not done and not pending:
+        fail("No stock could be updated (%d problem(s)). Existing files were kept." % len(errors))
 
 
 if __name__ == "__main__":

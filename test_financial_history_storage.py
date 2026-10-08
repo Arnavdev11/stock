@@ -351,8 +351,12 @@ class WorkflowTests(unittest.TestCase):
     def test_8_the_reusable_save_workflow_sets_no_concurrency_of_its_own(self):
         self.assertNotIn("concurrency", wf("save_ledger.yml"))                                           # it would deadlock against the caller's group
 
-    def test_8_historical_workflow_is_untouched(self):
-        self.assertNotIn("stocklens-ledger", wf("historical.yml")); self.assertNotIn("stocklens-data", wf("historical.yml"))
+    def test_8_historical_workflow_never_writes_the_ledger_branch(self):
+        # Stage 1 coverage: historical.yml may READ universe.json from the data branch (read-only checkout, no credentials kept), but it must not join the ledger
+        # concurrency group, push, or hold write permission.
+        t = wf("historical.yml")
+        self.assertNotIn("stocklens-ledger", t); self.assertNotIn("git push", t); self.assertNotIn("contents: write", t)
+        self.assertIn("persist-credentials: false", t)
 
     def test_9_the_save_job_never_sees_the_upstox_token(self):
         reusable = wf("save_ledger.yml")

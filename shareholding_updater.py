@@ -47,6 +47,8 @@ from pathlib import Path
 import requests
 
 import shareholding_ledger as sl
+import shards
+import universe
 from upstox_common import ROOT, SYMBOLS, Upstox, load_instruments, log, write_json
 
 SCHEMA_VERSION = 1
@@ -920,10 +922,10 @@ def major_for(qs):
             "holders": [{k: h.get(k) for k in ("holder_name", "category", "label", "shares", "percentage")} for h in select_major(nh)]}
 
 
-def build_output(ledger, extra, day):
-    """out/shareholding.json from the ledger. extra[symbol] = {'skipped', 'cross_check', 'error'}."""
+def build_output(ledger, extra, day, symbols=None):
+    """out/shareholding.json from the ledger. extra[symbol] = {'skipped', 'cross_check', 'error'}. symbols = the stocks to include (default: the 10 development stocks)."""
     stocks, total, avail, flagged = {}, 0, 0, 0
-    for sym in SYMBOLS:
+    for sym in (SYMBOLS if symbols is None else symbols):
         st = ledger["stocks"].get(sym)
         if not st:
             continue
@@ -1041,8 +1043,13 @@ def main():
         print("::error::" + str(e))
         return 1
     ledger = copy.deepcopy(old)
-    wanted = [s.strip().upper() for s in os.environ.get("SHAREHOLDING_SYMBOLS", "").split(",") if s.strip()] or list(SYMBOLS)
-    bad = [s for s in wanted if s not in SYMBOLS]
+    try:
+        uni = universe.load()
+    except universe.UniverseError as e:
+        print("::error::" + str(e))
+        return 1
+    wanted = [s.strip().upper() for s in os.environ.get("SHAREHOLDING_SYMBOLS", "").split(",") if s.strip()] or list(uni)
+    bad = [s for s in wanted if s not in uni]
     if bad:
         print("::error::Unknown symbols: " + ", ".join(bad))
         return 1
@@ -1050,9 +1057,23 @@ def main():
     budget = [int(os.environ.get("SHAREHOLDING_MAX_DOWNLOADS", "") or DEFAULT_MAX_DOWNLOADS)]
     nse = Nse()
     extra, failed = {}, 0
-    log("Ledger source:", kind, "- symbols:", ",".join(wanted))
+    # stalest first (oldest newest-fetch in the ledger; never-read first); SHAREHOLDING_MAX_STOCKS limits how many stocks one run reads
+    def _last(sym):
+        qs = (ledger["stocks"].get(sym) or {}).get("quarters") or []
+        return min([r.get("fetched") or "" for r in qs[:1]] or [""])
+    wanted = universe.order_stalest(wanted, {x: _last(x) for x in wanted})
+    wanted = wanted[:universe.budget("SHAREHOLDING_MAX_STOCKS", len(wanted))]
+    log("Ledger source:", kind, "- universe:", len(uni), "- stocks in this run:", len(wanted), "- download budget:", budget[0])
     for sym in wanted:
-        events, skipped, err = process_stock(nse, ledger, sym, day, budget, refresh_all)
+        before = copy.deepcopy(ledger["stocks"].get(sym))
+        try:
+            events, skipped, err = process_stock(nse, ledger, sym, day, budget, refresh_all)
+        except Exception as ex:                       # one stock must never stop the others: restore it and record the problem
+            if before is None:
+                ledger["stocks"].pop(sym, None)
+            else:
+                ledger["stocks"][sym] = before
+            events, skipped, err = {}, [], "unexpected error (%s); this stock was left as it was" % type(ex).__name__
         extra[sym] = {"skipped": skipped, "error": err}
         if err:
             failed += 1
@@ -1073,8 +1094,8 @@ def main():
     isins = upstox_isins() if api else {}
     for sym in wanted:
         st = ledger["stocks"].get(sym)
-        if not st:
-            continue
+        if not st or sym not in universe.TEST_SYMBOLS or sym not in extra:
+            continue                                  # the Upstox cross-check is a small optional check on the 10 development stocks only
         if rejected:
             extra[sym]["cross_check"] = {"status": "unavailable", "reason": "Upstox rejected the token earlier in this run"}
             continue
@@ -1084,7 +1105,7 @@ def main():
             extra[sym]["cross_check"] = {"status": "unavailable", "reason": "Upstox rejected the token"}
             rejected = True
     problems = sl.no_loss_problems(old, ledger)
-    doc = build_output(ledger, extra, day)
+    doc = build_output(ledger, extra, day, [x for x in uni if x in ledger["stocks"]])
     problems += ["output: " + x for x in validate_doc(doc)]
     if problems:
         for x in problems[:30]:
@@ -1093,9 +1114,18 @@ def main():
     out_ledger = Path(os.environ.get("SHAREHOLDING_LEDGER_OUT", "").strip() or LEDGER_FILE)
     out_ledger.parent.mkdir(parents=True, exist_ok=True)
     out_ledger.write_text(json.dumps(ledger, indent=1, allow_nan=False, sort_keys=False) + "\n", encoding="utf-8")
-    write_json(OUT_FILE, doc)
+    core_stocks = {k: v for k, v in doc["stocks"].items() if k in universe.TEST_SYMBOLS}
+    write_json(OUT_FILE, dict(doc, stocks=core_stocks, summary=build_output(ledger, extra, day, list(core_stocks))["summary"]))    # the single file keeps the 10 development stocks only
+    template, nshards = {k: v for k, v in doc.items() if k not in ("stocks", "summary")}, 0
+    for sym, obj in doc["stocks"].items():                  # every stock with data gets its own small file
+        try:
+            shards.write_shard(OUT_FILE.parent.parent, "shareholding", sym, template, obj)
+            nshards += 1
+        except (OSError, ValueError) as ex:
+            log("warning: shard for", sym, "not written:", type(ex).__name__)
+    log("Per-stock files written:", nshards)
     s = doc["summary"]
-    log("Wrote", OUT_FILE, "-", s["stocks"], "stocks,", s["quarter_records"], "quarter records,", s["unavailable"], "unavailable,", s["flagged"], "flagged; downloads:", nse.downloads)
+    log("Wrote", OUT_FILE, "(core) -", s["stocks"], "stocks,", s["quarter_records"], "quarter records,", s["unavailable"], "unavailable,", s["flagged"], "flagged; downloads:", nse.downloads)
     return 0
 
 

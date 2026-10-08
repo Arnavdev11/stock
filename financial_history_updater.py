@@ -35,6 +35,8 @@ import sys
 from pathlib import Path
 
 import ledger_storage
+import shards
+import universe
 from financials_updater import capex_class, norm
 from upstox_common import (MONTHS, ROOT, SYMBOLS, Upstox, fail, get_token, load_instruments, log, num, today, write_json)
 
@@ -43,6 +45,7 @@ LEDGER_FILE = ROOT / "data" / "financial_history_ledger.json"
 OUT_FILE = ROOT / "out" / "financial_history.json"
 FINANCIALS_FILE = ROOT / "out" / "financials.json"
 FUNDAMENTALS_FILE = ROOT / "out" / "fundamentals.json"
+FUNDAMENTALS_CACHE = ROOT / "data" / "fundamentals_cache.json"      # private (never published): keeps the sector label of stocks whose sector is not shown publicly
 OFFICIAL_FILE = ROOT / "official_financial_records.json"       # committed, hand-verified company statements (Step 4B)
 OFFICIAL_PROVIDER = "Official annual report"
 PROVIDERS = ("Upstox", OFFICIAL_PROVIDER)
@@ -722,14 +725,25 @@ def main():
     normalise_ledger(ledger)
     before = copy.deepcopy(ledger)                            # what the ledger held before this run, for the no-loss check
     raw = os.environ.get("HISTORY_SYMBOLS", "").strip()
-    symbols = [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else list(SYMBOLS)
+    try:
+        symbols = [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else universe.load()
+    except universe.UniverseError as e:
+        fail(str(e))
     fund = read_json(FUNDAMENTALS_FILE) or {}
-    sectors = {x.get("symbol"): x.get("sector") for x in (fund.get("stocks") or []) if isinstance(x, dict)}
+    sectors = {x.get("symbol"): x.get("sector") for x in (fund.get("stocks") or []) if isinstance(x, dict) and x.get("sector")}
+    for k, v in ((read_json(FUNDAMENTALS_CACHE) or {}).get("stocks") or {}).items():       # the private cache holds the sector for stocks the public file leaves blank
+        if isinstance(v, dict) and v.get("sector") and not sectors.get(k):
+            sectors[k] = v["sector"]
     instruments = load_instruments()
     api = Upstox(token, int(os.environ.get("HISTORY_MAX_CALLS", DEFAULT_MAX_CALLS)))
     errors = []
     order = sorted(symbols, key=lambda s: min([(v or {}).get("fetched") or "" for v in ((ledger["stocks"].get(s) or {}).get("fetch_state") or {"x": {}}).values()] or [""]))
+    pending = 0
+    log("Universe:", len(symbols), "stocks | call budget:", api.max_calls)
     for sym in order:
+        if api.calls >= api.max_calls:
+            pending += 1                       # not reached this run: not an error, it keeps its ledger data and goes first next time
+            continue
         meta = instruments.get(sym)
         if not meta:
             errors.append({"symbol": sym, "error": "Symbol not found in Upstox NSE instruments"})
@@ -738,7 +752,7 @@ def main():
         s["isin"], s["company_name"] = meta["isin"], meta["name"]
         if sectors.get(sym):
             s["sector"], s["statement_layout"] = sectors[sym], classify_layout(sectors[sym])
-        problems = process_stock(api, s, day)
+        problems = [x for x in process_stock(api, s, day) if "call limit" not in x]      # running out of budget mid-stock is not a data problem
         if problems:
             errors.append({"symbol": sym, "error": "; ".join(problems)})
         log(sym, "-", "ok" if not problems else "problem: " + "; ".join(problems), "| years:", len({r["fy"] for r in s["years"]}))
@@ -765,8 +779,21 @@ def main():
         fail("The no-loss check failed. Neither the ledger nor the output was written.")
     ledger["updated"] = day
     write_json(ledger_out, ledger)
-    write_json(OUT_FILE, doc)
-    log("Wrote", OUT_FILE, "-", len(doc["stocks"]), "stocks,", len(errors), "with problems,", len(warnings), "consistency warnings, API calls:", api.calls)
+    core = dict(doc, stocks={k: v for k, v in doc["stocks"].items() if k in universe.TEST_SYMBOLS})      # the single file keeps the 10 development stocks only
+    write_json(OUT_FILE, core)
+    template, nshards = {k: v for k, v in doc.items() if k not in ("stocks", "errors", "warnings")}, 0
+    for sym, obj in doc["stocks"].items():                                           # every stock with data gets its own small file
+        try:
+            own = dict(template, errors=[x for x in doc.get("errors", []) if x.get("symbol") == sym],
+                       warnings=[x for x in doc.get("warnings", []) if x.get("symbol") == sym])      # only this stock's own errors and warnings
+            shards.write_shard(OUT_FILE.parent.parent, "financial_history", sym, own, obj)
+            nshards += 1
+        except (OSError, ValueError) as e:
+            log("warning: shard for", sym, "not written:", type(e).__name__)
+    if pending:
+        log("Not reached in this run (call budget):", pending, "stock(s)")
+    log("Wrote", OUT_FILE, "(core) and", nshards, "per-stock files; stocks with data:", len(doc["stocks"]), "| ")
+    log("Details:", len(doc["stocks"]), "stocks,", len(errors), "with problems,", len(warnings), "consistency warnings, API calls:", api.calls)
     for w in warnings[:30]:
         log("WARNING", w.get("symbol", ""), w["type"], w.get("statement", ""), w.get("period", ""), w.get("basis", ""), w.get("field", ""))
 

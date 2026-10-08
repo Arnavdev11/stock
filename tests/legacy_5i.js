@@ -8,6 +8,8 @@ const NEWRE = '/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/', OLDRE = '/^
 const OLDNAV = "<nav aria-label=\"Main\"><b>StockLens India</b><a href=\"#demo\">Demo</a><a href=\"#all\">All scans</a><a href=\"#more\">More data</a><a href=\"#news\">News &amp; filings</a><a href=\"#stock\">Stock page</a><a href=\"#tools\">More tools</a><a href=\"#road\">Roadmap</a><a href=\"#cost\">Costs</a><a href=\"#money\">Earning</a><a href=\"#pc\">Pros &amp; cons</a><a href=\"#law\">SEBI rules</a></nav>";
 function legacy(h) {
   let s = String(h);
+  /* Stage 1 coverage: the per-stock-file layer (a classic script with its own id) is an addition; the older pins see the page without it */
+  s = s.replace(/<script id="stocklens-shards">[\s\S]*?<\/script>\n/, "");
   /* Phase 5J: the market dashboard replaced the old home page (its markup, its scripts and its footer); put the old ones back */
   s = s.replace(/<style id="marketCss">[\s\S]*?<\/style>/, "");
   s = s.replace(/<script type="module" id="stocklens-market">[\s\S]*?<\/script>\n/, "");
