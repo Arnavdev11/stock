@@ -1,0 +1,26 @@
+name: Sector data (Phase 1, PRIVATE) - master and performance
+
+# REGISTRATION STUB ONLY. This file exists on the default branch (main) so that GitHub lists the workflow and allows "Run workflow".
+# GitHub can only dispatch a workflow whose file exists on the default branch. When you choose the branch "phase1" in the Run workflow
+# dialog, GitHub runs phase1's own copy of this same file (the real Sector data workflow). This copy does nothing else:
+# no checkout, no secrets, no cache, no data, no publishing, no deploy. Running it on main only prints one line.
+#
+# The real workflow and all sector code stay on phase1 and are unchanged. Sector public display stays off (SECTOR_PUBLIC_DISPLAY_APPROVED
+# is "false" in the real workflow and in sector_publish.py).
+
+"on":
+  workflow_dispatch:
+    inputs:
+      max_calls:
+        description: "Most Upstox profile calls in this run (about 2 seconds each)"
+        required: false
+        default: "1500"
+
+permissions: {}
+
+jobs:
+  registration-stub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Nothing to do on this branch
+        run: echo "Registration stub on the default branch. Choose branch phase1 in Run workflow to run the real Sector data workflow."
