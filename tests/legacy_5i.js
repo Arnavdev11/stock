@@ -9,6 +9,7 @@ const OLDNAV = "<nav aria-label=\"Main\"><b>StockLens India</b><a href=\"#demo\"
 function legacy(h) {
   let s = String(h);
   /* Stage 1 coverage: the per-stock-file layer (a classic script with its own id) is an addition; the older pins see the page without it */
+  s = s.replace(/<script type="module" id="stocklens-live">[\s\S]*?<\/script>\n/, "");
   s = s.replace(/<script id="stocklens-shards">[\s\S]*?<\/script>\n/, "");
   /* Phase 5J: the market dashboard replaced the old home page (its markup, its scripts and its footer); put the old ones back */
   s = s.replace(/<style id="marketCss">[\s\S]*?<\/style>/, "");

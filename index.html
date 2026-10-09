@@ -2711,6 +2711,201 @@ if(typeof document!=="undefined"&&document.getElementById)init();
 window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
 })();
 </script>
+<script type="module" id="stocklens-live">
+/* StockLens Phase 3 - the live layer for Page 1 (Market Today). OFF BY DEFAULT.
+   It does nothing at all - no request, no change to the page - unless BOTH are true: the page itself is being served from this computer (127.0.0.1, localhost or [::1])
+   AND the address contains ?live=local. It then reads ONE fixed address on this computer: http://127.0.0.1:<port>/v1/live/snapshot.json (the local relay; the port is 8765
+   unless ?live_port=NNNN says otherwise). It never contacts anything else, holds no token and no key: the Upstox token lives only inside the relay process.
+   It never replaces the end-of-day content: live panels are added NEXT to it, each in its own box, and a panel that is refused simply is not drawn, so the page is then exactly
+   the end-of-day page. A snapshot is used only if it passes the same checks as the relay's own validator (validate) and the same acceptance rules (accepts): valid, relay healthy,
+   market open, fresh (age measured against the relay's Date header), enough coverage, and never a test_set or unknown universe. Everything is drawn with textContent, never as HTML.
+   Pure functions are exposed as window.SLLive for the tests. */
+(function(){
+"use strict";
+var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
+var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:5000,timeout:4000,maxBytes:65536,defaultPort:8765};
+var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
+var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
+var SOURCE="Upstox market data feed V3 (ltpc)",SYM=/^[A-Z0-9&._-]{1,30}$/;
+
+/* ---------- the two gates ---------- */
+function gate(loc){
+  if(!loc||typeof loc.hostname!=="string"||LOOPBACK[loc.hostname.toLowerCase()]!==1)return null;
+  var q;try{q=new URLSearchParams(loc.search||"")}catch(e){return null}
+  if(q.get("live")!=="local")return null;
+  var port=CFG.defaultPort,p=q.get("live_port");
+  if(p!==null){if(!/^[0-9]{4,5}$/.test(p))return null;port=+p;if(port<1024||port>65535)return null}
+  return{port:port,url:"http://127.0.0.1:"+port+"/v1/live/snapshot.json"}}
+
+/* ---------- validation: the same rules as the relay's validate_snapshot ---------- */
+function isNum(x){return typeof x==="number"&&isFinite(x)}
+function isInt(x){return isNum(x)&&Math.floor(x)===x}
+function isObj(x){return x!==null&&typeof x==="object"&&!Array.isArray(x)}
+function pctOf(a,b){return(a/b-1)*100}
+function iso(ms){return new Date(ms+19800000).toISOString().slice(0,23)+"+05:30"}
+function validate(d){
+  var p=[],i,r,k;
+  if(!isObj(d))return["not an object"];
+  var ks=Object.keys(d);
+  if(ks.length!==TOP.length||!TOP.every(function(t){return Object.prototype.hasOwnProperty.call(d,t)}))return["keys differ from the schema"];
+  if(d.schema!==1||d.kind!=="live_snapshot")p.push("wrong schema or kind");
+  if(!isInt(d.seq)||d.seq<0)p.push("bad seq");
+  if(!isInt(d.server_ts_ms)||d.server_ts_ms<=0)p.push("bad server_ts_ms");
+  else if(d.generated_at!==iso(d.server_ts_ms))p.push("generated_at does not match server_ts_ms");
+  var m=d.market;
+  if(!isObj(m)||MARKET.indexOf(m.status)<0||!isObj(m.segments))p.push("bad market block");
+  var s=d.scope,sOk=isObj(s);
+  if(!sOk||UNIVERSES.indexOf(s.universe)<0||!["subscribed","ticked","indices_expected"].every(function(t){return isInt(s[t])&&s[t]>=0})||!isNum(s.coverage)||s.coverage<0||s.coverage>1){p.push("bad scope block");sOk=false}
+  else if(s.ticked>s.subscribed&&s.subscribed>0)p.push("ticked exceeds subscribed");
+  if(!Array.isArray(d.indices))p.push("indices is not a list");
+  else{
+    for(i=0;i<d.indices.length;i++){
+      r=d.indices[i];
+      if(!isObj(r)||typeof r.name!=="string"||!r.name||!isNum(r.ltp)||r.ltp<=0){p.push("bad index row");continue}
+      if(r.cp!==null&&r.cp!==undefined&&(!isNum(r.cp)||r.cp<=0))p.push("bad index cp");
+      else if(r.cp!==null&&r.cp!==undefined&&(!isNum(r.change_pct)||Math.abs(r.change_pct-pctOf(r.ltp,r.cp))>0.01))p.push("index change_pct does not match ltp and cp")}
+    if(sOk&&d.indices.length>s.indices_expected)p.push("more indices than expected")}
+  var b=d.breadth;
+  if(!isObj(b)||!["advances","declines","unchanged","counted"].every(function(t){return isInt(b[t])&&b[t]>=0})||b.advances+b.declines+b.unchanged!==b.counted)p.push("bad breadth block");
+  [["gainers",1],["losers",-1]].forEach(function(nm){
+    var rows=d[nm[0]],sign=nm[1],prev=null,j;
+    if(rows===null)return;
+    if(!Array.isArray(rows)||rows.length>50){p.push(nm[0]+" is not a short list");return}
+    for(j=0;j<rows.length;j++){
+      r=rows[j];
+      if(!isObj(r)||typeof r.symbol!=="string"||!SYM.test(r.symbol)||!isNum(r.ltp)||!isNum(r.cp)||r.cp<=0||!isNum(r.change_pct)){p.push("bad "+nm[0]+" row");break}
+      if(r.change_pct*sign<=0)p.push(nm[0]+" row with the wrong sign: "+r.symbol);
+      if(Math.abs(r.change_pct-pctOf(r.ltp,r.cp))>0.01)p.push(nm[0]+" change_pct does not match ltp and cp: "+r.symbol);
+      k=[-r.change_pct*sign,r.symbol];
+      if(prev!==null&&(k[0]<prev[0]||(k[0]===prev[0]&&k[1]<prev[1]))){p.push(nm[0]+" not in rank order");break}
+      prev=k}});
+  if((d.gainers===null)!==(d.losers===null))p.push("gainers and losers must be both present or both null");
+  if(!isObj(d.prices)||Object.keys(d.prices).length>200||!Object.keys(d.prices).every(function(t){var v=d.prices[t];return SYM.test(t)&&isObj(v)&&isNum(v.ltp)}))p.push("bad prices block");
+  var q=d.quality;
+  if(!isObj(q)||typeof q.ok!=="boolean"||!Array.isArray(q.reasons)||!Array.isArray(q.warnings)||q.ok!==(q.reasons.length===0))p.push("bad quality block");
+  if(d.source!==SOURCE)p.push("bad source");
+  return p}
+
+/* ---------- acceptance: block by block, the same rules as the relay's client_accepts ---------- */
+function accepts(d,serverNow){
+  var refuse=function(why){return{indices:[false,why],breadth:[false,why],movers:[false,why],prices:[false,why]}};
+  var pr=validate(d);
+  if(pr.length)return refuse("invalid snapshot: "+pr[0]);
+  if(!d.quality.ok)return refuse("relay reports a problem: "+d.quality.reasons.join(","));
+  if(d.market.status!=="open")return refuse("market is not open");
+  var age=serverNow-d.server_ts_ms;
+  if(age>CFG.maxAge)return refuse("snapshot is "+age+" ms old");
+  if(age<-CFG.skew)return refuse("snapshot is from the future");
+  if(d.scope.universe==="test_set")return refuse("test snapshot (a few instruments only): not market data for the page");
+  var sc=d.scope,out={};
+  out.indices=sc.indices_expected>0&&d.indices.length===sc.indices_expected?[true,""]:[false,"not every index has a price"];
+  var cov=sc.coverage>=CFG.minCoverage&&d.breadth.counted>0;
+  out.breadth=cov?[true,""]:[false,"coverage below "+Math.round(CFG.minCoverage*100)+"%"];
+  out.movers=cov&&d.gainers!==null&&d.losers!==null?[true,""]:[false,"movers unavailable"];
+  out.prices=Object.keys(d.prices).length?[true,""]:[false,"no prices"];
+  return out}
+
+/* ---------- one poll's answer -> what may be shown ---------- */
+function Controller(){this.lastTs=null;this.lastAdvance=null;this.lastSeq=null}
+Controller.prototype.ingest=function(res,localNow){
+  var none=function(state,why){return{state:state,reason:why,blocks:null,doc:null}};
+  if(!res||res.error||res.status!==200||typeof res.text!=="string")return none("unavailable",res&&res.error?String(res.error):"no answer");
+  if(res.text.length>CFG.maxBytes)return none("hidden","response too large");
+  var d;try{d=JSON.parse(res.text)}catch(e){return none("hidden","not valid JSON")}
+  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0];
+  if(validate(d).length===0){
+    if(this.lastTs!==null&&d.server_ts_ms<this.lastTs)return none("hidden","snapshot is older than one already seen");
+    if(this.lastTs===null||d.server_ts_ms>this.lastTs){this.lastTs=d.server_ts_ms;this.lastSeq=d.seq;this.lastAdvance=localNow}
+    else if(localNow-this.lastAdvance>CFG.stall)return none("hidden","snapshot is not advancing")}
+  if(!any)return{state:"hidden",reason:v.indices[1],blocks:null,doc:null};
+  return{state:"live",reason:"",blocks:v,doc:d}};
+
+/* ---------- drawing (textContent only) ---------- */
+function fmt(v,dp){return v.toLocaleString("en-IN",{minimumFractionDigits:dp,maximumFractionDigits:dp})}
+function signed(v,dp){return(v>0?"+":"")+fmt(v,dp)}
+function tone(v){return v>0?"up":v<0?"dn":""}
+var CSS=".lv-chip{margin:0 0 10px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--acs);color:var(--ink);font-size:.8rem}"
+  +".lv-panel{margin:0 0 12px;padding:10px 12px;border:1px solid var(--ac);border-radius:12px;background:var(--card)}"
+  +".lv-head{margin:0 0 8px;font-size:.8rem;color:var(--mute)}.lv-head b{color:var(--ac)}.lv-note{margin:8px 0 0;font-size:.74rem;color:var(--mute)}"
+  +".lv-chg{display:flex;gap:10px;margin-top:6px;font-variant-numeric:tabular-nums;font-size:.9rem}";
+function Ui(doc){this.doc=doc;this.panels={};this.chip=null;this.css=null}
+Ui.prototype.el=function(tag,cls,text){var e=this.doc.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=String(text);return e};
+Ui.prototype.mount=function(){
+  if(this.css)return;
+  var s=this.el("style");s.id="liveCss";s.textContent=CSS;(this.doc.head||this.doc.documentElement).appendChild(s);this.css=s;
+  var main=this.doc.getElementById("market");
+  if(main){this.chip=this.el("div","lv-chip","Live (private test): connecting…");this.chip.setAttribute("role","status");main.insertBefore(this.chip,main.firstChild)}};
+Ui.prototype.drop=function(name){var e=this.panels[name];if(e&&e.parentNode)e.parentNode.removeChild(e);this.panels[name]=null};
+Ui.prototype.put=function(name,secId,node){
+  this.drop(name);var sec=this.doc.getElementById(secId);if(!sec)return;
+  var box=sec.querySelector("[data-mk]");sec.insertBefore(node,box||null);this.panels[name]=node};
+Ui.prototype.head=function(doc,what){
+  var h=this.el("p","lv-head"),b=this.el("b",null,"Live");h.appendChild(b);
+  h.appendChild(this.el("span",null," · "+what+" · updated "+doc.generated_at.slice(11,19)+" IST · private test"));return h};
+Ui.prototype.indices=function(doc){
+  var n=this.el("div","lv-panel"),g=this.el("div","mk-idx-grid");n.setAttribute("data-lv","indices");n.appendChild(this.head(doc,"indices"));
+  doc.indices.forEach(function(x){
+    var c=this.el("div","mk-idx"),h=this.el("div","mk-idx-h");h.appendChild(this.el("b",null,x.name));h.appendChild(this.el("span","v",fmt(x.ltp,2)));c.appendChild(h);
+    var row=this.el("div","lv-chg");
+    if(x.cp&&isNum(x.change_pct)){var cl=tone(x.change_pct);row.appendChild(this.el("span",cl,signed(x.change,2)));row.appendChild(this.el("span",cl,signed(x.change_pct,2)+"%"))}
+    else row.appendChild(this.el("span",null,"previous close not available"));
+    c.appendChild(row);g.appendChild(c)},this);
+  n.appendChild(g);n.appendChild(this.el("p","lv-note","Last traded prices from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
+Ui.prototype.breadth=function(doc){
+  var n=this.el("div","lv-panel"),t=this.el("div","mk-tiles"),b=doc.breadth;n.setAttribute("data-lv","breadth");n.appendChild(this.head(doc,"breadth"));
+  [["Advances",b.advances],["Declines",b.declines],["Unchanged",b.unchanged]].forEach(function(x){var tile=this.el("div","mk-tile");tile.appendChild(this.el("b",null,fmt(x[1],0)));tile.appendChild(this.el("span",null,x[0]));t.appendChild(tile)},this);
+  n.appendChild(t);n.appendChild(this.el("p","lv-note",fmt(doc.scope.ticked,0)+" of "+fmt(doc.scope.subscribed,0)+" subscribed stocks have traded since the feed connected. This counts those stocks only, not the whole market."));return n};
+Ui.prototype.movers=function(doc){
+  var n=this.el("div","lv-panel"),two=this.el("div","mk-2");n.setAttribute("data-lv","movers");n.appendChild(this.head(doc,"movers among liquid stocks"));
+  [["Live gainers",doc.gainers],["Live losers",doc.losers]].forEach(function(x){
+    var card=this.el("div","mk-card");card.appendChild(this.el("h3",null,x[0]));
+    if(!x[1].length)card.appendChild(this.el("p","mk-na","None right now"));
+    else{
+      var tb=this.el("table","mk-t"),th=this.el("thead"),hr=this.el("tr"),bd=this.el("tbody");
+      [["Stock","s"],["Price","n"],["Change","n"]].forEach(function(h){hr.appendChild(this.el("th",h[1],h[0]))},this);th.appendChild(hr);tb.appendChild(th);
+      x[1].forEach(function(r){
+        var tr=this.el("tr"),a=this.el("a","mk-sym",r.symbol),c1=this.el("td","s"),c2=this.el("td","n",fmt(r.ltp,2)),c3=this.el("td","n"),sp=this.el("span",tone(r.change_pct),signed(r.change_pct,2)+"%");
+        a.setAttribute("href","#stock="+encodeURIComponent(r.symbol));c1.appendChild(a);c3.appendChild(sp);tr.appendChild(c1);tr.appendChild(c2);tr.appendChild(c3);bd.appendChild(tr)},this);
+      tb.appendChild(bd);card.appendChild(tb)}
+    two.appendChild(card)},this);
+  n.appendChild(two);n.appendChild(this.el("p","lv-note","Change against the previous close, among the liquid stocks being tracked live. Descriptive figures only."));return n};
+Ui.prototype.update=function(view){
+  this.mount();
+  var say=function(t){if(this.chip)this.chip.textContent=t}.bind(this);
+  if(view.state==="live"){
+    var b=view.blocks,d=view.doc;
+    if(b.indices[0])this.put("indices","mk-today",this.indices(d));else this.drop("indices");
+    if(b.breadth[0])this.put("breadth","mk-breadth",this.breadth(d));else this.drop("breadth");
+    if(b.movers[0])this.put("movers","mk-movers",this.movers(d));else this.drop("movers");
+    var off=["indices","breadth","movers"].filter(function(k){return !b[k][0]});
+    say("Live (private test) · updated "+d.generated_at.slice(11,19)+" IST"+(off.length?" · not shown: "+off.map(function(k){return k+" ("+b[k][1]+")"}).join("; "):"")+" · end-of-day figures below are unchanged")}
+  else{
+    ["indices","breadth","movers"].forEach(this.drop,this);
+    say(view.state==="unavailable"?"Live (private test): the local relay is not reachable. Showing end-of-day data."
+      :"Live (private test): not shown ("+view.reason+"). Showing end-of-day data.")}};
+
+/* ---------- the loop ---------- */
+function poll(url){
+  var ac=typeof AbortController==="function"?new AbortController():null,timer=setTimeout(function(){if(ac)ac.abort()},CFG.timeout);
+  var done=function(x){clearTimeout(timer);return x};
+  return fetch(url,{cache:"no-store",credentials:"omit",mode:"cors",redirect:"error",referrerPolicy:"no-referrer",signal:ac?ac.signal:undefined}).then(function(r){
+    if(!r.ok)return{status:r.status,error:"HTTP "+r.status};
+    var cl=r.headers.get("Content-Length");if(cl&&+cl>CFG.maxBytes)return{status:200,text:"x".repeat(CFG.maxBytes+1)};
+    var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
+    return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
+function start(g,env){
+  var ctl=new Controller(),ui=new Ui(env.document);
+  function next(){env.setTimeout(tick,CFG.poll)}
+  function tick(){
+    if(env.document.visibilityState==="hidden"){next();return}
+    poll(g.url).then(function(res){
+      try{ui.update(ctl.ingest(res,Date.now()))}catch(e){try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}}}).then(next,next)}
+  ui.mount();tick();return{ui:ui,controller:ctl}}
+window.SLLive={gate:gate,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start};
+var g=gate(window.location);
+if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
+})();
+</script>
 <script>
 /* StockLens Phase 1 - Financial Health and Cash Flow & Growth tabs (separate from the valuation code above) */
 (function(){

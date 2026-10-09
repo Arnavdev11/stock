@@ -1062,6 +1062,14 @@ class PackageGuardTests(unittest.TestCase):
         protected = ("index.html", "update.yml", "nse_updater.py", "fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py", "historical_updater.py")
         for line in out:
             path = line[3:].strip()
+            if path == "index.html":
+                # Phase 3 adds one opt-in module; with it removed the file must be byte-identical to HEAD
+                import re
+                pat = r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n'
+                head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(LIVE.parent), capture_output=True).stdout.decode("utf-8")
+                now = (LIVE.parent / "index.html").read_bytes().decode("utf-8")
+                if re.sub(pat, "", now, count=1) == re.sub(pat, "", head, count=1):
+                    continue
             self.assertFalse(path.endswith(protected) or path.startswith(".github/"), "unexpected change: " + line)
 
 

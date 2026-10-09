@@ -37,6 +37,8 @@ def parse_args(argv):
     p.add_argument("--ignore-window", action="store_true", help="connect outside the 08:55-15:45 trading-day window too (testing)")
     p.add_argument("--duration", type=float, help="stop after this many seconds")
     p.add_argument("--summary", action="store_true", help="on exit print one JSON summary (health + last snapshot) to stdout")
+    p.add_argument("--allow-origin", action="append", default=[], metavar="ORIGIN",
+                   help="let ONE exact loopback web origin (e.g. http://127.0.0.1:8000) read the snapshot from the browser (CORS). Off by default; repeatable; no wildcard, no public origin")
     p.add_argument("--drop-after", type=float, help="drop the socket once, this many seconds after streaming starts (reconnect test)")
     return p.parse_args(argv)
 
@@ -50,6 +52,7 @@ def _read_text(path):
 
 
 async def amain(args, token, *, http_get=None, transport_factory=None, fetch_bytes=None, out=sys.stdout):
+    allow_origins = server.check_origins(args.allow_origin)          # refuse a bad origin before anything is downloaded or opened
     scrub = Scrubber()
     scrub.add(token)
     log = Log(scrub)
@@ -63,11 +66,13 @@ async def amain(args, token, *, http_get=None, transport_factory=None, fetch_byt
     cfg = relay.Config(symbols, snapshot_every_s=args.snapshot_interval, ignore_window=args.ignore_window, holidays=holidays, liquid=liquid)
     svc = relay.RelayService(ins, cfg, token, http_get=http_get or upstox.requests_http_get,
                              transport_factory=transport_factory or (lambda: upstox.WebsocketsTransport(scrub)), log=log, scrub=scrub)
-    srv = await server.start_server(svc, args.host, args.port)
+    srv = await server.start_server(svc, args.host, args.port, allow_origins)
     port = srv.sockets[0].getsockname()[1]
     log.info("local relay %s listening on http://%s:%d  (local only)" % (relay.VERSION, args.host, port))
     log.info("health:   http://%s:%d/healthz" % (args.host, port))
     log.info("snapshot: http://%s:%d/v1/live/snapshot.json" % (args.host, port))
+    if args.allow_origin:
+        log.info("browser access (CORS) allowed for: " + ", ".join(allow_origins))
     log.info("subscribing to %d indices + %d equities (ltpc)%s" % (len(ins.indices), len(ins.equities), " [window ignored]" if args.ignore_window else ""))
     if holidays is None:
         log.warn("no holiday file at %s: only weekends are treated as closed" % args.holidays_file)

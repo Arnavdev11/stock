@@ -738,6 +738,124 @@ class ServerTests(AsyncCase):
         self.run_async(go())
 
 
+# ---------------------------------------------------------------------------------------------------------------------- Phase 3: Date header and opt-in CORS
+class CorsAndDateTests(AsyncCase):
+    def serve(self, w, origins=()):
+        return server.start_server(w.svc, "127.0.0.1", 0, origins)
+
+    async def ready(self, w):
+        t = await w.go_streaming()
+        t.feed(w.frame())
+        await w.until(lambda: w.svc.c["frames"] == 1)
+        await w.fresh()
+
+    def test_every_response_has_the_relays_date_header(self):
+        async def go():
+            w = World()
+            srv = await self.serve(w)
+            port = srv.sockets[0].getsockname()[1]
+            host = "Host: 127.0.0.1:%d\r\n" % port
+            try:
+                await self.ready(w)
+                import email.utils
+                for req in ("GET /healthz HTTP/1.1\r\n", "GET /v1/live/snapshot.json HTTP/1.1\r\n", "GET /nope HTTP/1.1\r\n", "POST /healthz HTTP/1.1\r\n"):
+                    st, h, _ = await http(port, req + host + "\r\n")
+                    self.assertIn("date", h, req)
+                    got = email.utils.parsedate_to_datetime(h["date"]).timestamp() * 1000
+                    self.assertLessEqual(abs(got - w.time.ms), 1000, req)                   # the relay's clock, to the second
+                st, h, _ = await http(port, "GET /healthz HTTP/1.1\r\nHost: evil.example\r\n\r\n")
+                self.assertEqual(st, 403)
+                self.assertIn("date", h)
+            finally:
+                srv.close()
+                await srv.wait_closed()
+                await w.finish()
+        self.run_async(go())
+
+    def test_cors_is_off_by_default_and_a_cross_origin_request_is_refused(self):
+        async def go():
+            w = World()
+            srv = await self.serve(w)
+            port = srv.sockets[0].getsockname()[1]
+            host = "Host: 127.0.0.1:%d\r\n" % port
+            try:
+                await self.ready(w)
+                st, h, b = await http(port, "GET /v1/live/snapshot.json HTTP/1.1\r\n" + host + "Origin: http://127.0.0.1:8000\r\n\r\n")
+                self.assertEqual(st, 403)
+                self.assertEqual(json.loads(b), {"error": "origin_not_allowed"})
+                self.assertFalse([k for k in h if k.startswith("access-control")])
+                st, h, _ = await http(port, "GET /v1/live/snapshot.json HTTP/1.1\r\n" + host + "\r\n")                    # same-origin / non-browser: fine, no CORS headers
+                self.assertEqual(st, 200)
+                self.assertFalse([k for k in h if k.startswith("access-control")])
+                self.assertEqual(h["vary"], "Accept-Encoding")
+            finally:
+                srv.close()
+                await srv.wait_closed()
+                await w.finish()
+        self.run_async(go())
+
+    def test_an_allowed_origin_is_matched_exactly(self):
+        async def go():
+            w = World()
+            allowed = "http://127.0.0.1:8000"
+            srv = await self.serve(w, [allowed, "http://localhost:8000"])
+            port = srv.sockets[0].getsockname()[1]
+            host = "Host: 127.0.0.1:%d\r\n" % port
+            try:
+                await self.ready(w)
+                st, h, b = await http(port, "GET /v1/live/snapshot.json HTTP/1.1\r\n" + host + "Origin: " + allowed + "\r\n\r\n")
+                self.assertEqual(st, 200)
+                self.assertEqual(h["access-control-allow-origin"], allowed)
+                self.assertEqual(h["access-control-expose-headers"], "Date, ETag")
+                self.assertIn("Origin", h["vary"])
+                self.assertEqual(snapshot.validate_snapshot(json.loads(b)), [])
+                for bad in ("http://127.0.0.1:8001", "http://127.0.0.1", "https://127.0.0.1:8000", "http://127.0.0.1:8000/", "HTTP://127.0.0.1:8000", "null", "*",
+                            "https://arnavdev11.github.io", "http://evil.example:8000", ""):
+                    st, h, _ = await http(port, "GET /v1/live/snapshot.json HTTP/1.1\r\n" + host + "Origin: " + bad + "\r\n\r\n")
+                    self.assertEqual(st, 403, bad)
+                    self.assertNotIn("access-control-allow-origin", h, bad)
+                st, h, _ = await http(port, "GET /healthz HTTP/1.1\r\n" + host + "Origin: " + allowed + "\r\n\r\n")             # errors and health are readable too
+                self.assertEqual(h["access-control-allow-origin"], allowed)
+                st, h, _ = await http(port, "GET /v1/live/snapshot.json HTTP/1.1\r\n" + host + "\r\n")                           # no Origin header: no CORS header
+                self.assertNotIn("access-control-allow-origin", h)
+                self.assertIn("Origin", h["vary"])
+            finally:
+                srv.close()
+                await srv.wait_closed()
+                await w.finish()
+        self.run_async(go())
+
+    def test_only_exact_loopback_origins_are_accepted_by_the_configuration(self):
+        self.assertEqual(server.check_origins(["http://127.0.0.1:8000", "http://localhost:3000", "http://[::1]:8000", "http://127.0.0.1:8000"]),
+                         ("http://127.0.0.1:8000", "http://localhost:3000", "http://[::1]:8000"))
+        self.assertEqual(server.check_origins([]), ())
+        for bad in ("*", "null", "", "http://*", "https://arnavdev11.github.io", "http://example.com:8000", "http://192.168.1.5:8000", "http://0.0.0.0:8000",
+                    "http://127.0.0.1:8000/path", "127.0.0.1:8000", "http://127.0.0.1:8000 http://localhost", "ftp://127.0.0.1", None, 5):
+            with self.assertRaises(ConfigError, msg=repr(bad)):
+                server.check_origins([bad])
+
+        async def go():
+            w = World()
+            with self.assertRaises(ConfigError):
+                await server.start_server(w.svc, "127.0.0.1", 0, ["https://arnavdev11.github.io"])
+            with self.assertRaises(ConfigError):
+                await server.start_server(w.svc, "0.0.0.0", 0, ["http://127.0.0.1:8000"])
+        self.run_async(go())
+
+    def test_command_line_flag(self):
+        import contextlib
+        a = cli.parse_args([])
+        self.assertEqual(a.allow_origin, [])
+        a = cli.parse_args(["--allow-origin", "http://127.0.0.1:8000", "--allow-origin", "http://localhost:8000"])
+        self.assertEqual(a.allow_origin, ["http://127.0.0.1:8000", "http://localhost:8000"])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = cli.main(["--allow-origin", "https://arnavdev11.github.io"], env={"UPSTOX_ANALYTICS_TOKEN": TOKEN})
+        self.assertEqual(rc, 2)
+        self.assertIn("loopback", err.getvalue())
+        self.assertNotIn(TOKEN, err.getvalue())
+
+
 # ---------------------------------------------------------------------------------------------------------------------- command line
 class CliTests(unittest.TestCase):
     def test_missing_token_exits_2_without_echoing_anything(self):
@@ -821,6 +939,16 @@ PROTECTED = ("index.html", "update.yml", "nse_updater.py", "fundamentals_updater
              "shareholding_updater.py", "historical_updater.py")
 
 
+def index_differs_only_by_live_module(root):
+    """index.html may differ from HEAD only by the opt-in live module (Phase 3): with that one block removed from both, the files are byte-identical."""
+    import re
+    import subprocess
+    pat = r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n'
+    head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(root), capture_output=True).stdout.decode("utf-8")
+    now = (Path(root) / "index.html").read_bytes().decode("utf-8")
+    return re.sub(pat, "", now, count=1) == re.sub(pat, "", head, count=1)
+
+
 class PackageGuardTests(unittest.TestCase):
     def sources(self):
         return {p.name: p.read_text(encoding="utf-8") for p in sorted(PKG.glob("*.py"))}
@@ -846,7 +974,10 @@ class PackageGuardTests(unittest.TestCase):
 
     def test_local_only_no_public_exposure_no_browser_access_no_production_stack(self):
         for name, src in self.sources().items():
-            self.assertNotRegex(src, r"0\.0\.0\.0|Access-Control|caddy|cloudflare|ngrok|letsencrypt|certbot", name, )
+            self.assertNotRegex(src, r"0\.0\.0\.0|caddy|cloudflare|ngrok|letsencrypt|certbot", name)
+            self.assertNotRegex(src, r"Access-Control-Allow-Origin[\"']?\s*[:,=]\s*[\"']\*", name)         # never a wildcard
+            if name != "server.py":
+                self.assertNotIn("Access-Control", src, name)                                               # CORS lives in one place only
         self.assertIn("is_loopback_host", self.sources()["server.py"])
 
     def test_no_limit_probe_and_no_eod_or_site_code(self):
@@ -899,6 +1030,8 @@ class PackageGuardTests(unittest.TestCase):
         out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=str(PKG.parent), capture_output=True, text=True).stdout.splitlines()
         for line in out:
             path = line[3:].strip()
+            if path == "index.html" and index_differs_only_by_live_module(PKG.parent):
+                continue
             self.assertFalse(path.endswith(PROTECTED) or path.startswith(".github/") or path == ".gitignore", "unexpected change: " + line)
             self.assertFalse(path.startswith("live/") and path != "live/snapshot.py" and "__pycache__" not in path, "unexpected Phase 1 change: " + line)
 
