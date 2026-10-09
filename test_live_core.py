@@ -1054,7 +1054,10 @@ class PackageGuardTests(unittest.TestCase):
     def test_the_other_files_were_not_touched_by_this_phase(self):
         # the package must be self-contained: nothing outside live/ and this test file is part of Phase 1
         self.assertTrue((LIVE / "__init__.py").exists())
+        import shutil
         import subprocess
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed here: this check reads `git status`")
         out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=str(LIVE.parent), capture_output=True, text=True).stdout.splitlines()
         protected = ("index.html", "update.yml", "nse_updater.py", "fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py", "historical_updater.py")
         for line in out:

@@ -17,7 +17,7 @@ SCHEMA = 1
 KIND = "live_snapshot"
 SOURCE = "Upstox market data feed V3 (ltpc)"
 MARKET_STATUSES = ("open", "pre_open", "closed", "unknown")
-UNIVERSES = ("nse_eq_all", "nifty500")
+UNIVERSES = ("nse_eq_all", "nifty500", "test_set")      # test_set: a handful of instruments for private testing; the browser rules refuse it
 SYMBOL_RE = re.compile(r"^[A-Z0-9&._-]{1,30}$")
 TOP_KEYS = {"schema", "kind", "seq", "generated_at", "server_ts_ms", "market", "scope", "indices", "breadth", "gainers", "losers", "prices", "quality", "source"}
 DEFAULTS = {"movers": 10, "frame_gap_ms": 10_000, "index_stale_ms": 20_000, "min_coverage": 0.90, "extreme_pct": 40.0, "max_age_ms": 20_000, "skew_ms": 5_000}
@@ -223,6 +223,8 @@ def client_accepts(doc, now_server_ms, cfg=None):
         return refuse("snapshot is %d ms old" % age)
     if age < -c["skew_ms"]:
         return refuse("snapshot is from the future")
+    if doc["scope"]["universe"] == "test_set":
+        return refuse("test snapshot (a few instruments only): not market data for the page")
     out = {}
     sc = doc["scope"]
     out["indices"] = (True, "") if sc["indices_expected"] > 0 and len(doc["indices"]) == sc["indices_expected"] else (False, "not every index has a price")
