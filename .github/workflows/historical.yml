@@ -8,6 +8,10 @@ name: Update historical price data
 #   * "Update data and publish site" then copies historical/ from the data branch into the site folder.
 # A push to phase1 stays a read-only test (TCS only): it saves nothing to the data branch.
 # Run this first (manually, from main), wait for it to finish, then run "Update data and publish site".
+#
+# Filling the whole stock directory takes many small runs. With a batch size, a manual run asks historical_batch.py for the next stocks (never-fetched first,
+# then the stalest; stocks that are up to date are left alone), costed against the call budget so a run always fits the job's time limit. The hand-over then
+# carries only the stock files that changed. Without a batch size the run does exactly what it did before: the listed symbols only.
 
 on:
   push:
@@ -16,9 +20,13 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: "Comma list of symbols. The first test is TCS only; an empty field also means TCS (it never widens to the configured universe)."
+        description: "Comma list of symbols, always updated. The first test is TCS only; an empty field also means TCS (it never widens to the configured universe). With a batch size, these are updated in addition to the automatic pick (clear the field to take only the automatic pick)."
         required: false
         default: "TCS"
+      batch_size:
+        description: "Optional. How many MORE stocks to pick automatically from the stock directory (never-fetched first, then the stalest; 1 to 500). Empty = no automatic pick. Start small, e.g. 4 with symbols DOMS."
+        required: false
+        default: ""
       max_calls:
         description: "Upstox call budget for this run (1 s per call). Empty = 150. A NIFTY 500 first fill needs about 3000 calls: run it a few times with 1500."
         required: false
@@ -82,6 +90,7 @@ jobs:
           path: |
             data
             out
+            !out/by_symbol/historical
           key: nse-data-hist-${{ github.run_id }}
           restore-keys: nse-data-
 
@@ -89,17 +98,34 @@ jobs:
         if: steps.databranch.outputs.exists == 'true'
         run: python historical_handoff.py seed ledger-branch/historical out
 
+      # Batch mode (manual runs with a batch size only; a push never gets here). No token is available to this step.
+      - name: Choose the next batch of stocks
+        if: github.event_name == 'workflow_dispatch' && inputs.batch_size != ''
+        env:
+          INPUT_SYMBOLS: ${{ inputs.symbols }}
+          INPUT_BATCH: ${{ inputs.batch_size }}
+          HISTORICAL_MAX_CALLS: ${{ inputs.max_calls }}
+        run: python historical_batch.py choose --directory ledger-branch/stock_directory.json --saved ledger-branch/historical --out batch
+
       - name: Update historical prices
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
-          HISTORICAL_SYMBOLS: "${{ github.event_name == 'push' && 'TCS' || inputs.symbols || 'TCS' }}"
+          HISTORICAL_SYMBOLS: "${{ env.CHOSEN_SYMBOLS || (github.event_name == 'push' && 'TCS' || inputs.symbols || 'TCS') }}"
           HISTORICAL_MAX_CALLS: ${{ inputs.max_calls }}
         run: python historical_updater.py
+
+      - name: Record which stocks gained candles
+        if: github.event_name == 'workflow_dispatch' && inputs.batch_size != ''
+        run: python historical_batch.py record --report batch/report.json --out out --saved ledger-branch/historical --attempts-out batch/attempts.json
 
       # Manual runs only. The files are checked here, before anything is uploaded; the token is not available to these steps.
       - name: Check the result and prepare the hand-over
         if: github.event_name == 'workflow_dispatch'
-        run: python historical_handoff.py stage out handoff
+        run: |
+          args=""
+          if [ -d ledger-branch/historical ]; then args="--baseline ledger-branch/historical"; fi
+          if [ -f batch/attempts.json ]; then args="$args --attempts batch/attempts.json"; fi
+          python historical_handoff.py stage out handoff $args
 
       - name: Hand the result to the save job
         if: github.event_name == 'workflow_dispatch'

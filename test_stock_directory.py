@@ -550,8 +550,11 @@ class Wiring(unittest.TestCase):
 
     def test_no_other_workflow_mentions_the_directory_and_no_builder_workflow_exists(self):
         for p in self.WF.glob("*.yml"):
-            if p.name != "update.yml":
+            if p.name not in ("update.yml", "historical.yml"):
                 self.assertNotIn("stock_directory", p.read_text(), p.name)
+        # historical.yml READS the directory (read-only checkout of the data branch) to choose the next batch of stocks, in exactly one command and nowhere else
+        lines = [l.strip() for l in (self.WF / "historical.yml").read_text().splitlines() if "stock_directory" in l]
+        self.assertEqual(lines, ["run: python historical_batch.py choose --directory ledger-branch/stock_directory.json --saved ledger-branch/historical --out batch"])
         self.assertFalse((self.WF / "stock_directory.yml").exists())
 
     def test_the_document_the_builder_writes_is_what_the_search_accepts(self):
