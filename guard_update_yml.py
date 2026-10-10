@@ -13,7 +13,8 @@ _CFG = json.loads((Path(__file__).parent / "tests" / "approved_workflow_changes.
 PATH = _CFG["update_yml"]["path"]
 ADDED = _CFG["update_yml"]["added_lines"]
 PINNED = _CFG["pinned_files"]
-APPROVED_PATHS = [PATH] + list(PINNED)
+UPDATERS = _CFG["updater_changes"]            # {path: the exact diff lines (with their + / - prefix) against HEAD}
+APPROVED_PATHS = [PATH] + list(PINNED) + list(UPDATERS)
 
 
 def approved_change_only(root):
@@ -24,9 +25,18 @@ def approved_change_only(root):
     return lines == ["+" + a for a in ADDED]
 
 
+def exact_diff(root, path, expected):
+    r = subprocess.run(["git", "diff", "-U0", "HEAD", "--", path], cwd=str(root), capture_output=True, text=True)
+    if r.returncode != 0:
+        return False
+    return [l for l in r.stdout.splitlines() if l[:1] in "+-" and not l.startswith(("+++", "---"))] == expected
+
+
 def is_approved(root, path):
     if path == PATH:
         return approved_change_only(root)
+    if path in UPDATERS:
+        return exact_diff(root, path, UPDATERS[path])
     if path in PINNED:
         try:
             return hashlib.sha256((Path(root) / path).read_bytes()).hexdigest() == PINNED[path]

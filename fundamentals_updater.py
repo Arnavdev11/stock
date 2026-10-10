@@ -28,6 +28,7 @@ from pathlib import Path
 
 import requests
 
+import research_test_batch
 import universe
 
 ROOT = Path(os.environ.get("DATA_DIR", "."))
@@ -176,7 +177,7 @@ def main():
     api = Upstox(token)
 
     try:
-        symbols = universe.load()
+        symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
     except universe.UniverseError as err:
         fail(str(err))
     # stalest first: a run that stops at its call budget carries on with the rest next time, so the whole universe rotates
