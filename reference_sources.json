@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "kind": "reference_sources",
+ "note": "What each input of stock_directory.py is, which fields the classifier really reads, and what has actually been verified. Nothing here was downloaded or tested over the network. A null url means NO address has been verified; none is guessed. Source dates are never filled in here: a person supplies them with each build.",
+ "inputs": [
+  {
+   "name": "instruments",
+   "description": "Upstox NSE instrument file (NSE.json.gz)",
+   "fields_read": ["segment", "instrument_key", "isin", "trading_symbol", "security_type", "name", "instrument_type (recorded only)"],
+   "url": "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz",
+   "url_status": "present in repository code (universe.py, upstox_common.py, fundamentals_updater.py, live_service/upstox.py); not fetched or tested in this stage",
+   "reachable_from_github_actions": "not verified",
+   "usage_terms": "not read"
+  },
+  {
+   "name": "equity",
+   "description": "NSE list of equity securities (EQUITY_L.csv)",
+   "fields_read": ["ISIN column", "SERIES column", "SYMBOL column (diagnostic only)"],
+   "url": null,
+   "url_status": "not verified: no official address has been confirmed",
+   "reachable_from_github_actions": "not verified",
+   "usage_terms": "not read"
+  },
+  {
+   "name": "sme",
+   "description": "NSE list of SME securities (SME_EQUITY_L.csv)",
+   "fields_read": ["ISIN column"],
+   "url": null,
+   "url_status": "not verified: no official address has been confirmed",
+   "reachable_from_github_actions": "not verified",
+   "usage_terms": "not read"
+  },
+  {
+   "name": "etf",
+   "description": "NSE list of ETFs (nse_etfs.csv)",
+   "fields_read": ["ISIN column"],
+   "url": null,
+   "url_status": "not verified: no official address has been confirmed",
+   "reachable_from_github_actions": "not verified",
+   "usage_terms": "not read"
+  }
+ ]
+}

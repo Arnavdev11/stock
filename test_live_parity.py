@@ -28,6 +28,15 @@ N = 12
 # sha256 of index.html at the Phase 2 commit f682bbb. The live layer is the ONLY addition allowed on top of it in this phase.
 PHASE2_INDEX_SHA256 = "1c30ad6155d104e709c65ba0d33094245625a6ccb99ee64cc741f58548b9950b"
 BLOCK_RE = re.compile(r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n')
+# The search module was changed on purpose after Phase 2 (universe search; behaviour pinned by tests/test_company_search.js). It is compared on its own: pinned by hash in
+# tests/search_module_pin.json. Everything else in the page is still compared byte for byte, with the search module removed from both sides.
+SEARCH_RE = re.compile(r'<script type="module" id="stocklens-search">[\s\S]*?</script>\n')
+PHASE2_INDEX_WITHOUT_SEARCH_SHA256 = "f64f7f6375517b13c52b84bdad708cd9b81313ba4aa856b49ed23efc76656278"   # sha256 of f682bbb:index.html with its one search module removed
+SEARCH_PIN = json.loads((Path(__file__).parent / "tests" / "search_module_pin.json").read_text(encoding="utf-8"))
+
+
+def search_module_text(html):
+    return html.split('<script type="module" id="stocklens-search">')[1].split("</script>")[0]
 
 
 def _doc(universe="nifty500", market_status="open", liquid=True, covered=N, price_symbols=("TST00001", "TST00002", "TST00003"), relay_state="streaming", ticks_at=T0, now=T0 + 1000):
@@ -191,9 +200,14 @@ class PageIntegrityTests(unittest.TestCase):
 
     def test_removing_the_live_layer_leaves_the_phase2_file_byte_identical(self):
         self.assertEqual(len(BLOCK_RE.findall(self.html)), 1, "exactly one stocklens-live block")
-        rest = BLOCK_RE.sub("", self.html, count=1)
-        self.assertEqual(hashlib.sha256(rest.encode("utf-8")).hexdigest(), PHASE2_INDEX_SHA256,
-                         "index.html outside the stocklens-live block differs from the Phase 2 commit f682bbb")
+        self.assertEqual(len(SEARCH_RE.findall(self.html)), 1, "exactly one stocklens-search module")
+        rest = SEARCH_RE.sub("", BLOCK_RE.sub("", self.html, count=1), count=1)
+        self.assertEqual(hashlib.sha256(rest.encode("utf-8")).hexdigest(), PHASE2_INDEX_WITHOUT_SEARCH_SHA256,
+                         "index.html outside the stocklens-live block and outside the search module differs from the Phase 2 commit f682bbb")
+
+    def test_the_search_module_is_exactly_the_approved_version(self):
+        self.assertEqual(hashlib.sha256(search_module_text(self.html).encode("utf-8")).hexdigest(), SEARCH_PIN["page_search_module_sha256"],
+                         "the search module differs from the approved universe-search version pinned in tests/search_module_pin.json")
 
     def test_the_block_sits_directly_after_the_market_module(self):
         m = self.html.index('<script type="module" id="stocklens-market">')
@@ -209,7 +223,7 @@ class PageIntegrityTests(unittest.TestCase):
         if r.returncode != 0:
             self.skipTest("commit f682bbb is not in this checkout")
         self.assertEqual(hashlib.sha256(r.stdout).hexdigest(), PHASE2_INDEX_SHA256)
-        self.assertEqual(BLOCK_RE.sub("", self.html, count=1).encode("utf-8"), r.stdout)
+        self.assertEqual(SEARCH_RE.sub("", BLOCK_RE.sub("", self.html, count=1), count=1).encode("utf-8"), SEARCH_RE.sub("", r.stdout.decode("utf-8"), count=1).encode("utf-8"))
 
     def test_the_block_has_no_token_no_html_sinks_no_outside_address_no_advice(self):
         block = BLOCK_RE.search(self.html).group(0)

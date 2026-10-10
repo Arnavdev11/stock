@@ -168,7 +168,9 @@ const NOTE = "Only individually disclosed holders are shown. This is not a compl
     no(m, /<img|<b>/, "holder text is escaped, never inserted as markup"); re(m, /&lt;img src=x onerror=alert\(1\)&gt; &amp; &quot;Co&quot;/, "shown as plain text"); }
   // ---- the data layer and the rest of the page are untouched ----
   { const cp = require("child_process"); const st = cp.execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean).map((l) => l.slice(3));
-    for (const f of st) ok(/^(index\.html|tests\/test_major_shareholders_ui\.js|tests\/test_shareholding_ui\.js|__pycache__\/)$/.test(f) || !/^(shareholding_|nse_updater|fundamentals_updater|financials_updater|financial_history|historical_updater|\.github\/|out\/)/.test(f), "the data layer, updaters, workflows and data are untouched: " + f); }
+    /* the one approved workflow change: update.yml gained exactly the guarded copy of the stock directory (two added lines, none removed or changed); every other workflow stays untouched */
+    if (st.includes(".github/workflows/update.yml")) { const d = cp.execSync("git diff -U0 HEAD -- .github/workflows/update.yml", { cwd: ROOT, encoding: "utf8" }).split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l)); ok(d.length === 2 && d.every((l) => l[0] === "+") && /stock_directory\.json/.test(d.join("")) && !/universe/.test(d[1]), "update.yml differs from the commit only by the guarded stock_directory.json copy"); }
+    for (const f of st.filter((x) => x !== ".github/workflows/update.yml")) ok(/^(index\.html|tests\/test_major_shareholders_ui\.js|tests\/test_shareholding_ui\.js|__pycache__\/)$/.test(f) || !/^(shareholding_|nse_updater|fundamentals_updater|financials_updater|financial_history|historical_updater|\.github\/|out\/)/.test(f), "the data layer, updaters, workflows and data are untouched: " + f); }
 
   console.log("Major shareholders UI tests passed (" + checks + " checks)");
 })().catch((e) => { console.error("MAJOR SHAREHOLDERS UI TEST FAILED: " + e.message + "\n" + (e.stack || "").split("\n").slice(1, 4).join("\n")); process.exit(1); });

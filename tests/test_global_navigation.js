@@ -18,7 +18,13 @@ ok(navCode.length > 2000 && srchCode.length > 2000 && detailCode.length > 2000, 
 
 // ---------- 1. the 5I layer is the ONLY change to the Phase 5H.6 page ----------
 let base = ""; try { base = cp.execSync("git show aa4ace1:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) { base = ""; }
-if (base) eq(legacy(html) === base, true, "the page minus the Phase 5I layer is byte-for-byte the Phase 5H.6 page: nothing else changed");
+// The search module was changed on purpose after 5I (universe search, test_company_search.js pins it). It is compared on its own below; EVERYTHING ELSE is still compared byte for byte.
+const SRCHMOD = /<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/;
+if (base) {
+  eq((legacy(html).match(new RegExp(SRCHMOD.source, "g")) || []).length, 1, "exactly one search module in the page minus the 5I layer"); eq((base.match(new RegExp(SRCHMOD.source, "g")) || []).length, 1, "and exactly one in the Phase 5H.6 page");
+  eq(legacy(html).replace(SRCHMOD, "") === base.replace(SRCHMOD, ""), true, "the page minus the Phase 5I layer and minus the search module is byte-for-byte the Phase 5H.6 page minus its search module: nothing else changed");
+  eq(legacy(html).indexOf('<script type="module" id="stocklens-search">') === base.indexOf('<script type="module" id="stocklens-search">'), true, "the search module still sits at exactly the same place in the page");
+}
 eq((html.match(/<script/g) || []).length, 17, "seventeen script elements: thirteen before, plus the navigation module (5I), the market module (5J), the per-stock-file layer (Stage 1 coverage) and the opt-in local live layer (Phase 3)");
 
 // ---------- 2. the global bar: one search, persistent, outside the views that are hidden by detail/compare mode ----------
@@ -194,7 +200,7 @@ async function loadSearch({ bar = true } = {}) {
     await P.type("hdfc"); P.key("ArrowDown"); P.key("Enter"); eq(P.hash(), "stock=HDFCBANK", "Enter opens the top result, as before");
     await P.type("m&m"); P.click("M&M"); eq(P.hash(), "stock=M%26M", "a symbol with & opens correctly");
     await P.type("zzzzzz"); eq(P.options(), [], "an unknown stock lists nothing (fails safely)"); eq(P.hash(), "stock=M%26M", "and does not change the route");
-    for (const f of P.fetched) re(f, /fundamentals\.json|company_profiles\.json/, "only the two existing data files are read: " + f);
+    for (const f of P.fetched) re(f, /^out\/(fundamentals|company_profiles|stock_directory)\.json$/, "only the identity files are read (the two existing ones, and the optional stock directory): " + f);
   }
   { const P = await loadSearch({ bar: false }); ok(P.w.children.some((c) => c.id === "stockSearch"), "without a global bar the search still mounts under the header (unchanged fallback)"); }
 

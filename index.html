@@ -1749,29 +1749,35 @@ window.SLSnapshot={build:build,check:check,overviewHeading:overviewHeading,PERIO
 <script type="module" id="stocklens-search">
 /* StockLens Phase 5F - company search on the dashboard: type a company name or symbol, pick a result, open the existing Stock Detail route (#stock=SYMBOL).
    A separate module script on purpose: the classic script blocks, the Financial History, comparison and Investor Snapshot modules are untouched. The box is added to the page by this script.
-   Data: only out/fundamentals.json and out/company_profiles.json, the files the page already uses, each requested once and only when the box is first used. No other source, no API, no token.
+   Data: out/fundamentals.json, out/company_profiles.json and out/stock_directory.json, each requested once and only when the box is first used. No other source, no API, no token.
+   out/stock_directory.json is the searchable stock directory (stock_directory.py: kind "stock_directory", symbol, ISIN, name; it holds no sector, price or rating). It is separate from the research-data
+   coverage list (universe.json), which the search never reads. The directory is optional: without it the list is whatever the other two files contain. Because a stock needs no fundamentals to be in the
+   directory, a directory stock is searchable even when its research data is missing: its detail page then shows "-" for what is unavailable.
    The company list is whatever those files contain; nothing is hard-coded. Matching is case-insensitive and ignores spacing and punctuation. Results are ordered by how the text matches
-   (exact symbol, exact name, starts with, contains) and then by symbol: never by price, return, valuation or any other financial value. At most 10 results. */
+   (exact symbol, exact name, starts with, contains) and then by symbol: never by price, return, valuation or any other financial value. At most 50 results are listed; when there are more,
+   the status line says how many matched, so a longer list is never mistaken for a complete one. */
 (function(){
 "use strict";
 var $=function(i){return document.getElementById(i)};
 var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
 var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
-var MAX=10;
+var MAX=50;
 function str(v){return typeof v==="string"&&v.trim()?v.trim():null}
 function norm(s){return String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}
 
 /* ---------- the company list, from the existing identity fields ---------- */
-function entries(val,prof){
+function entries(val,prof,uni){
   var by=Object.create(null),list=[];
-  function add(doc,primary){
-    (doc&&Array.isArray(doc.stocks)?doc.stocks:[]).forEach(function(x){
-      if(!x||typeof x.symbol!=="string"||!SYM.test(x.symbol))return;
-      var e=by[x.symbol];if(!e){e=by[x.symbol]={symbol:x.symbol,name:null,sector:null,alts:[]};list.push(e)}
-      var n=str(x.company_name),sc=str(x.sector);
-      if(n){if(!e.name)e.name=n;else if(n!==e.name&&e.alts.indexOf(n)<0)e.alts.push(n)}
-      if(sc&&!e.sector)e.sector=sc})}
-  add(val,true);add(prof,false);
+  function put(x,nameField,withSector){
+    if(!x||typeof x.symbol!=="string"||!SYM.test(x.symbol))return;
+    var e=by[x.symbol];if(!e){e=by[x.symbol]={symbol:x.symbol,name:null,sector:null,alts:[]};list.push(e)}
+    var n=str(x[nameField]),sc=withSector?str(x.sector):null;
+    if(n){if(!e.name)e.name=n;else if(n!==e.name&&e.alts.indexOf(n)<0)e.alts.push(n)}
+    if(sc&&!e.sector)e.sector=sc}
+  function add(doc){(doc&&Array.isArray(doc.stocks)?doc.stocks:[]).forEach(function(x){put(x,"company_name",true)})}
+  add(val);add(prof);
+  /* the stock directory: identity only (symbol and name). A sector is never read from it, so the sector gate stays where it is. Fundamentals and profile names, when present, come first. */
+  (uni&&typeof uni==="object"&&uni.kind==="stock_directory"&&Array.isArray(uni.symbols)?uni.symbols:[]).forEach(function(x){put(x,"name",false)});
   list.forEach(function(e){e.sn=norm(e.symbol);e.sc=e.sn.replace(/ /g,"");e.nn=[e.name].concat(e.alts).filter(Boolean).map(norm)});
   return list}
 
@@ -1791,7 +1797,9 @@ function search(list,query){
   var toks=q.split(" "),out=[];
   list.forEach(function(e){var t=tier(e,q,toks);if(t>0)out.push({e:e,t:t})});
   out.sort(function(a,b){return a.t-b.t||(a.e.symbol<b.e.symbol?-1:a.e.symbol>b.e.symbol?1:0)});
-  return out.slice(0,MAX).map(function(x){return{e:x.e,t:x.t}})}
+  var res=out.slice(0,MAX).map(function(x){return{e:x.e,t:x.t}});
+  res.total=out.length;                                                                  /* how many matched in all, so a cut list can say so */
+  return res}
 /* Enter without a highlighted result opens a result only when it is clear: one exact symbol, one exact name, or the only result */
 function clear(res){
   if(!res.length)return null;
@@ -1801,12 +1809,12 @@ function clear(res){
   if(res.length===1)return res[0].e;
   return null}
 
-/* ---------- loading: two existing files, once, on first use ---------- */
+/* ---------- loading: three existing files, once, on first use (a file that is missing is simply not part of the list) ---------- */
 var DATA=null;
 function loadAll(){
   if(DATA)return DATA;
   var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
-  DATA=Promise.all([j("out/fundamentals.json"),j("out/company_profiles.json")]).then(function(a){return{val:a[0],prof:a[1],list:entries(a[0],a[1])}});
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/company_profiles.json"),j("out/stock_directory.json")]).then(function(a){return{val:a[0],prof:a[1],uni:a[2],list:entries(a[0],a[1],a[2])}});
   return DATA}
 
 /* ---------- the box ---------- */
@@ -1856,7 +1864,8 @@ function paint(){
     return'<li role="option" id="companySearchOpt'+i+'" data-symbol="'+esc(x.symbol)+'" aria-selected="'+(i===state.active?"true":"false")+'"><span class="ss-sym">'+esc(x.symbol)+'</span><span class="ss-name">'+(x.name?esc(x.name):"")+'</span>'+(x.sector?'<span class="ss-sec">'+esc(x.sector)+'</span>':"")+'</li>'}).join("");
   setHidden(e.list,false);
   if(e.input){e.input.setAttribute("aria-expanded","true");if(state.active>=0)e.input.setAttribute("aria-activedescendant","companySearchOpt"+state.active);else e.input.removeAttribute("aria-activedescendant")}
-  if(e.msg){e.msg.textContent="";setHidden(e.msg,true)}}
+  var more=typeof state.res.total==="number"&&state.res.total>state.res.length;
+  if(e.msg){e.msg.textContent=more?"Showing the first "+state.res.length+" of "+state.res.total+" matches. Keep typing to narrow the list.":"";setHidden(e.msg,!more)}}
 function update(){
   var e=els();if(!e.input)return;
   var q=e.input.value;

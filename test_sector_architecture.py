@@ -875,7 +875,11 @@ class GuardTests(unittest.TestCase):
             self.skipTest("git not available")
         if r.returncode != 0:
             self.skipTest("not a git checkout")
-        self.assertEqual(r.stdout.strip(), "")
+        import guard_update_yml
+        changed = r.stdout.split()
+        if guard_update_yml.PATH in changed and guard_update_yml.approved_change_only(HERE):
+            changed.remove(guard_update_yml.PATH)           # the one approved change: the guarded stock-directory copy (exactly two added lines)
+        self.assertEqual(changed, [])
 
 
 if __name__ == "__main__":

@@ -940,13 +940,22 @@ PROTECTED = ("index.html", "update.yml", "nse_updater.py", "fundamentals_updater
 
 
 def index_differs_only_by_live_module(root):
-    """index.html may differ from HEAD only by the opt-in live module (Phase 3): with that one block removed from both, the files are byte-identical."""
+    """index.html may differ from HEAD only by the opt-in live module (Phase 3) and the approved search module (universe search): with those two blocks removed from both,
+    the files are byte-identical, and the search module in the working file must be exactly the version pinned in tests/search_module_pin.json."""
+    import hashlib
+    import json
     import re
     import subprocess
-    pat = r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n'
+    pats = (r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n', r'<script type="module" id="stocklens-search">[\s\S]*?</script>\n')
     head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(root), capture_output=True).stdout.decode("utf-8")
     now = (Path(root) / "index.html").read_bytes().decode("utf-8")
-    return re.sub(pat, "", now, count=1) == re.sub(pat, "", head, count=1)
+    pin = json.loads((Path(root) / "tests" / "search_module_pin.json").read_text(encoding="utf-8"))["page_search_module_sha256"]
+    if hashlib.sha256(now.split('<script type="module" id="stocklens-search">')[1].split("</script>")[0].encode("utf-8")).hexdigest() != pin:
+        return False
+    a, b = now, head
+    for pat in pats:
+        a, b = re.sub(pat, "", a, count=1), re.sub(pat, "", b, count=1)
+    return a == b
 
 
 class PackageGuardTests(unittest.TestCase):
@@ -1032,8 +1041,11 @@ class PackageGuardTests(unittest.TestCase):
             path = line[3:].strip()
             if path == "index.html" and index_differs_only_by_live_module(PKG.parent):
                 continue
+            import guard_update_yml
+            if path == guard_update_yml.PATH and guard_update_yml.approved_change_only(PKG.parent):
+                continue                                    # the one approved change: the guarded stock-directory copy (exactly two added lines)
             self.assertFalse(path.endswith(PROTECTED) or path.startswith(".github/") or path == ".gitignore", "unexpected change: " + line)
-            self.assertFalse(path.startswith("live/") and path != "live/snapshot.py" and "__pycache__" not in path, "unexpected Phase 1 change: " + line)
+            self.assertFalse(path.startswith("live/") and path not in ("live/snapshot.py", "live/eligible.py", "live/reference.py", "live/classifier.py") and "__pycache__" not in path, "unexpected Phase 1 change: " + line)
 
 
 if __name__ == "__main__":
