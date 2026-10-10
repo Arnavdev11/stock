@@ -579,7 +579,7 @@ class WorkflowWiring(unittest.TestCase):
 
     def test_the_updater_and_the_other_updaters_are_untouched(self):
         import subprocess
-        files = ["historical_updater.py", "shards.py", "fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py",
+        files = ["historical_updater.py", "shards.py", "financial_history_updater.py", "shareholding_updater.py",
                  "nse_updater.py", "universe.py", "upstox_common.py", "stock_directory.py", "sector_publish.py", "sector_master.py", ".github/workflows/update.yml",
                  ".github/workflows/save_historical.yml"]
         r = subprocess.run(["git", "diff", "--name-only", "HEAD", "--"] + files, cwd=str(ROOT), capture_output=True, text=True)

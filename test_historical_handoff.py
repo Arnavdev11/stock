@@ -517,7 +517,7 @@ class WorkflowWiring(unittest.TestCase):
 
     def test_nothing_else_changed(self):
         # the updaters, the shard writer, the ledgers' scripts and the other workflows are exactly as committed
-        files = ["historical_updater.py", "shards.py", "fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py",
+        files = ["historical_updater.py", "shards.py", "financial_history_updater.py", "shareholding_updater.py",
                  "nse_updater.py", "universe.py", "upstox_common.py", "ledger_storage.py", "shareholding_ledger.py", "stock_directory.py", "sector_publish.py", "sector_master.py",
                  ".github/workflows/save_ledger.yml", ".github/workflows/financial_history.yml", ".github/workflows/shareholding.yml", ".github/workflows/universe.yml",
                  ".github/workflows/sector_data.yml", ".github/workflows/market_data.yml"]

@@ -16,6 +16,7 @@ import copy
 import json
 import re
 
+import research_test_batch
 import universe
 from upstox_common import (ROOT, SYMBOLS, Upstox, fail, get_token, is_stale, latest, load_instruments,
                            log, num, period_key, today, write_json)
@@ -268,7 +269,7 @@ def main():
     api = Upstox(token, MAX_CALLS_PER_RUN)
 
     try:
-        symbols = universe.load()
+        symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
     except universe.UniverseError as err:
         fail(str(err))
     # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time

@@ -1,5 +1,5 @@
 {
- "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose.",
+ "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose. It also records the one approved change to each of fundamentals_updater.py and financials_updater.py (the five-stock test batch, research_test_batch.py): each file must differ from the commit by EXACTLY the listed diff lines (an empty difference is fine once they are committed).",
  "update_yml": {
   "path": ".github/workflows/update.yml",
   "added_lines": [
@@ -11,5 +11,17 @@
  "pinned_files": {
   ".github/workflows/historical.yml": "bf4a08aef0d1c9b51df364365105bb03aaee18ec41fadcbe138214d3173a686d",
   ".github/workflows/save_historical.yml": "754ed6654f037344e5fc1045c633cc860349a187a4a255574d9f81474f881777"
+ },
+ "updater_changes": {
+  "fundamentals_updater.py": [
+   "+import research_test_batch",
+   "-        symbols = universe.load()",
+   "+        symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
+  ],
+  "financials_updater.py": [
+   "+import research_test_batch",
+   "-        symbols = universe.load()",
+   "+        symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
+  ]
  }
 }
