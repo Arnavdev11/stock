@@ -86,12 +86,15 @@ class Verify(Tmp):
         self.has(p, "would be lost")
         self.assertTrue(any("shards/TCS.json" in x for x in p) and any("historical.json TCS" in x for x in p))
 
-    def test_a_vanishing_stock_is_refused(self):
+    def test_a_stock_that_vanishes_from_the_single_file_is_refused_but_a_missing_stock_file_is_a_delta(self):
         make_set(self.d("old"), {"TCS": candles(), "INFY": candles()})
-        make_set(self.d("new"), {"TCS": candles()})
-        p = H.verify(self.d("new"), self.d("old"))
-        self.has(p, "shards/INFY.json would disappear")
-        self.has(p, "INFY would disappear")
+        make_set(self.d("new"), {"TCS": candles()})                                  # historical.json no longer holds INFY
+        self.has(H.verify(self.d("new"), self.d("old")), "INFY would disappear")
+        # a hand-over is a delta: INFY's own file is simply not in it, so it is left exactly as saved (it is never deleted, see Install)
+        make_set(self.d("new2"), {"TCS": candles()}, with_main=False)
+        doc = json.loads((self.d("old") / "historical.json").read_text())
+        (self.d("new2") / "historical.json").write_text(json.dumps(doc))
+        self.assertEqual(H.verify(self.d("new2"), self.d("old")), [])
 
     def test_a_vanishing_benchmark_is_refused(self):
         make_set(self.d("old"), {"TCS": candles()}, bench=candles(base=500))
@@ -240,16 +243,16 @@ class Install(Tmp):
         self.assertEqual((self.d("old") / "shards" / "TCS.json").read_bytes(), (self.d("new") / "shards" / "TCS.json").read_bytes())
         self.assertEqual(H.install(self.d("new"), self.d("old")), 0)                   # unchanged files are not rewritten
 
-    def test_install_never_deletes_anything_and_refuses_a_set_that_would_drop_a_saved_file(self):
+    def test_install_never_deletes_anything_a_stock_file_missing_from_the_delta_stays_as_saved(self):
         make_set(self.d("old"), {"TCS": candles(60), "INFY": candles(60)})
         extra = self.d("old") / "shards" / "WIPRO.json"
         extra.write_text(json.dumps(dict(META, stocks={"WIPRO": entry("WIPRO", candles())})))
-        before = {p.name: p.read_bytes() for p in self.d("old").rglob("*") if p.is_file()}
-        make_set(self.d("new"), {"TCS": candles(70), "INFY": candles(60)})              # WIPRO is not in the new set
-        with self.assertRaises(H.HandoffError):
-            H.install(self.d("new"), self.d("old"))
-        self.assertEqual(before, {p.name: p.read_bytes() for p in self.d("old").rglob("*") if p.is_file()})
+        wipro_before = extra.read_bytes()
+        make_set(self.d("new"), {"TCS": candles(70), "INFY": candles(60)})              # a delta: WIPRO's file is not in it
+        H.install(self.d("new"), self.d("old"))
         self.assertTrue(extra.exists())
+        self.assertEqual(extra.read_bytes(), wipro_before)                             # untouched, byte for byte
+        self.assertEqual(len(json.loads((self.d("old") / "shards" / "TCS.json").read_text())["stocks"]["TCS"]["candles"]), 70)
         make_set(self.d("new2"), {"TCS": candles(70), "INFY": candles(60), "WIPRO": candles()})
         H.install(self.d("new2"), self.d("old"))
         self.assertTrue(extra.exists())
@@ -445,7 +448,7 @@ class WorkflowWiring(unittest.TestCase):
     U = (WF / "update.yml").read_text()
 
     def test_the_first_test_stays_tcs_only(self):
-        self.assertIn('HISTORICAL_SYMBOLS: "${{ github.event_name == \'push\' && \'TCS\' || inputs.symbols || \'TCS\' }}"', self.H)
+        self.assertIn('HISTORICAL_SYMBOLS: "${{ env.CHOSEN_SYMBOLS || (github.event_name == \'push\' && \'TCS\' || inputs.symbols || \'TCS\') }}"', self.H)
         self.assertRegex(self.H, r'symbols:\n(?:.*\n)*?\s+default: "TCS"')
         self.assertNotIn("universe", block(self.H, "historical").split("Update historical prices")[1].split("run:")[0])
 
