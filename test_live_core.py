@@ -1062,13 +1062,23 @@ class PackageGuardTests(unittest.TestCase):
         protected = ("index.html", "update.yml", "nse_updater.py", "fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py", "historical_updater.py")
         for line in out:
             path = line[3:].strip()
+            import guard_update_yml
+            if path == guard_update_yml.PATH and guard_update_yml.approved_change_only(LIVE.parent):
+                continue                                    # the one approved change: the guarded stock-directory copy (exactly two added lines)
             if path == "index.html":
-                # Phase 3 adds one opt-in module; with it removed the file must be byte-identical to HEAD
+                # Phase 3 adds one opt-in module, and the universe search changed the search module on purpose; with those two removed from both sides the file must be
+                # byte-identical to HEAD, and the search module must be exactly the version pinned in tests/search_module_pin.json
+                import hashlib
+                import json
                 import re
-                pat = r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n'
+                pats = (r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n', r'<script type="module" id="stocklens-search">[\s\S]*?</script>\n')
                 head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(LIVE.parent), capture_output=True).stdout.decode("utf-8")
                 now = (LIVE.parent / "index.html").read_bytes().decode("utf-8")
-                if re.sub(pat, "", now, count=1) == re.sub(pat, "", head, count=1):
+                pin = json.loads((LIVE.parent / "tests" / "search_module_pin.json").read_text(encoding="utf-8"))["page_search_module_sha256"]
+                a, b = now, head
+                for pat in pats:
+                    a, b = re.sub(pat, "", a, count=1), re.sub(pat, "", b, count=1)
+                if a == b and hashlib.sha256(now.split('<script type="module" id="stocklens-search">')[1].split("</script>")[0].encode("utf-8")).hexdigest() == pin:
                     continue
             self.assertFalse(path.endswith(protected) or path.startswith(".github/"), "unexpected change: " + line)
 

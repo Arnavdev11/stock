@@ -1,6 +1,6 @@
 // Run: node tests/test_company_search.js   (no network, no browser; stubs the DOM, location and fetch)
 // Tests the Phase 5F company search on the dashboard: a box that matches what is typed against the company names and symbols in out/fundamentals.json and out/company_profiles.json
-// (case-insensitive, trimmed, exact / partial symbol and name), lists at most 10 results in a fixed text-based order (never by any financial value), opens the existing #stock=SYMBOL route,
+// (case-insensitive, trimmed, exact / partial symbol and name), also against the coverage universe (out/stock_directory.json, never the research-data universe.json) so a stock is found whether or not it has fundamentals, lists at most 50 results (and says so when more matched) in a fixed text-based order (never by any financial value), opens the existing #stock=SYMBOL route,
 // says "No matching company found." (and goes nowhere) for an unknown company, works from the keyboard, and leaves the rest of the page exactly as it was.
 const fs = require("fs"), assert = require("assert"), crypto = require("crypto"), cp = require("child_process");
 const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
@@ -92,7 +92,7 @@ function refSearch(docs, query) {
     else if (words.length > 1 && words.every((x) => x.length > 1) && names.some((n) => words.every((x) => n.includes(x)))) t = 8;
     if (t) out.push([t, r.symbol]); }
   out.sort((a, b) => (a[0] !== b[0] ? a[0] - b[0] : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
-  return out.slice(0, 10).map((x) => x[1]);
+  return out.slice(0, 50).map((x) => x[1]);
 }
 const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rated|rank|ranks|ranking|ranked|winner|loser|best|worst|top|target|signal|recommend\w*|outperform\w*|underperform\w*|undervalued|overvalued|cheap|expensive|attractive|upside|downside|gainers?|losers?)\b/i;
 
@@ -123,9 +123,9 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
   { const x = load({ noHeader: true }); eq(x.section(), null, "without the page heading to anchor on, nothing is added (no crash)"); eq(x.fetched.length, 0, "and nothing is fetched"); }
 
   // ================= the data loads once, on first use =================
-  t = load({ files: FILES() }); await t.focus(40); eq([...t.fetched].sort(), ["out/company_profiles.json", "out/fundamentals.json"], "first use fetches exactly the two existing identity files");
-  await t.focus(); await t.type("tcs", 40); await t.type("infy", 40); await t.key("Escape"); await t.type("tata", 40); eq(t.fetched.length, 2, "typing and focusing again never fetches again");
-  { const x = load({ files: FILES() }); await x.type("tc", 40); eq(x.fetched.length, 2, "typing before focusing also loads them, once"); eq(syms(x.results()), ["TCS"], "and then shows the match"); }
+  t = load({ files: FILES() }); await t.focus(40); eq([...t.fetched].sort(), ["out/company_profiles.json", "out/fundamentals.json", "out/stock_directory.json"], "first use fetches exactly the three identity files (the universe list is optional)");
+  await t.focus(); await t.type("tcs", 40); await t.type("infy", 40); await t.key("Escape"); await t.type("tata", 40); eq(t.fetched.length, 3, "typing and focusing again never fetches again");
+  { const x = load({ files: FILES() }); await x.type("tc", 40); eq(x.fetched.length, 3, "typing before focusing also loads them, once"); eq(syms(x.results()), ["TCS"], "and then shows the match"); }
 
   // ================= A. search basics =================
   t = load({ files: FILES() }); await t.focus(30);
@@ -149,12 +149,14 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
   await t.type("tcs"); let r = t.results()[0]; eq([r.symbol, r.name, r.sector], ["TCS", "TATA CONSULTANCY SERV LT", "IT - Software"], "symbol, company name and sector are shown"); eq(r.attr, "TCS", "the option carries the symbol to open");
   await t.type("infy"); eq(t.results()[0].sector, "IT - Software", "the fundamentals sector wins over the profile's"); await t.type("nosec"); eq(t.results()[0].sector, null, "no sector: no sector element, and no 'null' or 'undefined' text"); no(t.list().innerHTML, /null|undefined/, "no null / undefined in the list");
   await t.type("a <b>"); eq(syms(t.results()), ["XSS"], "special characters in a name are matched as text"); no(t.list().innerHTML, /<b>|<i>S/, "and never inserted as markup"); re(t.list().innerHTML, /A &lt;b&gt;&amp;&quot;X&quot;&lt;\/b&gt; LTD/, "the escaped name is shown intact");
-  { // at most 10, in a fixed order
-    const many = Array.from({ length: 25 }, (_, i) => S1("ALP" + String(i).padStart(2, "0"), "ALPHA COMPANY " + i, "S" + (i % 3), { pe: 100 - i })).concat(BASE());
+  { // at most 50, in a fixed order, and a cut list says so
+    const many = Array.from({ length: 70 }, (_, i) => S1("ALP" + String(i).padStart(2, "0"), "ALPHA COMPANY " + i, "S" + (i % 3), { pe: 100 - i })).concat(BASE());
     const x = load({ files: FILES({ "fundamentals.json": FUND(many.slice().reverse()) }) }); await x.focus(30); await x.type("alp");
-    eq(x.results().length, 10, "at most 10 suggestions out of 25 matches"); eq(syms(x.results()), Array.from({ length: 10 }, (_, i) => "ALP" + String(i).padStart(2, "0")), "the first 10 by symbol, whatever order the file lists them in");
-    await x.type("alpha company"); eq(x.results().length, 10, "10 for a name query as well"); await x.type("a"); eq(x.results().length, 10, "10 for a one-letter query"); await x.type("alp09"); eq(syms(x.results()), ["ALP09"], "an exact symbol among many is found, and alone");
-    await x.type("alpha company 7"); eq(syms(x.results())[0], "ALP07", "an exact company name is first"); }
+    eq(x.results().length, 50, "at most 50 suggestions out of 70 matches"); eq(syms(x.results()), Array.from({ length: 50 }, (_, i) => "ALP" + String(i).padStart(2, "0")), "the first 50 by symbol, whatever order the file lists them in");
+    eq(x.message(), "Showing the first 50 of 70 matches. Keep typing to narrow the list.", "and the status line says how many matched in all, so a cut list is not taken for the whole list");
+    await x.type("alpha company"); eq(x.results().length, 50, "50 for a name query as well"); await x.type("a"); eq(x.results().length, 50, "50 for a one-letter query"); await x.type("alp09"); eq(syms(x.results()), ["ALP09"], "an exact symbol among many is found, and alone"); eq(x.message(), "", "with no cut-list note when nothing was cut");
+    await x.type("alpha company 7"); eq(syms(x.results())[0], "ALP07", "an exact company name is first");
+    const few = load({ files: FILES({ "fundamentals.json": FUND(many.slice(0, 25).concat(BASE())) }) }); await few.focus(30); await few.type("alp"); eq(few.results().length, 25, "25 matches: all 25 are listed"); eq(few.message(), "", "and there is no note, because nothing was cut"); }
   { // deterministic: the same query, the same order, and the file order does not matter
     const QS = ["t", "tata", "bank", "a", "i", "l", "ltd", "limited", "s", "in", "o", "b", "co"], firsts = {};
     const a = load({ files: FILES() }); await a.focus(30);
@@ -245,7 +247,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
 
   // ================= D. data safety =================
   const code = srchCode.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  eq((code.match(/fetch\(/g) || []).length, 1, "one fetch call"); eq([...new Set(code.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/fundamentals.json"], "only the two existing identity files; no new JSON source");
+  eq((code.match(/fetch\(/g) || []).length, 1, "one fetch call"); eq([...new Set(code.match(/out\/[a-z_]+\.json/g))].sort(), ["out/company_profiles.json", "out/fundamentals.json", "out/stock_directory.json"], "only the two existing identity files and the coverage-universe list; no other JSON source");
   no(code, /scans|historical|financials\.json|financial_history|bigdeals|fiidii|news/, "no other data file");
   no(code, /https?:|\/\/[a-z]|token|apikey|api[_-]?key|secret|authorization|bearer|password|credential|xmlhttprequest|websocket|navigator\.sendBeacon|\.send\(/i, "no address, token, key, secret or other request mechanism");
   no(code, /localStorage|sessionStorage|indexedDB|document\.cookie|eval\(|document\.write|new Function|innerHTML\s*\+?=\s*[a-z]+\.value|\.sort\(function\(\)\{return Math/, "no storage, cookies or unsafe writes; nothing random");
@@ -254,9 +256,41 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
   no(code, /\[\s*"[A-Z0-9&._-]{2,20}"\s*,\s*"[A-Z0-9&._-]{2,20}"/, "no literal list of symbols");
   no(code, /[.\["'](pe|pb|roe|roce|roa|ev_ebitda|price|close|change_pct|change|volume|market_?cap|gain|loss|score|rank)\b/i, "the matching code never reads a financial field");
   re(code, /a\.e\.symbol<b\.e\.symbol/, "the final tie-break is the symbol text");
-  { const x = load({ files: FILES() }); await x.focus(30); eq(Object.keys(x.S).sort(), ["MAX", "clear", "entries", "init", "norm", "search", "tier"], "the module's whole public surface"); eq(x.S.MAX, 10, "the limit is 10"); }
+  { const x = load({ files: FILES() }); await x.focus(30); eq(Object.keys(x.S).sort(), ["MAX", "clear", "entries", "init", "norm", "search", "tier"], "the module's whole public surface"); eq(x.S.MAX, 50, "the limit is 50"); }
   { // the same company list for whatever the files hold: nothing hard-coded
     const mine = FUND([S1("QWERTY", "QWERTY INDUSTRIES", "Made Up")]); const x = load({ files: { "fundamentals.json": mine, "company_profiles.json": null } }); await x.focus(30); await x.type("tcs"); eq(x.results(), [], "TCS is not offered when it is not in the data"); await x.type("qwerty"); eq(syms(x.results()), ["QWERTY"], "a company that exists only in the data is offered"); }
+
+  // ================= U. the whole coverage universe is searchable, with or without research data =================
+  // Synthetic fixtures only: invented symbols and names, never real market data. Ten stocks have fundamentals (the development set); 600 more exist only in the universe list.
+  const UNI = (n, extra = []) => ({ schema_version: 1, kind: "stock_directory", stage: "fixture", count: n + extra.length, symbols: Array.from({ length: n }, (_, i) => ({ symbol: "ZQ" + String(i).padStart(4, "0"), isin: null, name: "Fixture Industries " + i + " Limited" })).concat(extra) });
+  const UF = (o = {}) => FILES(Object.assign({ "stock_directory.json": UNI(600) }, o));
+  { const x = load({ files: UF() }); await x.focus(40);
+    await x.type("zq0555"); eq(syms(x.results()), ["ZQ0555"], "a stock far beyond the first ten is found by its symbol"); await x.type("ZQ0555"); eq(syms(x.results()), ["ZQ0555"], "in upper case");  await x.type("Zq05"); eq(x.results().length, 50, "a partial symbol lists 50 of the 100 that match"); eq(x.message(), "Showing the first 50 of 100 matches. Keep typing to narrow the list.", "with the count of what matched");
+    await x.type("fixture industries 555 limited"); eq(syms(x.results()), ["ZQ0555"], "and by its company name, exactly"); await x.type("FIXTURE INDUSTRIES 555"); eq(syms(x.results())[0], "ZQ0555", "case-insensitively, by part of the name"); eq(x.results()[0].name, "Fixture Industries 555 Limited", "the name shown is the universe's own, not invented");
+    await x.type("tcs"); eq(syms(x.results()), ["TCS"], "the stocks that already worked still work"); eq(x.results()[0].name, "TATA CONSULTANCY SERV LT", "and keep their fundamentals name");
+    await x.type("zq0599"); eq(syms(x.results()), ["ZQ0599"], "the last universe stock is found"); await x.type("zq0600"); eq(x.results(), [], "a symbol that is not in any file is not offered"); eq(x.message(), "No matching company found.", "nothing is invented");
+    // the universe stock has no fundamentals; it is still listed, with no sector, and opens the existing route
+    await x.type("zq0555"); eq(x.results()[0].sector, null, "no sector for a stock that only the universe lists"); no(x.list().innerHTML, /null|undefined/, "and no null / undefined text"); x.click("ZQ0555"); eq(x.hash(), "stock=ZQ0555", "selecting it opens #stock=ZQ0555"); }
+  { // Enter on an exact symbol works for a universe-only stock, too
+    const x = load({ files: UF() }); await x.focus(40); await x.type("zq0123"); await x.key("Enter"); eq(x.hash(), "stock=ZQ0123", "Enter on an exact symbol opens a universe-only stock"); }
+  { // missing research data: the existing Stock Detail view shows the stock and says what is unavailable (the real detail block, nothing in it changed)
+    const x = load({ files: UF(), detail: true }); await x.focus(40); await x.type("zq0300"); x.click("ZQ0300"); x.win.hashchange(); await sleep(80);
+    ok(x.classes.has("detail-mode"), "Stock Detail opened for a stock with no fundamentals, financials or prices"); re(x.box.innerHTML, /Stock Detail: ZQ0300/, "for that symbol");
+    re(x.box.innerHTML, /No fundamentals or financial statements were found for ZQ0300 in the current data\. Missing values show "-"\./, "and it says plainly that the data is missing");
+    re(x.box.innerHTML, /<b[^>]*>-<\/b><span>P\/E<\/span>/, "P/E shows '-', not a made-up number"); re(x.box.innerHTML, /<b[^>]*>-<\/b><span>Latest Price/, "so does the latest price"); no(x.box.innerHTML, /undefined|NaN|null/, "no undefined, NaN or null text"); }
+  { // a universe list never overrides what the other files say, and never supplies a sector
+    const uni = { schema_version: 1, kind: "stock_directory", count: 3, symbols: [{ symbol: "TCS", isin: null, name: "Universe Name For Tcs" }, { symbol: "SECT", isin: null, name: "Sector Carrier Limited", sector: "Should Never Show" }, { symbol: "OKAY", name: "Okay Corp" }] };
+    const x = load({ files: FILES({ "stock_directory.json": uni }) }); await x.focus(40);
+    await x.type("tcs"); eq(x.results()[0].name, "TATA CONSULTANCY SERV LT", "the fundamentals name still wins for the display"); await x.type("universe name for tcs"); eq(syms(x.results()), ["TCS"], "the universe name also finds it");
+    await x.type("sector carrier"); eq(syms(x.results()), ["SECT"], "a universe-only stock is found"); eq(x.results()[0].sector, null, "a sector inside the universe file is never read or shown (the sector gate is untouched)"); await x.type("okay"); eq(syms(x.results()), ["OKAY"], "an entry without isin is fine"); }
+  { // a universe file of the wrong kind, or malformed, adds nothing and breaks nothing; a missing one is the old behaviour
+    for (const bad of [{ kind: "other", symbols: [{ symbol: "ZQ0001", name: "Wrong Kind Ltd" }] }, { kind: "universe", symbols: [{ symbol: "ZQ0001", name: "Research Universe Ltd" }] }, { kind: "stock_directory", symbols: "bad" }, { kind: "stock_directory" }, [], 7, "x", { kind: "stock_directory", symbols: [null, 7, "x", { symbol: "lower", name: "Lower Ltd" }, { symbol: "", name: "Empty Ltd" }, { symbol: "A".repeat(21), name: "Long Ltd" }] }]) {
+      const x = load({ files: FILES({ "stock_directory.json": bad }) }); await x.focus(40); await x.type("ltd"); eq(syms(x.results()).filter((q) => /^(ZQ|lower|A{5})/.test(q)), [], "an unusable universe file adds no stock: " + JSON.stringify(bad).slice(0, 50)); await x.type("tcs"); eq(syms(x.results()), ["TCS"], "and the rest of the list still works"); }
+    const none = load({ files: FILES() }); await none.focus(40); await none.type("zq0001"); eq(none.results(), [], "no universe file: only what the other two files hold"); await none.type("tata"); eq(syms(none.results()), ["TATAMOTORS", "TATASTEEL", "TCS"], "exactly as before"); }
+  { // the ordering rule and the independent statement agree when the universe is part of the data
+    const uni = UNI(120), docs = [FUND(), PROF()]; const x = load({ files: FILES({ "stock_directory.json": uni }) }); await x.focus(40);
+    const asDoc = { stocks: uni.symbols.map((u) => ({ symbol: u.symbol, company_name: u.name })) };
+    for (const q of ["zq", "zq01", "fixture", "fixture industries 7", "industries 1 limited", "ltd", "tata", "limited", "zq0119", "i"]) { const want = refSearch(docs.concat([asDoc]), q); await x.type(q); eq(syms(x.results()), want, "'" + q + "': the same results and order as the independent rule, with the universe included"); } }
 
   // ================= E. the rest of the page is exactly as it was =================
   no(code, /Investor Snapshot|data-snap|detailSnapshot|SLSnapshot|SLCompare|SLFinHistory|SLChart|SLTech|detailTech|detailChart/, "the search code does not touch the Investor Snapshot, comparison, Financial History or chart code");

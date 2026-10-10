@@ -30,7 +30,11 @@ ok(html.indexOf('id="screener-sec"') > html.indexOf("</main>"), "the existing Fu
   no(body, /Not investment advice[\s\S]{0,40}<\/p>/, "no marketing or disclaimer paragraphs in the dashboard body");
   eq((body.match(/<footer>/g) || []).length, 1, "one footer"); re(body, /<footer>End-of-day market data\. Not investment advice\.<\/footer>/, "the footer says end-of-day"); }
 { const leg = legacy(html); let base = ""; try { base = cp.execSync("git show aa4ace1:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 }); } catch (e) {}
-  if (base) eq(leg === base, true, "the page minus the 5I and 5J layers is byte-for-byte the Phase 5H.6 page: nothing else changed (Stock Detail, charts, fundamentals, financials, shareholding, research, compare)"); }
+  if (base) { // the search module was changed on purpose later (universe search; test_company_search.js pins it): it is compared on its own, and everything else is still compared byte for byte
+    const SRCHMOD = /<script type="module" id="stocklens-search">[\s\S]*?<\/script>\n/, cnt = (h) => (h.match(new RegExp(SRCHMOD.source, "g")) || []).length;
+    eq([cnt(leg), cnt(base)], [1, 1], "one search module in the page minus the 5I and 5J layers, and one in the Phase 5H.6 page");
+    eq(leg.replace(SRCHMOD, "") === base.replace(SRCHMOD, ""), true, "the page minus the 5I and 5J layers and minus the search module is byte-for-byte the Phase 5H.6 page minus its search module: nothing else changed (Stock Detail, charts, fundamentals, financials, shareholding, research, compare)");
+    eq(leg.indexOf('<script type="module" id="stocklens-search">') === base.indexOf('<script type="module" id="stocklens-search">'), true, "and the search module still sits at exactly the same place"); } }
 no(main, /Quarterly Results|Buy\b|Sell\b|Strong Buy|Bearish|Bullish|Target price|Rating/, "no recommendations, ratings or quarterly results in the dashboard markup");
 no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /Strong Buy|Bearish|Bullish|Target price|Quarterly/, "none in the module either (the FII/DII Buy and Sell columns are institutional flows, not advice)");
 

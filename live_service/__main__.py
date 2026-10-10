@@ -39,6 +39,22 @@ def parse_args(argv):
     p.add_argument("--summary", action="store_true", help="on exit print one JSON summary (health + last snapshot) to stdout")
     p.add_argument("--allow-origin", action="append", default=[], metavar="ORIGIN",
                    help="let ONE exact loopback web origin (e.g. http://127.0.0.1:8000) read the snapshot from the browser (CORS). Off by default; repeatable; no wildcard, no public origin")
+    p.add_argument("--count-only", action="store_true",
+                   help="Stage A: read a LOCAL instrument file (--instruments-file, required), print how many NSE equities are eligible and why the rest are not, then exit. "
+                        "Reads no token, opens no network connection, never downloads anything")
+    p.add_argument("--review-flagged", action="store_true",
+                   help="with --count-only: after the report, print the evidence a person needs to decide the eligibility rules - complete metadata of every flagged instrument, "
+                        "which fields separate the instrument types, observed ISIN structure, and sample rows. Descriptive only; same offline, token-free guarantees")
+    p.add_argument("--classify-universe", action="store_true",
+                   help="offline universe classifier: reads LOCAL files only (--instruments-file, --equity-ref, --sme-ref, --etf-ref), gives every NSE_EQ row exactly one status, prints counts, "
+                        "reference overlaps, duplicates, unmatched records in both directions and audit hashes, then exits. No token is read and nothing is downloaded or written")
+    p.add_argument("--equity-ref", metavar="PATH", help="with --classify-universe: NSE equity list (EQUITY_L.csv), the source of the trading series")
+    p.add_argument("--sme-ref", metavar="PATH", help="with --classify-universe: NSE SME list (SME_EQUITY_L.csv)")
+    p.add_argument("--etf-ref", metavar="PATH", help="with --classify-universe: NSE ETF reference (nse_etfs.csv)")
+    p.add_argument("--baseline", metavar="PATH", help="with --classify-universe: a text file of reported counts and SHA-256 hashes to COMPARE against (never adjusted to match)")
+    p.add_argument("--asof", action="append", default=[], metavar="NAME=YYYY-MM-DD",
+                   help="with --classify-universe: the real source/as-of date of an input (NAME: instruments, equity, sme or etf). Without it the report says 'not recorded'; dates are never inferred")
+    p.add_argument("--list", dest="list_status", action="append", default=[], metavar="STATUS", help="with --classify-universe: also print every sorted audit line of this status (repeatable)")
     p.add_argument("--drop-after", type=float, help="drop the socket once, this many seconds after streaming starts (reconnect test)")
     return p.parse_args(argv)
 
@@ -114,8 +130,111 @@ async def _set(ev):
     ev.set()
 
 
+def count_only(args, out=None, err=None):
+    """Stage A. Deliberately before (and apart from) everything that reads the token or touches the network."""
+    import hashlib
+    from live import eligible
+    out = out or sys.stdout
+    err = err or sys.stderr
+    if not args.instruments_file:
+        print("error: --count-only reads a local file and never downloads one: pass --instruments-file PATH (NSE.json or NSE.json.gz).", file=err)
+        return 2
+    try:
+        with open(args.instruments_file, "rb") as f:
+            raw = f.read()
+        rows = upstox.parse_instrument_bytes(raw)
+    except (OSError, ValueError, ConfigError) as e:
+        print("error: cannot read the instrument file: %s" % type(e).__name__, file=err)
+        return 2
+    result = eligible.classify(rows, collect=bool(args.review_flagged))
+    source = {"path": args.instruments_file, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    print(eligible.format_report(result.report, source), file=out)
+    if args.review_flagged:
+        print("\n" + eligible.review(rows, result), file=out)
+    return 0
+
+
+def classify_universe_cmd(args, out=None, err=None):
+    """Offline classifier. Like count_only, it runs before (and apart from) everything that reads the token or touches the network."""
+    import datetime
+    import hashlib
+    from live import classifier, reference
+    out = out or sys.stdout
+    err = err or sys.stderr
+    need = [("--instruments-file", args.instruments_file), ("--equity-ref", args.equity_ref), ("--sme-ref", args.sme_ref), ("--etf-ref", args.etf_ref)]
+    missing = [n for n, v in need if not v]
+    if missing:
+        print("error: --classify-universe reads local files only and never downloads anything; missing: %s" % ", ".join(missing), file=err)
+        return 2
+    asof = {}
+    for item in args.asof:
+        name, _, value = item.partition("=")
+        try:
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            value = ""
+        if name not in ("instruments", "equity", "sme", "etf") or not value or len(value) != 10:
+            print("error: --asof must look like NAME=YYYY-MM-DD with NAME one of instruments, equity, sme, etf (got %r)" % item, file=err)
+            return 2
+        asof[name] = value
+    for st in args.list_status:
+        if st not in classifier.STATUS_ORDER:
+            print("error: --list needs one of: %s" % ", ".join(classifier.STATUS_ORDER), file=err)
+            return 2
+
+    def read(path, what):
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+        except OSError as e:
+            print("error: cannot read the %s file: %s" % (what, type(e).__name__), file=err)
+            return None
+        return raw
+
+    raws = {}
+    for name, path in (("instruments", args.instruments_file), ("equity", args.equity_ref), ("sme", args.sme_ref), ("etf", args.etf_ref)):
+        raws[name] = read(path, name)
+        if raws[name] is None:
+            return 2
+    try:
+        rows = upstox.parse_instrument_bytes(raws["instruments"])
+        refs = {n: reference.parse(n, raws[n].decode("utf-8-sig")) for n in ("equity", "sme", "etf")}
+    except (ValueError, ConfigError, UnicodeDecodeError) as e:
+        print("error: cannot read an input: %s: %s" % (type(e).__name__, e if isinstance(e, reference.ReferenceError) else ""), file=err)
+        return 2
+    prov = []
+    paths = {"instruments": args.instruments_file, "equity": args.equity_ref, "sme": args.sme_ref, "etf": args.etf_ref}
+    for n in ("instruments", "equity", "sme", "etf"):
+        entry = {"name": n, "path": paths[n], "bytes": len(raws[n]), "sha256": hashlib.sha256(raws[n]).hexdigest(), "as_of": asof.get(n)}
+        if n != "instruments":
+            st, cols = refs[n].stats, refs[n].columns
+            entry["notes"] = [("columns used", "isin=%r symbol=%r series=%r" % (cols["isin"], cols["symbol"], cols["series"])),
+                              ("rows", "%d (without ISIN %d, malformed ISIN %d, ISINs listed more than once %d)" % (st["rows"], st["rows_without_isin"], st["rows_with_malformed_isin"], st["isins_listed_more_than_once"])),
+                              ("series counts", ", ".join("%s=%d" % kv for kv in st["series_counts"].items()))]
+        prov.append(entry)
+    result = classifier.classify_universe(rows, refs["equity"], refs["sme"], refs["etf"])
+    baseline_lines, ok = None, True
+    if args.baseline:
+        braw = read(args.baseline, "baseline")
+        if braw is None:
+            return 2
+        baseline_lines, ok = classifier.compare_baseline(result, classifier.parse_baseline(braw.decode("utf-8-sig", "replace")))
+    print(classifier.format_classification(result, prov, baseline_lines, args.list_status), file=out)
+    return 0 if ok else 3
+
+
 def main(argv=None, env=None, **kw):
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.classify_universe:
+        if args.count_only:
+            print("error: use either --count-only or --classify-universe, not both.", file=sys.stderr)
+            return 2
+        return classify_universe_cmd(args)
+    if args.review_flagged and not args.count_only:
+        print("error: --review-flagged only works together with --count-only.", file=sys.stderr)
+        return 2
+    if args.count_only:
+        return count_only(args)
     env = os.environ if env is None else env
     token = env.get(TOKEN_ENV, "")
     if not token:

@@ -162,6 +162,8 @@ jobs:
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
+          # the searchable stock directory (built by stock_directory.py, kept on the data branch). Optional and separate from universe.json, which only the research updaters read.
+          if [ -f ledger-branch/stock_directory.json ]; then cp ledger-branch/stock_directory.json _site/out/stock_directory.json; fi
           if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
           cp company_profiles.json _site/out/
 

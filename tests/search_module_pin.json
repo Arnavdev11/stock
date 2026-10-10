@@ -1,0 +1,5 @@
+{
+  "note": "SHA-256 of the text of the search module (the content between <script type=\"module\" id=\"stocklens-search\"> and </script>), pinned after the approved stock-directory search change (reads only out/stock_directory.json). Older guards that compare the whole page against an earlier commit compare everything EXCEPT the search module byte for byte, and pin the search module here instead; its behaviour is tested in tests/test_company_search.js. Changing the search module again means updating this file on purpose.",
+  "page_search_module_sha256": "7164a382102f50a0cf23e4235899f296d4c2a359a358b821290d341dfd9a1cff",
+  "pre_5i_search_module_sha256": "a56103ce24e9b82a00778e00d05ae20626b22c57c0e6a48709121167c808d735"
+}
