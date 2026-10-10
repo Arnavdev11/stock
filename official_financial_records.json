@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "note": "Hand-verified annual figures taken ONLY from the companies' own published financial statements (never from aggregators or NSE). Merged into the financial-history ledger by financial_history_updater.py as records with their own official-report provenance. Monetary values are INR crore; EPS is INR per share. A null means the statement does not report that figure.",
+  "records": [
+    {
+      "symbol": "TCS",
+      "fy": 2022,
+      "period": "Mar 2022",
+      "basis": "consolidated",
+      "company": "Tata Consultancy Services Limited",
+      "accounting_basis": "Ind AS",
+      "units": "INR crore; EPS in INR",
+      "retrieved_on": "2026-10-04",
+      "values": {
+        "revenue": 191754.0,
+        "total_revenue": 195772.0,
+        "profit_before_tax": 51687.0,
+        "profit_after_tax": 38449.0,
+        "eps_basic": 103.62,
+        "eps_diluted": null,
+        "operating_cash_flow": 39949.0
+      },
+      "fields": {
+        "revenue": {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2021-22/q4/IND%20AS/Consolidated.pdf", "page": 3, "exact_label": "Revenue from operations"},
+        "total_revenue": {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2021-22/q4/IND%20AS/Consolidated.pdf", "page": 3, "exact_label": "TOTAL INCOME"},
+        "profit_before_tax": {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2021-22/q4/IND%20AS/Consolidated.pdf", "page": 3, "exact_label": "PROFIT BEFORE TAX"},
+        "profit_after_tax": {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2021-22/q4/IND%20AS/Consolidated.pdf", "page": 3, "exact_label": "PROFIT FOR THE YEAR"},
+        "eps_basic": {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2021-22/q4/IND%20AS/Consolidated.pdf", "page": 4, "exact_label": "Earnings per equity share:- Basic and diluted"},
+        "operating_cash_flow": {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2021-22/q4/IND%20AS/Consolidated.pdf", "page": 8, "exact_label": "Net cash generated from operating activities"}
+      },
+      "notes": [
+        "EPS is reported as ONE combined basic-and-diluted line; it is stored in eps_basic and eps_diluted is left null (no separate diluted figure exists in the statement).",
+        "profit_after_tax is the line 'PROFIT FOR THE YEAR' (before any split between owners and non-controlling interests).",
+        "revenue is 'Revenue from operations' and total_revenue is 'TOTAL INCOME' (revenue plus other income); the mapping to the Upstox field names is by meaning, not by an identical label."
+      ],
+      "cross_checks": [
+        {"document_url": "https://www.tcs.com/content/dam/tcs/investor-relations/financial-statements/2022-23/q4/IND%20AS/Consolidated.pdf", "result": "The FY2022-23 consolidated statements' comparative 'Year ended March 31, 2022' column shows the same figures for all seven lines; no restatement, reclassification or regrouping note was found."}
+      ]
+    },
+    {
+      "symbol": "ITC",
+      "fy": 2022,
+      "period": "Mar 2022",
+      "basis": "consolidated",
+      "company": "ITC Limited",
+      "accounting_basis": "Ind AS",
+      "units": "INR crore; EPS in INR",
+      "retrieved_on": "2026-10-04",
+      "values": {
+        "revenue": 65204.96,
+        "total_revenue": 67041.31,
+        "profit_before_tax": 20740.47,
+        "profit_after_tax": 15503.13,
+        "eps_basic": 12.37,
+        "eps_diluted": 12.37,
+        "operating_cash_flow": 15775.51
+      },
+      "fields": {
+        "revenue": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 235, "exact_label": "Revenue From Operations"},
+        "total_revenue": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 235, "exact_label": "Total Income (I + II)"},
+        "profit_before_tax": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 235, "exact_label": "Profit before tax (VI + VII)"},
+        "profit_after_tax": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 235, "exact_label": "Profit for the year (VIII - IX)"},
+        "eps_basic": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 235, "heading": "Earnings per equity share", "exact_label": "(1) Basic (in ₹)"},
+        "eps_diluted": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 235, "heading": "Earnings per equity share", "exact_label": "(2) Diluted (in ₹)"},
+        "operating_cash_flow": {"document_url": "https://www.itcportal.com/about-itc/shareholder-value/annual-reports/itc-annual-report-2022/pdf/consolidated-financial-statements.pdf", "page": 238, "exact_label": "Net Cash from Operating Activities"}
+      },
+      "notes": [
+        "PRESENTATION DIFFERENCE, NOT A CHANGE TO THE UNDERLYING FIGURES: the FY2022 Annual Report (consolidated Statement of Profit and Loss) adds the share of profit of associates and joint ventures (line V, 17.48 crore) BEFORE profit before tax, so 'Profit before tax (VI + VII)' = 20,740.47 and 'Profit for the year' = 15,503.13 both include that share.",
+        "The FY2022 comparative column in ITC's FY2022-23 consolidated results presents the same amounts separately (reclassified): its 'PROFIT BEFORE TAX' is 20,722.99 and its 'PROFIT FOR THE PERIOD' is 15,485.65, with the 17.48 crore share of associates and joint ventures shown on its own line after them. Revenue from operations, total income, total expenses and tax are identical in both documents.",
+        "WHY THE ANNUAL REPORT PRESENTATION IS KEPT: Upstox's FY2023 consolidated ITC values are profit before tax 25,915.12 and profit after tax 19,476.72, which include the share of associates and joint ventures (the results-format figures would be 25,866.08 and 19,427.68). The Upstox FY2023-FY2026 series therefore follows the Annual Report presentation, and so does this FY2022 record, so the series is on one definition.",
+        "profit_before_tax and profit_after_tax are therefore the Annual Report lines 'Profit before tax (VI + VII)' and 'Profit for the year (VIII - IX)' (before the split between owners and non-controlling interests).",
+        "revenue is 'Revenue From Operations' and total_revenue is 'Total Income (I + II)'; the mapping to the Upstox field names is by meaning, not by an identical label."
+      ],
+      "cross_checks": [
+        {"document_url": "https://itcportal.com/content/dam/itc-corporate/pdfs/2023/annual%20financial%20results%20-%20fy%202022-23.pdf", "result": "The FY2022 comparative column of the FY2022-23 consolidated results agrees on revenue from operations, total income, tax expense, both EPS figures and the 17.48 crore share of associates and joint ventures. It differs in presentation only: profit before tax (20,722.99) and profit for the period (15,485.65) there exclude that share, which is shown on its own line. This is a presentation/reclassification difference; the source states that previous-period figures are re-arranged wherever necessary to conform to the current period."}
+      ]
+    }
+  ]
+}

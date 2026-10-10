@@ -97,18 +97,74 @@ def download_missing(s):
 
 
 # ---------------------------------------------------------------- 2. calculations
+LAST_LOAD_REPORT = {}   # what the last load_prices() accepted and rejected (read by tests and printed in the log)
+
+
+def file_date(f):
+    """The date a saved file claims to be, from its name bhav_YYYYMMDD.csv (None if the name does not fit)."""
+    try:
+        return dt.datetime.strptime(Path(f).stem.replace("bhav_", "", 1), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def read_raw_file(f):
+    """Read one saved NSE daily file. Returns (frame, None) or (None, reason).
+    DATA QUALITY RULE: a file is used only if EVERY row inside it is dated the date in its filename. NSE sometimes answers a request for a
+    market holiday with a copy of the previous trading day's file; that copy must not be counted as a second trading day."""
+    name_date = file_date(f)
+    if name_date is None:
+        return None, "the file name is not bhav_YYYYMMDD.csv"
+    d = pd.read_csv(f, skipinitialspace=True)
+    d.columns = [c.strip() for c in d.columns]
+    for c in ("SYMBOL", "SERIES", "DATE1"):
+        d[c] = d[c].astype(str).str.strip()
+    days = pd.to_datetime(d.DATE1, format="%d-%b-%Y", errors="coerce")
+    off = days != pd.Timestamp(name_date)       # also true for a DATE1 that cannot be read
+    if off.any():
+        found = sorted({x for x in d.DATE1[off].unique()})[:3]
+        return None, "%d of %d row(s) are not dated %s (found: %s)" % (int(off.sum()), len(d), name_date.isoformat(), ", ".join(found))
+    return d, None
+
+
 def load_prices():
     files = sorted(RAW.glob("bhav_*.csv"))
     if not files:
         sys.exit("No data files yet. Check your internet connection and the URL constants.")
-    df = pd.concat((pd.read_csv(f, skipinitialspace=True) for f in files), ignore_index=True)
-    df.columns = [c.strip() for c in df.columns]
-    for c in ("SYMBOL", "SERIES", "DATE1"):
-        df[c] = df[c].astype(str).str.strip()
+    frames, rejected = [], []
+    for f in files:
+        d, why = read_raw_file(f)
+        if why:
+            rejected.append({"file": f.name, "reason": why})
+            log("REJECTED raw file", f.name, "-", why, "- not used as a trading day")
+            if os.environ.get("GITHUB_ACTIONS"):
+                print("::warning title=Raw NSE file rejected::%s: %s" % (f.name, why), flush=True)
+        else:
+            frames.append(d)
+    if not frames:
+        sys.exit("DATA QUALITY GATE FAILED: every saved NSE file was rejected (%d files)." % len(files))
+    df = pd.concat(frames, ignore_index=True)
     df = df[df.SERIES == "EQ"].copy()  # normal equity only (skips BE series, ETFs etc.)
     df["DATE"] = pd.to_datetime(df.DATE1, format="%d-%b-%Y")
     for c in ("PREV_CLOSE", "HIGH_PRICE", "CLOSE_PRICE", "TTL_TRD_QNTY", "TURNOVER_LACS", "DELIV_PER"):
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    # One row per (SYMBOL, DATE): the rolling windows below count rows, so a repeated day would be counted twice.
+    # An identical repeat is removed (nothing is chosen); a repeat with different values is never resolved by guessing: the run stops.
+    before = len(df)
+    df = df.drop_duplicates()
+    same = before - len(df)
+    clash = df[df.duplicated(["SYMBOL", "DATE"], keep=False)]
+    if len(clash):
+        ex = clash.sort_values(["SYMBOL", "DATE"]).head(3)
+        sys.exit("DATA QUALITY GATE FAILED: %d row(s) repeat a (SYMBOL, DATE1) with DIFFERENT values, e.g. %s. Nothing was written."
+                 % (len(clash), "; ".join("%s %s" % (r.SYMBOL, r.DATE1) for r in ex.itertuples())))
+    LAST_LOAD_REPORT.clear()
+    LAST_LOAD_REPORT.update({"files_found": len(files), "files_used": len(frames), "files_rejected": rejected, "identical_repeat_rows_removed": same})
+    log("raw files: %d found, %d used, %d rejected; identical repeated rows removed: %d" % (len(files), len(frames), len(rejected), same))
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path and rejected:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("### Raw NSE files rejected (filename date does not match the data inside)\n\n" + "\n".join("- `%s`: %s" % (r["file"], r["reason"]) for r in rejected) + "\n")
     return df.sort_values(["SYMBOL", "DATE"]).reset_index(drop=True)
 
 

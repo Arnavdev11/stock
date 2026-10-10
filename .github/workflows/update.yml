@@ -3,26 +3,70 @@ name: Update data and publish site
 "on":
   schedule:
     - cron: "15 15 * * 1-5"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      fundamentals_calls:
+        description: "Upstox call budget for fundamentals (about 2 s per call). Empty = 150 (a normal day)."
+        required: false
+        default: ""
+      financials_calls:
+        description: "Upstox call budget for financial statements. Empty = 120. A big first fill of the wider universe can use up to about 1500 (50 min)."
+        required: false
+        default: ""
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+# One shared group for everything that reads or writes the financial-history ledger or the shareholding ledger (see also financial_history.yml and shareholding.yml). Never cancels a run.
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment: github-pages
+    timeout-minutes: 240
+    outputs:
+      ledger_ready: ${{ steps.ledgerout.outputs.ready }}
+      shareholding_ready: ${{ steps.shpout.outputs.ready }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - run: pip install pandas requests
+
+      - name: Select the coverage universe
+        run: |
+          # Stage 1 = NIFTY 500, Stage 2 = all NSE EQ: the only difference is which universe.json sits on the data branch (built by the "Build coverage universe" workflow).
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
 
       - name: Restore saved data
         uses: actions/cache@v4
@@ -39,7 +83,78 @@ jobs:
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FUNDAMENTALS_MAX_CALLS: ${{ inputs.fundamentals_calls || '150' }}
         run: python fundamentals_updater.py
+
+      - name: Update financial statements (Upstox)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FINANCIALS_MAX_CALLS: ${{ inputs.financials_calls || '120' }}
+        run: python financials_updater.py
+
+      - name: Update financial history (Upstox)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FINANCIAL_HISTORY_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
+          FINANCIAL_HISTORY_LEDGER_OUT: ledger-out/financial_history_ledger.json
+        run: python financial_history_updater.py
+
+      - name: Check the ledger output
+        id: ledgerout
+        run: |
+          if [ -s ledger-out/financial_history_ledger.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The financial history updater produced no ledger this run, so nothing will be saved."
+          fi
+
+      - name: Hand the updated ledger to the save job
+        if: steps.ledgerout.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-history-ledger
+          path: ledger-out/financial_history_ledger.json
+          if-no-files-found: error
+          retention-days: 14
+
+      # Phase 5H.5. The shareholding updater (the same script as the manual shareholding.yml) reads the durable ledger from the data branch and
+      # rewrites out/shareholding.json, which the site-folder step below publishes with the other out/*.json files.
+      # It never initialises a ledger (no init flag is passed) and never creates the data branch. If it fails, nothing is saved and the
+      # previously published out/shareholding.json (from the saved-data cache) is left as it was.
+      - name: Update shareholding pattern (NSE/XBRL)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          SHAREHOLDING_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
+          SHAREHOLDING_LEDGER_OUT: shareholding-ledger-out/shareholding_ledger.json
+          SHAREHOLDING_MAX_STOCKS: "60"      # the stalest 60 stocks of the universe per day (a 500-stock universe is covered about every 9 days)
+        run: python shareholding_updater.py
+
+      - name: Check the shareholding ledger output
+        id: shpout
+        run: |
+          if [ -s shareholding-ledger-out/shareholding_ledger.json ] && [ -s out/shareholding.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The shareholding updater produced no ledger this run, so nothing will be saved. The last published shareholding.json (if any) is kept."
+          fi
+
+      - name: Hand the updated shareholding ledger to the save job
+        if: steps.shpout.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shareholding-ledger
+          path: shareholding-ledger-out/shareholding_ledger.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Validate outputs
+        continue-on-error: true
+        run: python validate_outputs.py
 
       - name: Build site folder
         run: |
@@ -47,9 +162,77 @@ jobs:
           cp index.html _site/
           mkdir _site/out
           cp out/*.json _site/out/
+          if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
+          cp company_profiles.json _site/out/
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
-      - uses: actions/deploy-pages@v4
+  save-history:
+    needs: build
+    if: ${{ needs.build.outputs.ledger_ready == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/save_ledger.yml
+    with:
+      create_branch: false
+
+  # Phase 5H.5. Saves the shareholding ledger to the data branch with the existing no-loss check (shareholding_ledger.py verify), and nothing else.
+  # It waits for save-history so the two jobs never push to the data branch at the same time. It never creates the branch and never initialises the ledger.
+  save-shareholding:
+    needs: [build, save-history]
+    if: ${{ !cancelled() && needs.build.outputs.shareholding_ready == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the code (for the verification script)
+        uses: actions/checkout@v4
+
+      - name: Download the updated shareholding ledger
+        uses: actions/download-artifact@v4
+        with:
+          name: shareholding-ledger
+          path: ledger-new
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Verify nothing was lost
+        run: python shareholding_ledger.py verify ledger-branch/shareholding_ledger.json ledger-new/shareholding_ledger.json
+
+      - name: Commit the shareholding ledger to the data branch
+        run: |
+          cd ledger-branch
+          cp ../ledger-new/shareholding_ledger.json shareholding_ledger.json
+          git add shareholding_ledger.json
+          if git diff --cached --quiet; then
+            echo "The shareholding ledger did not change. Nothing to commit."
+            exit 0
+          fi
+          if [ "$(git diff --cached --name-only)" != "shareholding_ledger.json" ]; then
+            echo "::error::The commit must contain exactly shareholding_ledger.json."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update shareholding ledger (run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data

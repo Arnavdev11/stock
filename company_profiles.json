@@ -1,0 +1,146 @@
+{
+  "as_of": "2026-10-04",
+  "note": "Descriptions are taken from each company's own official web pages (see source_url). source_date is set only when the page shows a date; business_model is null unless an official source states one. HDFCBANK is intentionally absent: no official narrative description could be verified.",
+  "stocks": [
+    {
+      "symbol": "TCS",
+      "company_name": "Tata Consultancy Services Limited",
+      "sector": null,
+      "description": "A preferred technology partner for industry-leading organizations worldwide.",
+      "key_businesses": [],
+      "business_model": null,
+      "source_name": "TCS - Who we are",
+      "source_url": "https://www.tcs.com/who-we-are",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "Tata Consultancy Services (BSE: 532540, NSE: TCS) is a preferred technology partner for industry-leading organizations worldwide."
+    },
+    {
+      "symbol": "INFY",
+      "company_name": "Infosys Limited",
+      "sector": null,
+      "description": "A global leader in next-generation digital services and consulting.",
+      "key_businesses": [],
+      "business_model": null,
+      "source_name": "Infosys - About",
+      "source_url": "https://www.infosys.com/about.html",
+      "source_date": "2026-09-17",
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "Infosys is a global leader in next-generation digital services and consulting."
+    },
+    {
+      "symbol": "RELIANCE",
+      "company_name": "Reliance Industries Limited",
+      "sector": null,
+      "description": "Reliance Industries describes its businesses as Energy, Petrochemicals, Retail, Digital Services (Jio), New Energy & New Materials, and Media & Entertainment.",
+      "key_businesses": [
+        "Energy",
+        "Petrochemicals",
+        "Retail",
+        "Digital Services-Jio",
+        "New Energy & New Materials",
+        "Media & Entertainment"
+      ],
+      "business_model": null,
+      "source_name": "Reliance Industries - Businesses",
+      "source_url": "https://www.ril.com/businesses",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "Jio—our digital services business—democratises access to digital services and drives the digital revolution in India."
+    },
+    {
+      "symbol": "ICICIBANK",
+      "company_name": "ICICI Bank Limited",
+      "sector": null,
+      "description": "A diversified financial services provider that, along with its subsidiaries and other group companies, offered a wide variety of products and services.",
+      "key_businesses": [],
+      "business_model": null,
+      "source_name": "ICICI Bank - About us",
+      "source_url": "https://www.icici.bank.in/about-us",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "With the liberalization of the financial sector in India in the 1990s, ICICI Bank transformed its business from a development financial institution offering only project finance to a diversified financial services provider that, along with its subsidiaries and other group companies, offered a wide variety of products and services."
+    },
+    {
+      "symbol": "SBIN",
+      "company_name": "State Bank of India",
+      "sector": null,
+      "description": "The largest banking and financial services organization in India, with subsidiaries including SBI General Insurance, SBI Life Insurance, SBI Mutual Fund and SBI Card.",
+      "key_businesses": [],
+      "business_model": null,
+      "source_name": "State Bank of India - About us",
+      "source_url": "https://sbi.bank.in/web/about-us",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "We are the largest banking and financial services organization in India, with an asset base of over Rs. 61 trillion."
+    },
+    {
+      "symbol": "ITC",
+      "company_name": "ITC Limited",
+      "sector": null,
+      "description": "One of India's foremost private sector companies, with presence in FMCG, Packaging, Paperboards & Specialty Papers, Agri & IT Businesses.",
+      "key_businesses": [
+        "FMCG",
+        "Packaging",
+        "Paperboards & Specialty Papers",
+        "Agri",
+        "IT"
+      ],
+      "business_model": null,
+      "source_name": "ITC - About ITC",
+      "source_url": "https://www.itcportal.com/about-itc/",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "ITC is one of India's foremost private sector companies with presence in FMCG, Packaging, Paperboards & Specialty Papers, Agri & IT Businesses."
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "company_name": "Bharti Airtel Limited",
+      "sector": null,
+      "description": "India's largest integrated communications solutions provider and the second largest mobile operator in Africa.",
+      "key_businesses": [],
+      "business_model": null,
+      "source_name": "Bharti Airtel - About Bharti Airtel",
+      "source_url": "https://www.airtel.in/about-bharti/equity",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "Airtel is India's largest integrated communications solutions provider and the second largest mobile operator in Africa."
+    },
+    {
+      "symbol": "LT",
+      "company_name": "Larsen & Toubro Limited",
+      "sector": null,
+      "description": "Larsen & Toubro lists its businesses as Infrastructure, Utilities & Metals, Energy, Renewables, Manufacturing, Precision Engineering & Systems, Realty, Technology and Financial Services.",
+      "key_businesses": [
+        "Infrastructure",
+        "Utilities & Metals",
+        "Energy",
+        "Renewables",
+        "Manufacturing",
+        "Precision Engineering & Systems",
+        "Realty",
+        "Technology",
+        "Financial Services"
+      ],
+      "business_model": null,
+      "source_name": "Larsen & Toubro - Our Businesses",
+      "source_url": "https://www.larsentoubro.com/businesses",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "Built on a culture of accuracy and mission-critical performance, the Precision Engineering and Systems (PES) business delivers advanced solutions for defence, aerospace and strategic electronics."
+    },
+    {
+      "symbol": "MARUTI",
+      "company_name": "Maruti Suzuki India Limited",
+      "sector": null,
+      "description": "The Company is engaged in the business of manufacturing and sale of passenger vehicles in India.",
+      "key_businesses": [],
+      "business_model": null,
+      "source_name": "Maruti Suzuki - Details of the Business",
+      "source_url": "https://www.marutisuzuki.com/corporate/investors/details-of-the-business",
+      "source_date": null,
+      "retrieved_on": "2026-10-04",
+      "evidence_quote": "The Company is engaged in the business of manufacturing and sale of passenger vehicles in India."
+    }
+  ]
+}

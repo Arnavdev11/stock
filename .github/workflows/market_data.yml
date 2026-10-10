@@ -1,0 +1,94 @@
+name: Market data (Phase 5K) - derive, validate, publish
+
+# A SEPARATE pipeline. "Update data and publish site" is not changed.
+#
+# What it does:
+#   1. Restores the same saved-data cache that "Update data and publish site" fills (the NSE daily files in data/raw and everything in out/).
+#   2. market_data_updater.py READS those saved NSE files (it downloads nothing) and writes out/market_breadth.json, market_movers.json,
+#      market_activity.json and market_dma.json. It refuses to write anything if a data-quality gate fails, and it never replaces a
+#      published dataset with an older or dramatically smaller one.
+#   3. index_data_updater.py fetches daily candles of the important NSE indices from Upstox into out/index_history.json (token used server-side only).
+#      This step may fail without stopping the rest: the previous index file then stays exactly as it was.
+#   4. validate_market_outputs.py checks the files again.
+#   5. Only if every step above that must pass has passed, the site folder is rebuilt (same files as the production workflow) and published.
+#
+# Run order: run "Update data and publish site" first (it refreshes the NSE files), then this workflow.
+# If anything fails the job stops BEFORE publishing: the site stays exactly as it is.
+
+"on":
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-market
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Restore saved data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-market-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Check that the saved NSE files exist
+        run: |
+          if [ ! -d data/raw ] || [ -z "$(ls data/raw/bhav_*.csv 2>/dev/null | head -1)" ]; then
+            echo "::error::No saved NSE daily files (data/raw/bhav_*.csv). Run 'Update data and publish site' first. Nothing was published."
+            exit 1
+          fi
+
+      - name: Derive market data (quality gate inside; writes nothing on failure)
+        run: python market_data_updater.py
+
+      - name: Update index history (Upstox)
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python index_data_updater.py
+
+      - name: Validate market outputs
+        run: python validate_market_outputs.py
+
+      - name: Build site folder
+        run: |
+          mkdir _site
+          cp index.html _site/
+          mkdir _site/out
+          cp out/*.json _site/out/
+          if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
+          cp company_profiles.json _site/out/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

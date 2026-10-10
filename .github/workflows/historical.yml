@@ -1,0 +1,89 @@
+name: Update historical price data
+
+# Separate from "Update data and publish site" (which is not changed).
+# It restores the same saved-data cache, adds out/historical.json, and saves the cache again.
+# The next run of "Update data and publish site" then restores it and publishes the file with the site.
+# Run this first, wait for it to finish, then run "Update data and publish site".
+
+on:
+  push:
+    branches:
+      - phase1
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Optional comma list for a small first run, e.g. TCS. Empty = the whole configured universe (stalest stocks first)."
+        required: false
+        default: ""
+      max_calls:
+        description: "Upstox call budget for this run (1 s per call). Empty = 150. A NIFTY 500 first fill needs about 3000 calls: run it a few times with 1500."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-historical
+  cancel-in-progress: false
+
+jobs:
+  historical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Select the coverage universe
+        run: |
+          # Stage 1 = NIFTY 500, Stage 2 = all NSE EQ: the only difference is which universe.json sits on the data branch (built by the "Build coverage universe" workflow).
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
+
+      - name: Restore saved data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-hist-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Update historical prices
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          HISTORICAL_SYMBOLS: "${{ github.event_name == 'push' && 'TCS' || inputs.symbols }}"
+          HISTORICAL_MAX_CALLS: ${{ inputs.max_calls }}
+        run: python historical_updater.py

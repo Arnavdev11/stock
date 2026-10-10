@@ -1,0 +1,101 @@
+name: Save financial-history ledger
+
+# Reusable: called by "Update data and publish site" and "Update financial history ledger". It never runs on its own.
+# It is given no credentials other than the repository write token. It saves the updated ledger to the `stocklens-data` branch, and nothing else.
+#   * Branch exists  -> verify nothing was lost against the branch head, then commit and push (fast-forward only, never forced).
+#   * Branch missing -> do nothing, unless the caller passed create_branch=true (only the manual workflow can). Then the branch is created
+#                       from the cached ledger the updater just processed - and only if it is still missing at the moment of the push.
+# Concurrency is set by the caller (one shared group); it must not be set here.
+
+on:
+  workflow_call:
+    inputs:
+      create_branch:
+        description: "First migration only: create stocklens-data when it does not exist."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the code (for the verification script)
+        uses: actions/checkout@v4
+
+      - name: Download the updated ledger
+        uses: actions/download-artifact@v4
+        with:
+          name: financial-history-ledger
+          path: ledger-new
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Verify nothing was lost
+        if: steps.databranch.outputs.exists == 'true'
+        run: python ledger_storage.py verify ledger-branch/financial_history_ledger.json ledger-new/financial_history_ledger.json
+
+      - name: Verify the first ledger
+        if: steps.databranch.outputs.exists != 'true' && inputs.create_branch
+        run: python ledger_storage.py verify-first ledger-new/financial_history_ledger.json
+
+      - name: Data branch is missing (nothing saved)
+        if: steps.databranch.outputs.exists != 'true' && !inputs.create_branch
+        run: echo "::warning::The stocklens-data branch does not exist, so the ledger was NOT saved (it stays in the cache). Run Update financial history ledger by hand with create_data_branch = true to create it."
+
+      - name: Commit the ledger to the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        run: |
+          cd ledger-branch
+          cp ../ledger-new/financial_history_ledger.json financial_history_ledger.json
+          git add financial_history_ledger.json
+          if git diff --cached --quiet; then
+            echo "The ledger did not change. Nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update financial history ledger (run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data
+
+      - name: Create the data branch (first migration only)
+        if: steps.databranch.outputs.exists != 'true' && inputs.create_branch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          if [ "$rc" != "2" ]; then
+            echo "::error::The stocklens-data branch appeared (or could not be checked) while this run was working (git exit $rc). Not creating it."
+            exit 1
+          fi
+          git switch --orphan stocklens-data
+          cp ledger-new/financial_history_ledger.json financial_history_ledger.json
+          git add financial_history_ledger.json
+          if [ "$(git diff --cached --name-only)" != "financial_history_ledger.json" ]; then
+            echo "::error::The first commit must contain exactly financial_history_ledger.json. Not creating the branch."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Start the financial history ledger (first migration, run ${{ github.run_id }})"
+          git push origin stocklens-data

@@ -1,0 +1,89 @@
+name: Build coverage universe
+
+# Builds universe.json - the list of stocks every stock-specific updater works on - and saves it on the `stocklens-data` branch (next to the ledgers).
+#   Stage 1: mode = nifty500  (NSE's official NIFTY 500 constituent list, matched to the stocks Upstox serves)
+#   Stage 2: mode = all_eq    (not used yet; it needs an explicit decision and an exclusion list for ETFs and other non-equity instruments)
+# Without a universe.json on the data branch every updater keeps using the 10 development stocks, so nothing changes until this has run.
+# Needs no secret: the NSE list and the Upstox instrument file are public downloads. It publishes nothing and touches no site file.
+# The branch is never created here, and only universe.json is ever committed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "nifty500 (Stage 1). all_eq is Stage 2 and is refused here until it is approved."
+        required: false
+        default: "nifty500"
+
+permissions:
+  contents: read
+
+# The same group as the updaters that read the data branch: one writer at a time. Never cancels a run.
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+
+jobs:
+  universe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Refuse anything but Stage 1
+        run: |
+          if [ "${{ inputs.mode || 'nifty500' }}" != "nifty500" ]; then
+            echo "::error::Only mode nifty500 (Stage 1) can be built here. Stage 2 needs an explicit approval."
+            exit 1
+          fi
+
+      - name: Look for the data branch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) ;;
+            2) echo "::error::The stocklens-data branch does not exist. This workflow never creates it."; exit 1 ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc)."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Build the universe (the previous one is kept if the new list looks wrong)
+        run: |
+          cp -f ledger-branch/universe.json universe-new.json 2>/dev/null || true
+          python universe.py build --mode nifty500 --fetch --out universe-new.json
+          python universe.py check universe-new.json
+
+      - name: Commit universe.json to the data branch
+        run: |
+          cp universe-new.json ledger-branch/universe.json
+          cd ledger-branch
+          git add universe.json
+          if git diff --cached --quiet; then
+            echo "The universe did not change. Nothing to commit."
+            exit 0
+          fi
+          if [ "$(git diff --cached --name-only)" != "universe.json" ]; then
+            echo "::error::The commit must contain exactly universe.json."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update coverage universe (run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data

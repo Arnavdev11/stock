@@ -1,0 +1,124 @@
+name: Update financial history ledger
+
+# Separate from "Update data and publish site". Run it by hand for a forced refresh, or - once - to create the data branch (create_data_branch = true).
+# The ledger lives on the `stocklens-data` branch. If that branch exists it is the source of truth; if it does not, the cached ledger is used (first migration only).
+# This workflow does not publish the site; "Update data and publish site" publishes out/financial_history.json.
+# Manual only (workflow_dispatch).
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Optional comma list for a small first run, e.g. TCS. Empty = the whole configured universe."
+        required: false
+        default: ""
+      max_calls:
+        description: "Upstox call budget for this run (about 2 s per call). Empty = 120. A NIFTY 500 fill is spread over several runs."
+        required: false
+        default: ""
+      create_data_branch:
+        description: "First migration only: create the stocklens-data branch from the cached ledger. Does nothing if the branch already exists."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+# One shared group for everything that reads or writes the financial-history ledger (see also update.yml). Never cancels a run.
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    outputs:
+      ledger_ready: ${{ steps.ledgerout.outputs.ready }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Select the coverage universe
+        run: |
+          # Stage 1 = NIFTY 500, Stage 2 = all NSE EQ: the only difference is which universe.json sits on the data branch (built by the "Build coverage universe" workflow).
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
+
+      - name: Restore saved data
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-fhist-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Update the financial history ledger
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          HISTORY_SYMBOLS: ${{ inputs.symbols }}
+          HISTORY_MAX_CALLS: ${{ inputs.max_calls }}
+          FINANCIAL_HISTORY_LEDGER_DIR: ${{ steps.databranch.outputs.exists == 'true' && 'ledger-branch' || '' }}
+          FINANCIAL_HISTORY_LEDGER_OUT: ledger-out/financial_history_ledger.json
+        run: python financial_history_updater.py
+
+      - name: Check the ledger output
+        id: ledgerout
+        run: |
+          if [ -s ledger-out/financial_history_ledger.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The financial history updater produced no ledger this run, so nothing will be saved."
+          fi
+
+      - name: Hand the updated ledger to the save job
+        if: steps.ledgerout.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-history-ledger
+          path: ledger-out/financial_history_ledger.json
+          if-no-files-found: error
+          retention-days: 14
+
+  save-history:
+    needs: history
+    if: ${{ needs.history.outputs.ledger_ready == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/save_ledger.yml
+    with:
+      create_branch: ${{ inputs.create_data_branch }}

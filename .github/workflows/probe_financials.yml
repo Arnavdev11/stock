@@ -1,0 +1,44 @@
+name: Probe financial statement history (read-only)
+
+# ONE-OFF DIAGNOSTIC for Phase 4 Step 4. Run by hand: Actions > "Probe financial statement history (read-only)" > Run workflow.
+# It only READS from Upstox and prints period labels and line-item presence. It prints no financial values and no token.
+# It does not touch out/, data/, the saved-data cache or GitHub Pages, and it does not push anything.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-probe-financials
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Probe Upstox financial statement history
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+        run: python probe_financials.py
+
+      - name: Save the probe report (labels and counts only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financials-probe-report
+          path: probe_output/financials_probe_report.json
+          if-no-files-found: ignore
+          retention-days: 7

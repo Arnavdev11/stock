@@ -1,12 +1,20 @@
 name: Sector data (Phase 1, PRIVATE) - master and performance
 
-# REGISTRATION STUB ONLY. This file exists on the default branch (main) so that GitHub lists the workflow and allows "Run workflow".
-# GitHub can only dispatch a workflow whose file exists on the default branch. When you choose the branch "phase1" in the Run workflow
-# dialog, GitHub runs phase1's own copy of this same file (the real Sector data workflow). This copy does nothing else:
-# no checkout, no secrets, no cache, no data, no publishing, no deploy. Running it on main only prints one line.
+# A SEPARATE, MANUAL workflow. It publishes NOTHING: no Pages artifact, no deploy, no commit.
 #
-# The real workflow and all sector code stay on phase1 and are unchanged. Sector public display stays off (SECTOR_PUBLIC_DISPLAY_APPROVED
-# is "false" in the real workflow and in sector_publish.py).
+# Why private: NSE and Upstox have not yet confirmed that sector data may be shown publicly, and this repository is public.
+# So the sector master and the sector files are kept in the Actions cache only (folder "private"), never in out/, never in a branch,
+# never as an artifact, and the log shows aggregate counts only (no sector names, no symbols).
+#
+# What it does:
+#   1. Restores the saved NSE daily files (data/raw, filled by "Update data and publish site") and the private sector folder.
+#   2. sector_master_updater.py asks Upstox for sector labels (a limited number of instruments per run), classifies instruments from the
+#      ETF list file private/etf_list.json if one exists, and merges into private/sector_master.json without losing records.
+#   3. sector_data_updater.py computes private/market_sectors.json and private/market_sector_stocks.json from the saved NSE files.
+#   4. validate_sector_outputs.py checks them.
+#   5. sector_publish.py check proves that no sector file sits in a site folder while SECTOR_PUBLIC_DISPLAY_APPROVED is not "true".
+#
+# Public display later: see sector_publish.py. It needs a separate, explicit change to a deploy workflow, after written approval.
 
 "on":
   workflow_dispatch:
@@ -16,11 +24,87 @@ name: Sector data (Phase 1, PRIVATE) - master and performance
         required: false
         default: "1500"
 
-permissions: {}
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-sector
+  cancel-in-progress: false
 
 jobs:
-  registration-stub:
+  sector:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SECTOR_PUBLIC_DISPLAY_APPROVED: "false"
     steps:
-      - name: Nothing to do on this branch
-        run: echo "Registration stub on the default branch. Choose branch phase1 in Run workflow to run the real Sector data workflow."
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Restore saved NSE data
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+          key: nse-data-sector-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      - name: Restore private sector folder
+        uses: actions/cache/restore@v4
+        with:
+          path: private
+          key: sector-private-${{ github.run_id }}
+          restore-keys: sector-private-
+
+      # The ETF list comes from a GitHub Actions SECRET, never from the repository. Secrets are not readable by the public and are masked in logs.
+      #   SECTOR_ETF_LIST_CSV      (secret)    the text of the NSE ETF list CSV (needs a Symbol column; about 4-35 KB, the limit is 48 KB)
+      #   SECTOR_ETF_LIST_AS_OF    (variable)  the date that list was downloaded, YYYY-MM-DD
+      # If the secret is not set, an ETF list kept from an earlier run (in the private cache) is used; if there is none, instruments without a
+      # sector stay "unclassified". The list is written only to the private folder; the workflow only ever prints how many symbols it holds.
+      - name: Import ETF list from secret (private; counts only)
+        env:
+          SECTOR_ETF_LIST_CSV: ${{ secrets.SECTOR_ETF_LIST_CSV }}
+          SECTOR_ETF_LIST_AS_OF: ${{ vars.SECTOR_ETF_LIST_AS_OF }}
+        run: |
+          if [ -z "$SECTOR_ETF_LIST_CSV" ]; then
+            if [ -f private/etf_list.json ]; then echo "No ETF secret set; using the ETF list kept from an earlier run."; else echo "::warning::No ETF list supplied: instruments without a sector stay unclassified."; fi
+            exit 0
+          fi
+          mkdir -p private
+          printf '%s' "$SECTOR_ETF_LIST_CSV" > "$RUNNER_TEMP/etf.csv"
+          python sector_classify.py import-etf --csv "$RUNNER_TEMP/etf.csv" --source "NSE ETF list" --as-of "${SECTOR_ETF_LIST_AS_OF:-unknown}" --out private/etf_list.json
+          rm -f "$RUNNER_TEMP/etf.csv"
+
+      - name: Update sector master (Upstox; aggregate output only)
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          SECTOR_MAX_CALLS: ${{ github.event.inputs.max_calls }}
+        run: python sector_master_updater.py
+
+      - name: Save private sector folder now
+        uses: actions/cache/save@v4
+        with:
+          path: private
+          key: sector-private-master-${{ github.run_id }}
+
+      - name: Compute sector performance (private)
+        run: python sector_data_updater.py
+
+      - name: Validate sector files
+        run: python validate_sector_outputs.py
+
+      - name: Gate check (no sector file may be in a site folder)
+        run: |
+          mkdir -p _site/out
+          python sector_publish.py check --site _site
+
+      - name: Save private sector folder
+        uses: actions/cache/save@v4
+        with:
+          path: private
+          key: sector-private-${{ github.run_id }}-final
