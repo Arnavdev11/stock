@@ -68593,7 +68593,7 @@
     {
      "quarter_end": "2022-06-30",
      "status": "unavailable",
-     "reason": "the XBRL file could not be parsed (ParseError)",
+     "reason": "the XBRL file could not be obtained (HTTP 404)",
      "values": {
       "promoters": null,
       "fii": null,
@@ -68608,8 +68608,8 @@
       "status": "flagged",
       "flags": [
        {
-        "code": "xbrl-unparsable",
-        "detail": "the XBRL file could not be parsed (ParseError)"
+        "code": "xbrl-unavailable",
+        "detail": "the XBRL file could not be obtained (HTTP 404)"
        }
       ]
      },
@@ -68629,7 +68629,7 @@
      "named_holders": {
       "version": 2,
       "status": "unavailable",
-      "reason": "the XBRL file could not be parsed (ParseError)",
+      "reason": "the XBRL file could not be obtained (HTTP 404)",
       "fetched": "2026-10-10",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
@@ -68642,7 +68642,7 @@
     {
      "quarter_end": "2022-03-31",
      "status": "unavailable",
-     "reason": "the XBRL file could not be parsed (ParseError)",
+     "reason": "the XBRL file could not be obtained (HTTP 404)",
      "values": {
       "promoters": null,
       "fii": null,
@@ -68657,8 +68657,8 @@
       "status": "flagged",
       "flags": [
        {
-        "code": "xbrl-unparsable",
-        "detail": "the XBRL file could not be parsed (ParseError)"
+        "code": "xbrl-unavailable",
+        "detail": "the XBRL file could not be obtained (HTTP 404)"
        }
       ]
      },
@@ -68678,7 +68678,7 @@
      "named_holders": {
       "version": 2,
       "status": "unavailable",
-      "reason": "the XBRL file could not be parsed (ParseError)",
+      "reason": "the XBRL file could not be obtained (HTTP 404)",
       "fetched": "2026-10-10",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
@@ -68691,7 +68691,7 @@
     {
      "quarter_end": "2021-12-31",
      "status": "unavailable",
-     "reason": "the XBRL file could not be parsed (ParseError)",
+     "reason": "the XBRL file could not be obtained (HTTP 404)",
      "values": {
       "promoters": null,
       "fii": null,
@@ -68706,8 +68706,8 @@
       "status": "flagged",
       "flags": [
        {
-        "code": "xbrl-unparsable",
-        "detail": "the XBRL file could not be parsed (ParseError)"
+        "code": "xbrl-unavailable",
+        "detail": "the XBRL file could not be obtained (HTTP 404)"
        }
       ]
      },
@@ -68727,7 +68727,7 @@
      "named_holders": {
       "version": 2,
       "status": "unavailable",
-      "reason": "the XBRL file could not be parsed (ParseError)",
+      "reason": "the XBRL file could not be obtained (HTTP 404)",
       "fetched": "2026-10-10",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
@@ -68740,7 +68740,7 @@
     {
      "quarter_end": "2021-09-30",
      "status": "unavailable",
-     "reason": "the XBRL file could not be parsed (ParseError)",
+     "reason": "the XBRL file could not be obtained (HTTP 404)",
      "values": {
       "promoters": null,
       "fii": null,
@@ -68755,8 +68755,8 @@
       "status": "flagged",
       "flags": [
        {
-        "code": "xbrl-unparsable",
-        "detail": "the XBRL file could not be parsed (ParseError)"
+        "code": "xbrl-unavailable",
+        "detail": "the XBRL file could not be obtained (HTTP 404)"
        }
       ]
      },
@@ -68776,7 +68776,7 @@
      "named_holders": {
       "version": 2,
       "status": "unavailable",
-      "reason": "the XBRL file could not be parsed (ParseError)",
+      "reason": "the XBRL file could not be obtained (HTTP 404)",
       "fetched": "2026-10-10",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
@@ -76232,7 +76232,7 @@
     {
      "quarter_end": "2022-03-31",
      "status": "unavailable",
-     "reason": "the XBRL file could not be parsed (ParseError)",
+     "reason": "the XBRL file could not be obtained (HTTP 404)",
      "values": {
       "promoters": null,
       "fii": null,
@@ -76247,8 +76247,8 @@
       "status": "flagged",
       "flags": [
        {
-        "code": "xbrl-unparsable",
-        "detail": "the XBRL file could not be parsed (ParseError)"
+        "code": "xbrl-unavailable",
+        "detail": "the XBRL file could not be obtained (HTTP 404)"
        }
       ]
      },
@@ -76268,7 +76268,7 @@
      "named_holders": {
       "version": 2,
       "status": "unavailable",
-      "reason": "the XBRL file could not be parsed (ParseError)",
+      "reason": "the XBRL file could not be obtained (HTTP 404)",
       "fetched": "2026-10-10",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
