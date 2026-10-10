@@ -1042,8 +1042,8 @@ class PackageGuardTests(unittest.TestCase):
             if path == "index.html" and index_differs_only_by_live_module(PKG.parent):
                 continue
             import guard_update_yml
-            if path == guard_update_yml.PATH and guard_update_yml.approved_change_only(PKG.parent):
-                continue                                    # the one approved change: the guarded stock-directory copy (exactly two added lines)
+            if guard_update_yml.is_approved(PKG.parent, path):
+                continue                                    # the approved workflow changes only (tests/approved_workflow_changes.json)
             self.assertFalse(path.endswith(PROTECTED) or path.startswith(".github/") or path == ".gitignore", "unexpected change: " + line)
             self.assertFalse(path.startswith("live/") and path not in ("live/snapshot.py", "live/eligible.py", "live/reference.py", "live/classifier.py") and "__pycache__" not in path, "unexpected Phase 1 change: " + line)
 

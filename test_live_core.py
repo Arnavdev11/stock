@@ -1063,8 +1063,8 @@ class PackageGuardTests(unittest.TestCase):
         for line in out:
             path = line[3:].strip()
             import guard_update_yml
-            if path == guard_update_yml.PATH and guard_update_yml.approved_change_only(LIVE.parent):
-                continue                                    # the one approved change: the guarded stock-directory copy (exactly two added lines)
+            if guard_update_yml.is_approved(LIVE.parent, path):
+                continue                                    # the approved workflow changes only (tests/approved_workflow_changes.json)
             if path == "index.html":
                 # Phase 3 adds one opt-in module, and the universe search changed the search module on purpose; with those two removed from both sides the file must be
                 # byte-identical to HEAD, and the search module must be exactly the version pinned in tests/search_module_pin.json

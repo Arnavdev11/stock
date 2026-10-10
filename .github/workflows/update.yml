@@ -165,6 +165,9 @@ jobs:
           # the searchable stock directory (built by stock_directory.py, kept on the data branch). Optional and separate from universe.json, which only the research updaters read.
           if [ -f ledger-branch/stock_directory.json ]; then cp ledger-branch/stock_directory.json _site/out/stock_directory.json; fi
           if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
+          # the saved daily prices (written to the data branch by "Save historical price data"); they replace any copy that came from the saved-data cache
+          if [ -f ledger-branch/historical/historical.json ]; then cp ledger-branch/historical/historical.json _site/out/historical.json; fi
+          if ls ledger-branch/historical/shards/*.json >/dev/null 2>&1; then mkdir -p _site/out/by_symbol/historical; cp ledger-branch/historical/shards/*.json _site/out/by_symbol/historical/; fi
           cp company_profiles.json _site/out/
 
       - name: Upload Pages artifact

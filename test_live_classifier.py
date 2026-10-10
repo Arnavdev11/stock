@@ -505,8 +505,7 @@ class ModuleGuards(unittest.TestCase):
                      "update.yml", ".gitignore", "live/instruments.py", "live_service/upstox.py", "live_service/relay.py", "live_service/server.py", "live_service/safety.py"]
         out = subprocess.run(["git", "diff", "--name-only", "HEAD", "--"] + protected + [".github"], cwd=str(ROOT), capture_output=True, text=True).stdout.split()
         import guard_update_yml
-        if guard_update_yml.PATH in out and guard_update_yml.approved_change_only(ROOT):
-            out.remove(guard_update_yml.PATH)               # the one approved change: the guarded stock-directory copy (exactly two added lines)
+        out = [f for f in out if not guard_update_yml.is_approved(ROOT, f)]      # the approved workflow changes only (tests/approved_workflow_changes.json)
         if "index.html" in out:
             # the live module (Phase 3) and the approved search module (universe search) may differ; with both removed from both sides the page must be byte-identical to HEAD,
             # and the search module must be exactly the version pinned in tests/search_module_pin.json

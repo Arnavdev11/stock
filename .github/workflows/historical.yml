@@ -1,9 +1,13 @@
 name: Update historical price data
 
-# Separate from "Update data and publish site" (which is not changed).
-# It restores the same saved-data cache, adds out/historical.json, and saves the cache again.
-# The next run of "Update data and publish site" then restores it and publishes the file with the site.
-# Run this first, wait for it to finish, then run "Update data and publish site".
+# Separate from "Update data and publish site".
+# A cache written by a run on phase1 cannot be read by the publishing run on main, so the files no longer travel through the cache alone:
+#   * before the update, the files already saved on the data branch (historical/ on `stocklens-data`) are merged into out/ (never dropping a day);
+#   * after a MANUAL run, the updater's files are verified and handed to "Save historical price data" (save_historical.yml), which adds them
+#     under historical/ on the data branch only, and only if nothing saved would be lost;
+#   * "Update data and publish site" then copies historical/ from the data branch into the site folder.
+# A push to phase1 stays a read-only test (TCS only): it saves nothing to the data branch.
+# Run this first (manually, from main), wait for it to finish, then run "Update data and publish site".
 
 on:
   push:
@@ -12,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: "Optional comma list for a small first run, e.g. TCS. Empty = the whole configured universe (stalest stocks first)."
+        description: "Comma list of symbols. The first test is TCS only; an empty field also means TCS (it never widens to the configured universe)."
         required: false
-        default: ""
+        default: "TCS"
       max_calls:
         description: "Upstox call budget for this run (1 s per call). Empty = 150. A NIFTY 500 first fill needs about 3000 calls: run it a few times with 1500."
         required: false
@@ -81,9 +85,35 @@ jobs:
           key: nse-data-hist-${{ github.run_id }}
           restore-keys: nse-data-
 
+      - name: Merge the saved history into out/ (no day is ever dropped)
+        if: steps.databranch.outputs.exists == 'true'
+        run: python historical_handoff.py seed ledger-branch/historical out
+
       - name: Update historical prices
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
-          HISTORICAL_SYMBOLS: "${{ github.event_name == 'push' && 'TCS' || inputs.symbols }}"
+          HISTORICAL_SYMBOLS: "${{ github.event_name == 'push' && 'TCS' || inputs.symbols || 'TCS' }}"
           HISTORICAL_MAX_CALLS: ${{ inputs.max_calls }}
         run: python historical_updater.py
+
+      # Manual runs only. The files are checked here, before anything is uploaded; the token is not available to these steps.
+      - name: Check the result and prepare the hand-over
+        if: github.event_name == 'workflow_dispatch'
+        run: python historical_handoff.py stage out handoff
+
+      - name: Hand the result to the save job
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-handoff
+          path: handoff
+          if-no-files-found: error
+          retention-days: 14
+
+  # Saves the checked files to the data branch (under historical/ only). Manual runs only; a push to phase1 never writes to the data branch.
+  save-historical:
+    needs: historical
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/save_historical.yml

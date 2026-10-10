@@ -355,8 +355,17 @@ class WorkflowTests(unittest.TestCase):
         # Stage 1 coverage: historical.yml may READ universe.json from the data branch (read-only checkout, no credentials kept), but it must not join the ledger
         # concurrency group, push, or hold write permission.
         t = wf("historical.yml")
-        self.assertNotIn("stocklens-ledger", t); self.assertNotIn("git push", t); self.assertNotIn("contents: write", t)
+        self.assertNotIn("stocklens-ledger", t); self.assertNotIn("git push", t)
         self.assertIn("persist-credentials: false", t)
+        # Historical hand-over (approved): the ONLY write permission in historical.yml is on the job that calls the reusable save workflow, which writes under historical/ only.
+        # The job that holds the Upstox token has none, and the historical.yml itself never pushes.
+        self.assertEqual(t.count("contents: write"), 1)
+        save = job_block(t, "save-historical")
+        self.assertIn("contents: write", save); self.assertIn("uses: ./.github/workflows/save_historical.yml", save)
+        main = job_block(t, "historical")
+        for banned in ("contents: write", "git push", "uses:  ./.github/workflows/save"):
+            self.assertNotIn(banned, main)
+        self.assertNotIn("UPSTOX", save); self.assertNotIn("secrets", save)
 
     def test_9_the_save_job_never_sees_the_upstox_token(self):
         reusable = wf("save_ledger.yml")
