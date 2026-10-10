@@ -1,0 +1,83 @@
+name: Save historical price data
+
+# Reusable: called by "Update historical price data" (manual runs only). It never runs on its own.
+# It is given no credentials other than the repository write token and no Upstox token. It saves the daily-price files to the `stocklens-data` branch
+# under historical/ ONLY, and only when nothing already saved would be lost (historical_handoff.py verify):
+#   * the branch must already exist - it is never created here;
+#   * nothing outside historical/ can be staged, and nothing can be deleted or renamed;
+#   * the push is a plain fast-forward push, never forced.
+# It shares the `stocklens-ledger` concurrency group with every other writer of the data branch, so two saves never race.
+# (That group is set on the job below, not on the workflow, so it cannot deadlock against the caller's own `stocklens-historical` group.)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: stocklens-ledger
+      cancel-in-progress: false
+    steps:
+      - name: Check out the code (for the verification script)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download the hand-over files
+        uses: actions/download-artifact@v4
+        with:
+          name: historical-handoff
+          path: handoff-new
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "::error::The stocklens-data branch does not exist. It is never created here, so nothing was saved."; exit 1 ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Verify nothing saved would be lost
+        run: python historical_handoff.py verify handoff-new ledger-branch/historical
+
+      - name: Add the files under historical/
+        run: python historical_handoff.py install handoff-new ledger-branch/historical
+
+      - name: Commit to the data branch
+        run: |
+          cd ledger-branch
+          git add -- historical
+          if git diff --cached --quiet; then
+            echo "The historical files did not change. Nothing to commit."
+            exit 0
+          fi
+          outside=$(git diff --cached --name-only | grep -v '^historical/' || true)
+          if [ -n "$outside" ]; then
+            echo "::error::The commit must contain only files under historical/."
+            exit 1
+          fi
+          notadded=$(git diff --cached --name-status | grep -v -E '^[AM][[:space:]]' || true)
+          if [ -n "$notadded" ]; then
+            echo "::error::The commit may only add or modify files, never delete or rename them."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update historical price data (run ${{ github.run_id }})"
+          git push origin HEAD:stocklens-data

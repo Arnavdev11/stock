@@ -877,8 +877,7 @@ class GuardTests(unittest.TestCase):
             self.skipTest("not a git checkout")
         import guard_update_yml
         changed = r.stdout.split()
-        if guard_update_yml.PATH in changed and guard_update_yml.approved_change_only(HERE):
-            changed.remove(guard_update_yml.PATH)           # the one approved change: the guarded stock-directory copy (exactly two added lines)
+        changed = [f for f in changed if not guard_update_yml.is_approved(HERE, f)]      # the approved workflow changes only (tests/approved_workflow_changes.json)
         self.assertEqual(changed, [])
 
 

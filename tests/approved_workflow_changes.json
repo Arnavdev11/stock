@@ -1,0 +1,15 @@
+{
+ "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose.",
+ "update_yml": {
+  "path": ".github/workflows/update.yml",
+  "added_lines": [
+   "          # the saved daily prices (written to the data branch by \"Save historical price data\"); they replace any copy that came from the saved-data cache",
+   "          if [ -f ledger-branch/historical/historical.json ]; then cp ledger-branch/historical/historical.json _site/out/historical.json; fi",
+   "          if ls ledger-branch/historical/shards/*.json >/dev/null 2>&1; then mkdir -p _site/out/by_symbol/historical; cp ledger-branch/historical/shards/*.json _site/out/by_symbol/historical/; fi"
+  ]
+ },
+ "pinned_files": {
+  ".github/workflows/historical.yml": "3027ff8c8ad5361041e53988066d9189a65a3c3dbe5270b7b6db36899f11eff6",
+  ".github/workflows/save_historical.yml": "754ed6654f037344e5fc1045c633cc860349a187a4a255574d9f81474f881777"
+ }
+}
