@@ -1,0 +1,60 @@
+name: SENSEX end-of-day data (not published)
+
+# A SEPARATE, MANUAL-ONLY pipeline that builds the end-of-day history of the BSE SENSEX index. It PUBLISHES NOTHING.
+#
+#   * No schedule, no push and no pull_request trigger: it runs only when someone starts it by hand (workflow_dispatch).
+#   * It has no site folder, no Pages step, no deploy and no artifact upload. The result stays in a GitHub Actions cache entry that only this workflow reads.
+#   * The ONLY file restored or saved is out/sensex_history.json, under its own cache key prefix. out/ and data/ are never cached here, so
+#     the NIFTY 50 history (out/historical.json) and every other saved dataset cannot be touched or mixed in.
+#   * UPSTOX_ANALYTICS_TOKEN is given to the update step only, and SENSEX_PUBLIC_DISPLAY_APPROVED is the literal "false" there.
+#     validate_sensex_output.py refuses a file that approves itself, so a "true" could not get through this workflow anyway.
+#   * The cache is saved only after BOTH the update and the validation have passed. If either fails, the job stops and the earlier saved file stays as it was.
+#   * With no saved file (first run, or the cache was evicted) the updater builds its first history itself, with its own bounded number of requests.
+#
+# Public display is a separate decision (see sensex_publish.py and the SENSEX_PAGE_APPROVED constant in index.html); this file changes none of that.
+# NOT YET CONFIRMED: public redistribution rights for BSE SENSEX data, and the BSE instrument-file URL the updater uses (an unverified candidate).
+
+"on":
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-sensex
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Restore the saved SENSEX history
+        uses: actions/cache/restore@v4
+        with:
+          path: out/sensex_history.json
+          key: sensex-history-${{ github.run_id }}
+          restore-keys: sensex-history-
+
+      - name: Update SENSEX end-of-day data
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          SENSEX_PUBLIC_DISPLAY_APPROVED: "false"
+        run: python sensex_data_updater.py
+
+      - name: Validate the SENSEX file
+        run: python validate_sensex_output.py out/sensex_history.json
+
+      - name: Save the SENSEX history
+        uses: actions/cache/save@v4
+        with:
+          path: out/sensex_history.json
+          key: sensex-history-${{ github.run_id }}

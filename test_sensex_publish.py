@@ -423,10 +423,11 @@ class Workflows(unittest.TestCase):
     def test_no_other_workflow_mentions_the_guard_or_runs_the_updater(self):
         for p in (ROOT / ".github" / "workflows").glob("*.yml"):
             t = p.read_text().lower()
-            if p.name not in WORKFLOWS:
+            if p.name not in WORKFLOWS + ["sensex_data.yml"]:
                 self.assertNotIn("sensex", t, p.name)
-            self.assertNotIn("sensex_data_updater", t, p.name)
-            self.assertNotIn("sensex_history", t, p.name)
+            if p.name != "sensex_data.yml":                                              # the manual, non-publishing pipeline is the one place that runs the updater (test_sensex_workflow.py)
+                self.assertNotIn("sensex_data_updater", t, p.name)
+                self.assertNotIn("sensex_history", t, p.name)
 
 
 class Gates(unittest.TestCase):
