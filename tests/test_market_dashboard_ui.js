@@ -116,6 +116,20 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   for (const l of ["1D", "1W", "30D", "90D"]) re(t, new RegExp("<small>" + l + "</small>"), "index performance column " + l);
   re(t, /<b>NIFTY 50<\/b><span class="v">1,099\.00<\/span>/, "NIFTY 50 with its latest value from the data"); re(t, /As of 2026-04-10/, "and the date of that value");
   eq((t.match(/class="mk-idx"/g) || []).length, 1, "one index card"); re(draw("mk-today", empty), /Data unavailable/, "no data: an honest unavailable state"); re(draw("mk-today", empty), /Latest available market data: <b>unavailable<\/b>/, "with no invented date"); }
+// ---------- 4a. the NIFTY 50 / SENSEX tabs in Market Today ----------
+{ const t = draw("mk-today"), s = draw("mk-today", model, { index: "SENSEX" }), tabs = (h) => [...h.matchAll(/<button type="button" role="tab" data-tab="([^"]*)" aria-selected="(true|false)">/g)].map((m) => [m[1], m[2]]);
+  re(t, /<div class="tabs mk-tabs" role="tablist" data-mk-tabs="index">/, "the tab bar uses the page's existing tab mechanism (data-mk-tabs + data-tab)");
+  eq(tabs(t), [["NIFTY 50", "true"], ["SENSEX", "false"]], "two tabs, NIFTY 50 selected by default"); eq(tabs(s), [["NIFTY 50", "false"], ["SENSEX", "true"]], "selecting SENSEX moves the selection");
+  eq(tabs(draw("mk-today", model, { index: "BOGUS" })), tabs(t), "an unknown selection falls back to NIFTY 50");
+  re(t, /<b>NIFTY 50<\/b><span class="v">1,099\.00<\/span>/, "the NIFTY 50 tab keeps the verified end-of-day card"); re(t, /end of day, not live/, "and says end of day, not live");
+  no(s, /class="mk-idx"/, "the SENSEX tab draws no index card"); no(s, /class="mk-perf"/, "and no performance figures"); no(s, /\d[\d,]*\.\d{2}/, "and no SENSEX number at all");
+  re(s, /SENSEX is not available yet: its data source has not been verified, so no value is shown/, "it says plainly that SENSEX is unavailable and why"); re(s, /end of day, not live/, "the end-of-day status line stays on the SENSEX tab");
+  re(draw("mk-today", empty, { index: "SENSEX" }), /SENSEX is not available yet/, "SENSEX is unavailable with no data loaded either"); re(draw("mk-today", empty), /NIFTY 50 history is not loaded/, "NIFTY 50 without data keeps its fallback text");
+  no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /SENSEX[^\n]*(?:NSE_INDEX|BSE_INDEX|\|)/, "no SENSEX instrument key or identifier is written in the module");
+  no(html.replace(/\/\*[\s\S]*?\*\//g, ""), /BSE_INDEX\|/, "no BSE instrument key anywhere in the page");
+  /* the click itself is handled by the module's existing generic handler */
+  ok(/\[data-mk-tabs\] \[data-tab\]/.test(code) && /STATE\[grp\]=b\.getAttribute\("data-tab"\)/.test(code), "the generic handler stores the chosen tab in STATE and repaints the section (no page reload, no navigation)");
+  no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /location\.(reload|href|assign|replace)/, "the module never reloads or navigates"); }
 { const b = draw("mk-breadth");
   for (const l of ["Advances", "Declines", "Unchanged", "52-week highs", "52-week lows", "Upper circuits", "Lower circuits"]) re(b, new RegExp("<span>" + l + "</span>"), "breadth tile " + l);
   re(b, /1,200 advances/, "advances from the data"); re(b, /800 declines/, "declines"); re(b, /100 unchanged/, "unchanged"); re(b, /<b>33<\/b><span>52-week highs<\/span>/, "52-week highs from the data");

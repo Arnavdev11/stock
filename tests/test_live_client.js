@@ -126,14 +126,90 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
   for (const id of ["mk-today", "mk-breadth", "mk-movers"]) { const s = doc.byId[id]; ok(s.children[s.children.length - 1].attrs["data-mk"] !== undefined, "EOD box stays last in " + id); ok(s.children[s.children.length - 2].attrs["data-lv"], "live panel sits before the EOD box in " + id); }
   ok(/^Live \(private test\)/.test(doc.byId["market"].firstChild.textContent), "status chip first");
   /* escaping: markup in text stays text */
-  const evil = JSON.parse(JSON.stringify(good.doc)); evil.indices[0].name = "<img src=x onerror=alert(1)>";
-  const doc2 = makeDoc(), ui2 = new L.Ui(doc2); ui2.update({ state: "live", reason: "", blocks: { indices: [true, ""], breadth: [false, "x"], movers: [false, "x"], prices: [true, ""] }, doc: evil });
+  const evil = JSON.parse(JSON.stringify(good.doc)); evil.indices[0].name = "<img src=x onerror=alert(1)>"; evil.gainers[0].symbol = "<img src=x onerror=alert(1)>";
+  const doc2 = makeDoc(), ui2 = new L.Ui(doc2); ui2.update({ state: "live", kind: "live", reason: "", blocks: { indices: [true, ""], breadth: [false, "x"], movers: [true, ""], prices: [true, ""] }, doc: evil });
   ok(doc2.byId["market"].textContent.includes("<img src=x onerror=alert(1)>"), "markup is shown as text"); ok(doc2.byId["market"].all((n) => n.tag === "img").length === 0, "no element is created from it");
   /* failure removes every panel */
-  ui.update(ctl.ingest({ error: "request failed" }, now)); eq(panels(), [], "panels removed when the relay fails"); ok(/not reachable/.test(doc.byId["market"].firstChild.textContent), "chip says so"); eq(eodText(), before, "EOD still intact");
+  ui.update(new L.Controller().ingest({ error: "request failed" }, now)); eq(panels(), [], "panels removed when the relay fails (nothing earlier to keep)"); ok(/not reachable/.test(doc.byId["market"].firstChild.textContent), "chip says so"); eq(eodText(), before, "EOD still intact");
   /* test_set / stale: hidden with reason */
   const ts = FIX.cases.find((c) => c.doc && c.doc.scope && c.doc.scope.universe === "test_set");
   const ui3 = new L.Ui(makeDoc()); ui3.update(new L.Controller().ingest({ status: 200, text: JSON.stringify(ts.doc), dateMs: ts.now }, ts.now)); eq(ui3.panels.indices || null, null, "no panel for test_set");
 }
 
-console.log("Live client tests passed (" + checks + " checks)");
+/* ---- tabs, labels, failures, refresh (Market Today NIFTY 50 / SENSEX) ---- */
+{
+  const r0 = load(loc("127.0.0.1", "?live=local"), () => new Promise(() => {})), L = r0.L, good = FIX.cases.find((c) => c.name === "good nifty500"), now = good.now;
+  eq(L.CFG.poll, 60000, "polls every 60 seconds"); eq(r0.timers.map((t) => t[1]).filter((m) => m !== 4000), [60000], "one poll timer, 60 s (the 4 s one is the request timeout)");
+  const res = (d, n) => ({ status: 200, text: JSON.stringify(d), dateMs: n });
+  const withState = (f) => { const d = JSON.parse(JSON.stringify(good.doc)); f(d); return d; };
+  const rows = good.doc.indices.map((x) => x.name); ok(rows.includes("NIFTY 50"), "fixture carries NIFTY 50"); ok(!rows.includes("SENSEX"), "fixture carries no SENSEX");
+  const mk = () => { const doc = makeDoc(), ui = new L.Ui(doc); return { doc, ui, ctl: new L.Controller(), txt: () => doc.byId["mk-today"].all((n) => n.attrs["data-lv"] === "indices").map((n) => n.textContent).join("|"), panels: () => doc.byId["market"].all((n) => n.attrs["data-lv"]).map((n) => n.attrs["data-lv"]), chip: () => doc.byId["market"].firstChild.textContent }; };
+  /* labels */
+  eq(L.labelOf(null), "UNAVAILABLE", "no view"); eq(L.labelOf({ state: "live", kind: "live" }), "LIVE", "live"); eq(L.labelOf({ state: "hidden", kind: "stale" }), "STALE", "stale"); eq(L.labelOf({ state: "hidden", kind: "closed" }), "CLOSED", "closed"); eq(L.labelOf({ state: "unavailable", reason: "error" }), "UNAVAILABLE", "error");
+  /* tab switching: NIFTY 50 shows its value, SENSEX shows the unavailable state, switching back restores it, no new request */
+  { const t = mk(), v = t.ctl.ingest(res(good.doc, now), now); eq(v.kind, "live", "good is live"); t.ui.update(v);
+    ok(/NIFTY 50/.test(t.txt()) && /LIVE/.test(t.txt()), "NIFTY 50 panel is live by default"); ok(/^Live \(private test\) · LIVE/.test(t.chip()), "chip says LIVE");
+    t.ui.select("SENSEX"); ok(/SENSEX has no live value/.test(t.txt()), "SENSEX shows the unavailable state"); ok(!/\d{2},\d{3}/.test(t.txt().replace(/\d{2}:\d{2}:\d{2}/g, "")), "no number is invented for SENSEX"); eq(t.doc.byId["mk-today"].all((n) => n.attrs["data-lv-index"] === "SENSEX").length, 1, "one SENSEX panel");
+    t.ui.select("NIFTY 50"); ok(/NIFTY 50/.test(t.txt()) && !/SENSEX/.test(t.txt()), "back to NIFTY 50"); eq(t.panels().filter((x) => x === "indices").length, 1, "never two index panels");
+    t.ui.select("BOGUS"); eq(t.ui.sel, "NIFTY 50", "an unknown tab is ignored");
+    eq(t.doc.byId["mk-today"].children[t.doc.byId["mk-today"].children.length - 1].attrs["data-mk"] !== undefined, true, "EOD box still last"); }
+  /* the header says LIVE only when the selected index has its own row */
+  { const head = (t) => t.doc.byId["mk-today"].all((n) => n.attrs["data-lv"] === "indices").map((n) => n.children[0].children[0].textContent)[0];
+    const t = mk(); t.ui.update(t.ctl.ingest(res(good.doc, now), now));
+    eq(head(t), "LIVE", "NIFTY 50 has a row: header says LIVE"); ok(/updated/.test(t.txt()) && !/No live value/.test(t.txt()), "and shows its value");
+    t.ui.select("SENSEX"); eq(head(t), "No live value", "SENSEX has no row: header does not say LIVE"); ok(!/LIVE/.test(t.txt()), "the word LIVE is not in the SENSEX panel"); ok(/SENSEX has no live value: its data source has not been verified/.test(t.txt()), "the SENSEX explanation is kept");
+    const noNifty = withState((x) => { x.indices = x.indices.filter((r) => r.name !== "NIFTY 50"); x.scope.indices_expected = x.indices.length; }); ok(L.validate(noNifty).length === 0, "snapshot without NIFTY 50 is valid");
+    const u = mk(); u.ui.update(u.ctl.ingest(res(noNifty, now), now)); eq(head(u), "No live value", "NIFTY 50 row missing: header does not say LIVE"); ok(/NIFTY 50 is not in the live snapshot/.test(u.txt()) && !/LIVE/.test(u.txt()), "with its own explanation");
+    u.ui.select("SENSEX"); eq(head(u), "No live value", "SENSEX stays no live value");
+    const w = mk(); w.ui.update(w.ctl.ingest(res(noNifty, now + 60000), now + 60000)); eq(w.ctl.ingest(res(noNifty, now + 60000), now + 60000).kind, "stale", "stale snapshot without the row"); eq(head(w), "No live value", "a stale snapshot without the row does not say STALE either"); }
+  /* a SENSEX row in a snapshot is shown only when the relay really supplies one */
+  { const t = mk(), d = withState((x) => { x.indices.push({ name: "SENSEX", ltp: 80000, cp: 79000, change: 1000, change_pct: pct(80000, 79000), ltt: 1 }); x.scope.indices_expected = x.indices.length; });
+    function pct(a, b) { return (a / b - 1) * 100; }
+    ok(L.validate(d).length === 0, "snapshot with a SENSEX row is valid"); t.ui.update(t.ctl.ingest(res(d, now), now)); t.ui.select("SENSEX"); ok(/80,000\.00/.test(t.txt()), "a supplied SENSEX value is shown"); }
+  /* stale: a valid but old snapshot is STALE, labelled, never LIVE, and carries its own time */
+  { const t = mk(), v = t.ctl.ingest(res(good.doc, now + 60000), now + 60000); eq(v.kind, "stale", "40 s old is stale"); eq(v.state, "hidden", "and not live"); t.ui.update(v);
+    ok(/^Live \(private test\) · STALE/.test(t.chip()), "chip says STALE"); ok(/STALE/.test(t.txt()) && !/LIVE · /.test(t.txt().replace("STALE", "")), "panel says STALE, not LIVE"); ok(/no longer current/.test(t.txt()), "panel says it is not current"); eq(t.panels(), ["indices"], "stale shows the index only, never breadth or movers"); }
+  /* far too old: unavailable, not stale */
+  { const t = mk(); eq(t.ctl.ingest(res(good.doc, now + 20 * 60000), now + 20 * 60000).kind, "unavailable", "20 min old is not shown"); }
+  /* closed market */
+  { const t = mk(), d = withState((x) => { x.market.status = "closed"; }), v = t.ctl.ingest(res(d, now), now); eq(v.kind, "closed", "closed market"); t.ui.update(v);
+    ok(/CLOSED/.test(t.chip()) && /not live/.test(t.chip()), "chip says CLOSED and that EOD is not live"); eq(t.panels(), [], "no live panel when closed"); }
+  /* failed requests: nothing earlier -> UNAVAILABLE; after a live reading -> STALE with the old value; after the keep period -> UNAVAILABLE */
+  { const t = mk(); const v = t.ctl.ingest({ error: "request failed" }, now); eq(v.kind, "unavailable", "failed with nothing earlier"); t.ui.update(v); ok(/UNAVAILABLE/.test(t.chip()) && /not reachable/.test(t.chip()), "chip says UNAVAILABLE"); eq(t.panels(), [], "no panel");
+    t.ui.update(t.ctl.ingest(res(good.doc, now), now)); eq(t.panels().includes("indices"), true, "live again");
+    const f = t.ctl.ingest({ status: 503, error: "HTTP 503" }, now + 60000); eq(f.kind, "stale", "failure right after a live reading is STALE"); eq(f.state, "unavailable", "state stays unavailable"); t.ui.update(f);
+    ok(/STALE/.test(t.chip()) && /not current/.test(t.chip()), "chip says STALE"); eq(t.panels(), ["indices"], "only the retained index value, marked stale");
+    const g = t.ctl.ingest({ error: "request failed" }, now + L.CFG.staleKeep + 1); eq(g.kind, "unavailable", "after the keep period nothing is shown"); t.ui.update(g); eq(t.panels(), [], "panel gone"); }
+  /* invalid / test / unhealthy snapshots are never LIVE or STALE */
+  for (const [nm, f] of [["bad quality", (d) => { d.quality.ok = false; d.quality.reasons = ["x"]; }], ["test_set", (d) => { d.scope.universe = "test_set"; }]]) { const v = new L.Controller().ingest(res(withState(f), now), now); eq(v.kind, "unavailable", nm + " is unavailable"); }
+  eq(new L.Controller().ingest({ status: 200, text: "{bad" }, now).kind, "unavailable", "bad JSON is unavailable");
+}
+{
+  /* drive start() directly with a fake environment: overlap, completion, click */
+  const good = FIX.cases.find((c) => c.name === "good nifty500"), now = good.now;
+  const doc = makeDoc(), listeners = {}, timers = []; doc.addEventListener = (t, f) => { listeners[t] = f; };
+  const pending = [];
+  const calls = [], vmctx = { window: { location: loc("example.com", "") }, document: doc, URLSearchParams, Date, JSON, Math, Object, Array, Number, String, isFinite, encodeURIComponent, setTimeout: () => 1, clearTimeout() {}, AbortController: undefined,
+    fetch: (u, o) => { calls.push(u); return new Promise((resolve) => { pending.push(resolve); }); } };
+  vmctx.window.window = vmctx.window; vm.createContext(vmctx); vm.runInContext(code, vmctx);
+  const S = vmctx.window.SLLive, env = { document: doc, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; } };
+  const out = S.start({ url: "http://127.0.0.1:8765/v1/live/snapshot.json" }, env);
+  eq(calls.length, 1, "one request in flight"); eq(out.refresh(), false, "a second refresh is refused while one is in flight"); eq(out.refresh(), false, "and again"); eq(calls.length, 1, "still one request"); eq(timers.map((t) => t[1]), [60000], "next poll in 60 s");
+  const body = { ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve(JSON.stringify(good.doc)) };
+  pending[0](body);
+  const settle = () => new Promise((rs) => setImmediate(rs));
+  (async () => {
+    await settle(); await settle(); await settle();
+    eq(out.refresh(), true, "after completion a new request may start"); eq(calls.length, 2, "second request"); pending[1]({ ok: false, status: 503, headers: { get: () => null } }); await settle(); await settle(); await settle();
+    eq(out.refresh(), true, "and after a failure too"); eq(calls.length, 3, "third request");
+    timers[0][0](); eq(calls.length, 3, "a timer tick during an in-flight request starts nothing"); eq(timers[timers.length - 1][1], 60000, "and re-arms at 60 s");
+    /* clicking a page tab switches the live panel without any request */
+    const btn = { getAttribute: (k) => (k === "data-tab" ? "SENSEX" : null), parentNode: { getAttribute: (k) => (k === "data-mk-tabs" ? "index" : null) } };
+    out.ui.update(out.controller.ingest({ status: 200, text: JSON.stringify(good.doc), dateMs: now }, now));
+    listeners.click({ target: { closest: () => btn } }); eq(out.ui.sel, "SENSEX", "click selects SENSEX"); eq(calls.length, 3, "no request for a tab click");
+    ok(/SENSEX has no live value/.test(doc.byId["mk-today"].all((x) => x.attrs["data-lv"] === "indices").map((x) => x.textContent).join("")), "panel shows SENSEX unavailable");
+    listeners.click({ target: { closest: () => null } }); eq(out.ui.sel, "SENSEX", "a click elsewhere changes nothing");
+    const other = { getAttribute: (k) => (k === "data-tab" ? "NIFTY 50" : null), parentNode: { getAttribute: () => "other" } }; listeners.click({ target: { closest: () => other } }); eq(out.ui.sel, "SENSEX", "another tab group is ignored");
+    console.log("Live client tests passed (" + checks + " checks)");
+  })();
+}

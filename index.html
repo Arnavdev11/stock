@@ -2599,9 +2599,13 @@ var NEED_ALL="needs daily prices for all NSE stocks";
 
 /* ---------- the sections ---------- */
 var S_={};
-S_["mk-today"]=function(m){
-  var h='';
+var INDEX_TABS=["NIFTY 50","SENSEX"];
+S_["mk-today"]=function(m,st){
+  var h='',sel=INDEX_TABS.indexOf(st&&st.index)>=0?st.index:INDEX_TABS[0];
   h+='<p class="mk-status">'+(m.asOf?'Latest available market data: <b>'+esc(m.asOf)+'</b> · end of day, not live':'Latest available market data: <b>unavailable</b>')+'</p>';
+  h+='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="index">'+INDEX_TABS.map(function(n){return'<button type="button" role="tab" data-tab="'+esc(n)+'" aria-selected="'+(n===sel)+'">'+esc(n)+'</button>'}).join("")+'</div>';
+  /* SENSEX is a BSE index. No SENSEX series is published and its instrument identifier has not been verified, so nothing is shown for it and nothing is guessed. */
+  if(sel==="SENSEX")return h+na("SENSEX is not available yet: its data source has not been verified, so no value is shown");
   if(!m.indices.length)return h+na("NIFTY 50 history is not loaded");
   h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
     return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
@@ -2745,7 +2749,7 @@ window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked
 (function(){
 "use strict";
 var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
-var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:5000,timeout:4000,maxBytes:65536,defaultPort:8765};
+var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765};
 var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
 var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
 var SOURCE="Upstox market data feed V3 (ltpc)",SYM=/^[A-Z0-9&._-]{1,30}$/;
@@ -2828,19 +2832,28 @@ function accepts(d,serverNow){
   return out}
 
 /* ---------- one poll's answer -> what may be shown ---------- */
-function Controller(){this.lastTs=null;this.lastAdvance=null;this.lastSeq=null}
+function Controller(){this.lastTs=null;this.lastAdvance=null;this.lastSeq=null;this.good=null}
+/* kind says what the page may say: live | stale (a valid snapshot that is no longer current, shown only as STALE with its own time) | closed | unavailable.
+   state keeps the older three-way answer (live | hidden | unavailable). Only "live" ever carries blocks; only "stale" carries a snapshot in .last. */
 Controller.prototype.ingest=function(res,localNow){
-  var none=function(state,why){return{state:state,reason:why,blocks:null,doc:null}};
-  if(!res||res.error||res.status!==200||typeof res.text!=="string")return none("unavailable",res&&res.error?String(res.error):"no answer");
+  var self=this,none=function(state,why,kind,last){return{state:state,reason:why,kind:kind||"unavailable",blocks:null,doc:null,last:last||null}};
+  var failed=function(why){var g=self.good;return g&&localNow>=g.at&&localNow-g.at<=CFG.staleKeep?none("unavailable",why,"stale",g.doc):none("unavailable",why)};
+  if(!res||res.error||res.status!==200||typeof res.text!=="string")return failed(res&&res.error?String(res.error):"no answer");
   if(res.text.length>CFG.maxBytes)return none("hidden","response too large");
   var d;try{d=JSON.parse(res.text)}catch(e){return none("hidden","not valid JSON")}
-  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0];
+  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0],stalled=false;
   if(validate(d).length===0){
     if(this.lastTs!==null&&d.server_ts_ms<this.lastTs)return none("hidden","snapshot is older than one already seen");
     if(this.lastTs===null||d.server_ts_ms>this.lastTs){this.lastTs=d.server_ts_ms;this.lastSeq=d.seq;this.lastAdvance=localNow}
-    else if(localNow-this.lastAdvance>CFG.stall)return none("hidden","snapshot is not advancing")}
-  if(!any)return{state:"hidden",reason:v.indices[1],blocks:null,doc:null};
-  return{state:"live",reason:"",blocks:v,doc:d}};
+    else if(localNow-this.lastAdvance>CFG.stall)stalled=true;
+    var age=serverNow-d.server_ts_ms;
+    if(d.scope.universe==="test_set"||!d.quality.ok)return none("hidden",!d.quality.ok?"relay reports a problem: "+d.quality.reasons.join(","):"test snapshot");
+    if(d.market.status==="closed"||d.market.status==="pre_open")return none("hidden","market is "+(d.market.status==="closed"?"closed":"not open yet"),"closed");
+    if(d.market.status==="open"&&(stalled||age>CFG.maxAge)&&age>=-CFG.skew&&age<=CFG.staleKeep)return none("hidden",stalled?"snapshot is not advancing":"snapshot is "+Math.round(age/1000)+" s old","stale",d)}
+  if(!any)return none("hidden",v.indices[1]);
+  this.good={doc:d,at:localNow};
+  return{state:"live",reason:"",kind:"live",blocks:v,doc:d,last:null}};
+function labelOf(v){return!v?"UNAVAILABLE":v.state==="live"?"LIVE":v.kind==="stale"?"STALE":v.kind==="closed"?"CLOSED":"UNAVAILABLE"}
 
 /* ---------- drawing (textContent only) ---------- */
 function fmt(v,dp){return v.toLocaleString("en-IN",{minimumFractionDigits:dp,maximumFractionDigits:dp})}
@@ -2849,8 +2862,10 @@ function tone(v){return v>0?"up":v<0?"dn":""}
 var CSS=".lv-chip{margin:0 0 10px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--acs);color:var(--ink);font-size:.8rem}"
   +".lv-panel{margin:0 0 12px;padding:10px 12px;border:1px solid var(--ac);border-radius:12px;background:var(--card)}"
   +".lv-head{margin:0 0 8px;font-size:.8rem;color:var(--mute)}.lv-head b{color:var(--ac)}.lv-note{margin:8px 0 0;font-size:.74rem;color:var(--mute)}"
+  +".lv-panel.lv-stale{border-style:dashed;border-color:var(--mute)}.lv-panel.lv-stale .lv-head b{color:var(--mute)}"
   +".lv-chg{display:flex;gap:10px;margin-top:6px;font-variant-numeric:tabular-nums;font-size:.9rem}";
-function Ui(doc){this.doc=doc;this.panels={};this.chip=null;this.css=null}
+var TABS=["NIFTY 50","SENSEX"];
+function Ui(doc){this.doc=doc;this.panels={};this.chip=null;this.css=null;this.sel=TABS[0];this.view=null}
 Ui.prototype.el=function(tag,cls,text){var e=this.doc.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=String(text);return e};
 Ui.prototype.mount=function(){
   if(this.css)return;
@@ -2861,18 +2876,27 @@ Ui.prototype.drop=function(name){var e=this.panels[name];if(e&&e.parentNode)e.pa
 Ui.prototype.put=function(name,secId,node){
   this.drop(name);var sec=this.doc.getElementById(secId);if(!sec)return;
   var box=sec.querySelector("[data-mk]");sec.insertBefore(node,box||null);this.panels[name]=node};
-Ui.prototype.head=function(doc,what){
-  var h=this.el("p","lv-head"),b=this.el("b",null,"Live");h.appendChild(b);
-  h.appendChild(this.el("span",null," · "+what+" · updated "+doc.generated_at.slice(11,19)+" IST · private test"));return h};
-Ui.prototype.indices=function(doc){
-  var n=this.el("div","lv-panel"),g=this.el("div","mk-idx-grid");n.setAttribute("data-lv","indices");n.appendChild(this.head(doc,"indices"));
-  doc.indices.forEach(function(x){
-    var c=this.el("div","mk-idx"),h=this.el("div","mk-idx-h");h.appendChild(this.el("b",null,x.name));h.appendChild(this.el("span","v",fmt(x.ltp,2)));c.appendChild(h);
-    var row=this.el("div","lv-chg");
-    if(x.cp&&isNum(x.change_pct)){var cl=tone(x.change_pct);row.appendChild(this.el("span",cl,signed(x.change,2)));row.appendChild(this.el("span",cl,signed(x.change_pct,2)+"%"))}
-    else row.appendChild(this.el("span",null,"previous close not available"));
-    c.appendChild(row);g.appendChild(c)},this);
-  n.appendChild(g);n.appendChild(this.el("p","lv-note","Last traded prices from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
+Ui.prototype.head=function(doc,what,lab){
+  var h=this.el("p","lv-head"),b=this.el("b",null,lab||"LIVE");h.appendChild(b);
+  h.appendChild(this.el("span",null," · "+what+(lab==="STALE"?" · last update ":" · updated ")+doc.generated_at.slice(11,19)+" IST · private test"));return h};
+/* the one panel for the selected tab: its own live value, or a plain statement that there is none. Nothing is guessed for an index the snapshot does not carry. */
+Ui.prototype.indices=function(doc,lab){
+  var sel=this.sel,x=null;
+  doc.indices.forEach(function(r){if(r.name===sel)x=r});
+  /* the header says LIVE or STALE only when the selected index has its own row; otherwise it says there is no live value */
+  if(!x)lab="No live value";
+  var n=this.el("div","lv-panel"+(lab==="STALE"?" lv-stale":""));n.setAttribute("data-lv","indices");n.setAttribute("data-lv-index",sel);
+  n.appendChild(this.head(doc,sel,lab));
+  if(!x){
+    n.appendChild(this.el("p","mk-na",sel==="SENSEX"?"SENSEX has no live value: its data source has not been verified, so none is shown.":sel+" is not in the live snapshot."));
+    return n}
+  var c=this.el("div","mk-idx"),h=this.el("div","mk-idx-h");h.appendChild(this.el("b",null,x.name));h.appendChild(this.el("span","v",fmt(x.ltp,2)));c.appendChild(h);
+  var row=this.el("div","lv-chg");
+  if(x.cp&&isNum(x.change_pct)){var cl=tone(x.change_pct);row.appendChild(this.el("span",cl,signed(x.change,2)));row.appendChild(this.el("span",cl,signed(x.change_pct,2)+"%"))}
+  else row.appendChild(this.el("span",null,"previous close not available"));
+  c.appendChild(row);n.appendChild(c);
+  n.appendChild(this.el("p","lv-note",lab==="STALE"?"This value is no longer current. It is the last one received, shown with its own time. The end-of-day figures below are unchanged."
+    :"Last traded price from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
 Ui.prototype.breadth=function(doc){
   var n=this.el("div","lv-panel"),t=this.el("div","mk-tiles"),b=doc.breadth;n.setAttribute("data-lv","breadth");n.appendChild(this.head(doc,"breadth"));
   [["Advances",b.advances],["Declines",b.declines],["Unchanged",b.unchanged]].forEach(function(x){var tile=this.el("div","mk-tile");tile.appendChild(this.el("b",null,fmt(x[1],0)));tile.appendChild(this.el("span",null,x[0]));t.appendChild(tile)},this);
@@ -2891,20 +2915,26 @@ Ui.prototype.movers=function(doc){
       tb.appendChild(bd);card.appendChild(tb)}
     two.appendChild(card)},this);
   n.appendChild(two);n.appendChild(this.el("p","lv-note","Change against the previous close, among the liquid stocks being tracked live. Descriptive figures only."));return n};
-Ui.prototype.update=function(view){
-  this.mount();
-  var say=function(t){if(this.chip)this.chip.textContent=t}.bind(this);
-  if(view.state==="live"){
+Ui.prototype.select=function(name){if(TABS.indexOf(name)<0||name===this.sel)return;this.sel=name;if(this.view)this.render()};
+Ui.prototype.update=function(view){this.mount();this.view=view;this.render()};
+Ui.prototype.render=function(){
+  var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre="Live (private test) · "+lab;
+  if(lab==="LIVE"){
     var b=view.blocks,d=view.doc;
-    if(b.indices[0])this.put("indices","mk-today",this.indices(d));else this.drop("indices");
+    if(b.indices[0])this.put("indices","mk-today",this.indices(d,"LIVE"));else this.drop("indices");
     if(b.breadth[0])this.put("breadth","mk-breadth",this.breadth(d));else this.drop("breadth");
     if(b.movers[0])this.put("movers","mk-movers",this.movers(d));else this.drop("movers");
     var off=["indices","breadth","movers"].filter(function(k){return !b[k][0]});
-    say("Live (private test) · updated "+d.generated_at.slice(11,19)+" IST"+(off.length?" · not shown: "+off.map(function(k){return k+" ("+b[k][1]+")"}).join("; "):"")+" · end-of-day figures below are unchanged")}
-  else{
-    ["indices","breadth","movers"].forEach(this.drop,this);
-    say(view.state==="unavailable"?"Live (private test): the local relay is not reachable. Showing end-of-day data."
-      :"Live (private test): not shown ("+view.reason+"). Showing end-of-day data.")}};
+    say(pre+" · updated "+d.generated_at.slice(11,19)+" IST"+(off.length?" · not shown: "+off.map(function(k){return k+" ("+b[k][1]+")"}).join("; "):"")+" · end-of-day figures below are unchanged");return}
+  ["breadth","movers"].forEach(this.drop,this);
+  if(lab==="STALE"&&view.last&&view.last.indices){
+    this.put("indices","mk-today",this.indices(view.last,"STALE"));
+    say(pre+" · "+view.reason+" · showing the last value received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
+  this.drop("indices");
+  say(lab==="CLOSED"?pre+" · "+view.reason+". Showing end-of-day data, which is not live."
+    :lab==="STALE"?pre+" · "+view.reason+". Showing end-of-day data."
+    :view.state==="unavailable"?pre+" · the local relay is not reachable. Showing end-of-day data."
+    :pre+" · not shown ("+view.reason+"). Showing end-of-day data.")};
 
 /* ---------- the loop ---------- */
 function poll(url){
@@ -2916,14 +2946,22 @@ function poll(url){
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
     return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
-  var ctl=new Controller(),ui=new Ui(env.document);
+  var ctl=new Controller(),ui=new Ui(env.document),busy=false;
   function next(){env.setTimeout(tick,CFG.poll)}
-  function tick(){
-    if(env.document.visibilityState==="hidden"){next();return}
+  /* one request at a time: a call while another is still in flight does nothing */
+  function refresh(){
+    if(busy)return false;
+    busy=true;
     poll(g.url).then(function(res){
-      try{ui.update(ctl.ingest(res,Date.now()))}catch(e){try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}}}).then(next,next)}
-  ui.mount();tick();return{ui:ui,controller:ctl}}
-window.SLLive={gate:gate,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start};
+      try{ui.update(ctl.ingest(res,Date.now()))}catch(e){try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}}}).then(function(){busy=false},function(){busy=false});
+    return true}
+  function tick(){if(env.document.visibilityState!=="hidden")refresh();next()}
+  /* the page's own index tabs choose which index the live panel shows; the click only redraws what was already received */
+  if(typeof env.document.addEventListener==="function")env.document.addEventListener("click",function(e){
+    var t=e&&e.target,b=t&&typeof t.closest==="function"?t.closest("[data-mk-tabs] [data-tab]"):null;
+    if(b&&typeof b.getAttribute==="function"&&b.parentNode&&b.parentNode.getAttribute("data-mk-tabs")==="index")ui.select(b.getAttribute("data-tab"))});
+  ui.mount();refresh();next();return{ui:ui,controller:ctl,refresh:refresh}}
+window.SLLive={gate:gate,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
 })();

@@ -270,8 +270,11 @@ class Isolation(unittest.TestCase):
         head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(ROOT), capture_output=True)
         if head.returncode != 0:
             self.skipTest("not a git checkout")
-        now, old = (ROOT / "index.html").read_text(encoding="utf-8"), head.stdout.decode("utf-8")
-        self.assertEqual(G.without_market_cap(now), G.without_market_cap(old))           # nothing but the approved edit differs
+        live = re.compile(r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n')                 # the live layer has its own tests (test_live_client.js, test_live_parity.py)
+        now, old = live.sub("", (ROOT / "index.html").read_text(encoding="utf-8"), count=1), live.sub("", head.stdout.decode("utf-8"), count=1)
+        self.assertEqual(G.without_market_cap(now), G.without_market_cap(old))           # nothing but the approved edits differs
+        self.assertIn('data-mk-tabs="index"', now)                                         # the Market Today index tabs are in the page ...
+        self.assertNotIn('data-mk-tabs="index"', G.without_market_cap(now))                # ... and reversing them restores the single-card panel
         self.assertNotEqual(G.without_market_cap(now + "<!-- x -->"), G.without_market_cap(old))      # and any other edit is still seen
         self.assertNotEqual(G.without_market_cap(now.replace("Overview", "Overview2", 1)), G.without_market_cap(old))
         self.assertIn('tile("Market Cap (\u20b9 crore)",cr(mc.cap))', now)               # the edit is in the page ...

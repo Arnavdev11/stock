@@ -56,4 +56,22 @@ def without_market_cap(html):
                   'j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2]}});', 1)
     s = s.replace("  var company=v.company_name||f.company_name,mc=marketCap(d.sh,s,p.price);\n", "  var company=v.company_name||f.company_name,sector=v.sector;\n", 1)
     s = s.replace('tile("Market Cap (\u20b9 crore)",cr(mc.cap))', 'tile("Sector",sector?esc(sector):"-")', 1)
-    return re.sub(r" '\+\(mc\.cap!==null\?[\s\S]*?\)\+'</p>';", "</p>';", s, count=1)
+    s = re.sub(r" '\+\(mc\.cap!==null\?[\s\S]*?\)\+'</p>';", "</p>';", s, count=1)
+    return without_index_tabs(s)
+
+
+# ---------------------------------------------------------------- index.html: the approved NIFTY 50 / SENSEX tabs in the Market Today panel
+_TABS_NEW_HEAD = (
+    'var INDEX_TABS=["NIFTY 50","SENSEX"];\nS_["mk-today"]=function(m,st){\n'
+    "  var h='',sel=INDEX_TABS.indexOf(st&&st.index)>=0?st.index:INDEX_TABS[0];\n")
+_TABS_OLD_HEAD = 'S_["mk-today"]=function(m){\n  var h=\'\';\n'
+_TABS_BAR = re.compile(r"  h\+='<div class=\"tabs mk-tabs\"[\s\S]*?  if\(sel===\"SENSEX\"\)return h\+na\([^\n]*\);\n")
+
+
+def without_index_tabs(html):
+    """index.html with exactly the approved Market Today tab edit reversed (the INDEX_TABS list, the tab bar and the SENSEX unavailable branch of S_["mk-today"]).
+    A page that does not carry the edit comes back unchanged. Used like without_market_cap: apply to both sides, then compare byte for byte."""
+    if _TABS_NEW_HEAD not in html:
+        return html
+    s = html.replace(_TABS_NEW_HEAD, _TABS_OLD_HEAD, 1)
+    return _TABS_BAR.sub("", s, count=1)
