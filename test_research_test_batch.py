@@ -252,7 +252,7 @@ class Isolation(unittest.TestCase):
               "nse_updater.py", "universe.py", "upstox_common.py", "stock_directory.py", "sector_publish.py", "sector_master.py", "sector_data_updater.py", "validate_outputs.py",
               ".github/workflows/update.yml", ".github/workflows/historical.yml", ".github/workflows/save_historical.yml", ".github/workflows/save_ledger.yml",
               ".github/workflows/financial_history.yml", ".github/workflows/shareholding.yml", ".github/workflows/universe.yml", ".github/workflows/sector_data.yml",
-              ".github/workflows/market_data.yml", "index.html", "company_profiles.json"]
+              ".github/workflows/market_data.yml", "company_profiles.json"]
 
     def test_only_the_four_updaters_import_the_batch(self):
         users = sorted(p.name for p in ROOT.glob("*.py") if "research_test_batch" in p.read_text() and not p.name.startswith("test_") and p.name != "research_test_batch.py")
@@ -265,6 +265,19 @@ class Isolation(unittest.TestCase):
         if r.returncode != 0:
             self.skipTest("not a git checkout")
         self.assertEqual(r.stdout.split(), [])
+
+    def test_index_html_differs_from_the_commit_only_by_the_market_cap_header(self):
+        head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(ROOT), capture_output=True)
+        if head.returncode != 0:
+            self.skipTest("not a git checkout")
+        now, old = (ROOT / "index.html").read_text(encoding="utf-8"), head.stdout.decode("utf-8")
+        self.assertEqual(G.without_market_cap(now), G.without_market_cap(old))           # nothing but the approved edit differs
+        self.assertNotEqual(G.without_market_cap(now + "<!-- x -->"), G.without_market_cap(old))      # and any other edit is still seen
+        self.assertNotEqual(G.without_market_cap(now.replace("Overview", "Overview2", 1)), G.without_market_cap(old))
+        self.assertIn('tile("Market Cap (\u20b9 crore)",cr(mc.cap))', now)               # the edit is in the page ...
+        self.assertNotIn('tile("Sector",sector', now)                                       # ... and the header Sector tile is gone
+        self.assertEqual(now.count('tile("Sector"'), 0)
+        self.assertIn('Sector', now)                                                        # the Business-section Sector, the table column and the checklist row are untouched
 
     def test_the_two_updaters_differ_from_the_commit_only_by_the_approved_lines(self):
         for f in ("fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py"):

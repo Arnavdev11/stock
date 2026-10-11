@@ -955,6 +955,8 @@ def index_differs_only_by_live_module(root):
     a, b = now, head
     for pat in pats:
         a, b = re.sub(pat, "", a, count=1), re.sub(pat, "", b, count=1)
+    import guard_update_yml
+    a, b = guard_update_yml.without_market_cap(a), guard_update_yml.without_market_cap(b)         # the approved Stock Detail header edit (Market Cap replaces the Sector tile)
     return a == b
 
 

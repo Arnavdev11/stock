@@ -6,6 +6,7 @@ is_approved(root, path) is True only for those exact states. Any other edit, or 
 """
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -43,3 +44,16 @@ def is_approved(root, path):
         except OSError:
             return False
     return False
+
+
+# ---------------------------------------------------------------- index.html: the one approved edit to the Stock Detail header (Market Cap replaces the Sector tile)
+def without_market_cap(html):
+    """index.html with exactly the approved header edit reversed (the loader's fourth request, the marketCap() helper, the Market Cap tile, its variable and its note).
+    A page that does not carry the edit comes back unchanged, so the guards can apply this to both the working file and HEAD and then compare them byte for byte:
+    any OTHER difference in index.html is still a difference."""
+    s = re.sub(r"/\* Market capitalisation for the header = [\s\S]*?return out\}\n\n", "", html, count=1)
+    s = s.replace('j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});',
+                  'j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2]}});', 1)
+    s = s.replace("  var company=v.company_name||f.company_name,mc=marketCap(d.sh,s,p.price);\n", "  var company=v.company_name||f.company_name,sector=v.sector;\n", 1)
+    s = s.replace('tile("Market Cap (\u20b9 crore)",cr(mc.cap))', 'tile("Sector",sector?esc(sector):"-")', 1)
+    return re.sub(r" '\+\(mc\.cap!==null\?[\s\S]*?\)\+'</p>';", "</p>';", s, count=1)
