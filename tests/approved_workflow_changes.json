@@ -27,6 +27,11 @@
    "+import research_test_batch",
    "-        uni = universe.load()",
    "+        uni = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
+  ],
+  "financial_history_updater.py": [
+   "+import research_test_batch",
+   "-        symbols = [s.strip().upper() for s in raw.split(\",\") if s.strip()] if raw else universe.load()",
+   "+        symbols = [s.strip().upper() for s in raw.split(\",\") if s.strip()] if raw else research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
   ]
  }
 }
