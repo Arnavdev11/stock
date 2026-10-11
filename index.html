@@ -2625,10 +2625,21 @@ function sensexPerf(d){
     if(!c||typeof c!=="object"||!isDay(c.date)||typeof c.close!=="number"||!isFinite(c.close)||!(c.close>0)||(i>0&&!(raw[i-1].date<c.date)))return null}
   var p=perfOf(raw);
   return p&&p.date===raw[raw.length-1].date&&d.last_date===p.date&&d.as_of===p.date?p:null}
-function sensexCard(m){
-  var p=sensexPerf(m&&m.sensex);if(!p)return null;
+var SENSEX_NA="SENSEX is not available yet: its data source has not been verified, so no value is shown";
+function sxNote(t){return'<p class="mk-sub">'+t+'</p>'}
+/* What the SENSEX tab shows. It is never empty and never takes anything from NIFTY 50:
+   - gate closed: exactly the unavailable message, nothing else (the shipped page);
+   - gate open, file not answered yet: a loading line;
+   - otherwise either the card, or that same unavailable message followed by one line saying why (not loaded, not accepted, no date to check against, out of date). */
+function sensexView(m){
+  if(SENSEX_PAGE_APPROVED!==true)return na(SENSEX_NA);
+  var d=m&&m.sensex;
+  if(d===undefined||d===null)return'<p class="mk-na" role="status">Loading SENSEX end-of-day data\u2026</p>';
+  if(d===false)return na(SENSEX_NA)+sxNote("The SENSEX end-of-day file could not be loaded.");
+  var p=sensexPerf(d);if(!p)return na(SENSEX_NA)+sxNote("The SENSEX end-of-day data was not accepted for display.");
   var nf=m.indices&&m.indices.length&&m.indices[0].perf?m.indices[0].perf.date:null,ref=[m.asOf,nf].filter(isDay).sort().pop()||null;
-  if(!ref||dayMs(ref)-dayMs(p.date)>7*DAY)return null;
+  if(!ref)return na(SENSEX_NA)+sxNote("There is no market date on this page to check the SENSEX end-of-day data against.");
+  if(dayMs(ref)-dayMs(p.date)>7*DAY)return na(SENSEX_NA)+sxNote("The latest SENSEX end-of-day date ("+esc(p.date)+") is more than 7 days behind the market data on this page.");
   return idxCardHtml("SENSEX",p)+(nf&&nf!==p.date?'<p class="mk-sub">SENSEX is as of <b>'+esc(p.date)+'</b>; NIFTY 50 is as of <b>'+esc(nf)+'</b>. These are not the same trading day.</p>':'')}
 /* SENSEX-EOD:end */
 var INDEX_TABS=["NIFTY 50","SENSEX"];
@@ -2637,7 +2648,7 @@ S_["mk-today"]=function(m,st){
   h+='<p class="mk-status">'+(m.asOf?'Latest available market data: <b>'+esc(m.asOf)+'</b> · end of day, not live':'Latest available market data: <b>unavailable</b>')+'</p>';
   h+='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="index">'+INDEX_TABS.map(function(n){return'<button type="button" role="tab" data-tab="'+esc(n)+'" aria-selected="'+(n===sel)+'">'+esc(n)+'</button>'}).join("")+'</div>';
   /* SENSEX is a BSE index. No SENSEX series is published and its instrument identifier has not been verified, so nothing is shown for it and nothing is guessed. */
-  if(sel==="SENSEX")return h+(sensexCard(m)||na("SENSEX is not available yet: its data source has not been verified, so no value is shown"));
+  if(sel==="SENSEX")return h+sensexView(m);
   if(!m.indices.length)return h+na("NIFTY 50 history is not loaded");
   h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
     return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
