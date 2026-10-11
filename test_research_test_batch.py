@@ -248,15 +248,15 @@ class Financials(Run):
 
 
 class Isolation(unittest.TestCase):
-    OTHERS = ["historical_updater.py", "historical_batch.py", "historical_handoff.py", "shards.py", "financial_history_updater.py", "shareholding_updater.py",
+    OTHERS = ["historical_updater.py", "historical_batch.py", "historical_handoff.py", "shards.py", "financial_history_updater.py",
               "nse_updater.py", "universe.py", "upstox_common.py", "stock_directory.py", "sector_publish.py", "sector_master.py", "sector_data_updater.py", "validate_outputs.py",
               ".github/workflows/update.yml", ".github/workflows/historical.yml", ".github/workflows/save_historical.yml", ".github/workflows/save_ledger.yml",
               ".github/workflows/financial_history.yml", ".github/workflows/shareholding.yml", ".github/workflows/universe.yml", ".github/workflows/sector_data.yml",
               ".github/workflows/market_data.yml", "index.html", "company_profiles.json"]
 
-    def test_only_the_two_updaters_import_the_batch(self):
+    def test_only_the_three_updaters_import_the_batch(self):
         users = sorted(p.name for p in ROOT.glob("*.py") if "research_test_batch" in p.read_text() and not p.name.startswith("test_") and p.name != "research_test_batch.py")
-        self.assertEqual(users, ["financials_updater.py", "fundamentals_updater.py"])
+        self.assertEqual(users, ["financials_updater.py", "fundamentals_updater.py", "shareholding_updater.py"])
         for wf in (ROOT / ".github" / "workflows").glob("*.yml"):
             self.assertNotIn("research_test_batch", wf.read_text(), wf.name)
 
@@ -267,7 +267,7 @@ class Isolation(unittest.TestCase):
         self.assertEqual(r.stdout.split(), [])
 
     def test_the_two_updaters_differ_from_the_commit_only_by_the_approved_lines(self):
-        for f in ("fundamentals_updater.py", "financials_updater.py"):
+        for f in ("fundamentals_updater.py", "financials_updater.py", "shareholding_updater.py"):
             diff = subprocess.run(["git", "diff", "--name-only", "HEAD", "--", f], cwd=str(ROOT), capture_output=True, text=True)
             if diff.returncode != 0:
                 self.skipTest("not a git checkout")

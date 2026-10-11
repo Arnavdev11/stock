@@ -46,6 +46,7 @@ from pathlib import Path
 
 import requests
 
+import research_test_batch
 import shareholding_ledger as sl
 import shards
 import universe
@@ -1044,7 +1045,7 @@ def main():
         return 1
     ledger = copy.deepcopy(old)
     try:
-        uni = universe.load()
+        uni = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
     except universe.UniverseError as e:
         print("::error::" + str(e))
         return 1
