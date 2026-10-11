@@ -845,7 +845,12 @@ class Source(unittest.TestCase):
     def test_the_sector_gate_files_are_untouched_by_this_stage(self):
         self.assertIn("DEFAULT_APPROVED = False", (ROOT / "sector_publish.py").read_text())
         self.assertIn('SECTOR_PUBLIC_DISPLAY_APPROVED: "false"', (ROOT / ".github" / "workflows" / "sector_data.yml").read_text())
-        self.assertNotIn("sensex", "".join(p.read_text().lower() for p in (ROOT / ".github" / "workflows").glob("*.yml")))     # no workflow runs or publishes it yet
+        # no workflow RUNS the updater or publishes the file; the only mentions are the Stage 4 publication guard in the two site-building workflows (see test_sensex_publish.py)
+        for p in (ROOT / ".github" / "workflows").glob("*.yml"):
+            t = p.read_text().lower()
+            self.assertNotIn("sensex_data_updater", t, p.name)
+            self.assertNotIn("sensex_history", t, p.name)
+            self.assertEqual("sensex" in t, p.name in ("update.yml", "market_data.yml"), p.name)
 
 
 if __name__ == "__main__":

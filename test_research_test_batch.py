@@ -264,7 +264,7 @@ class Isolation(unittest.TestCase):
         r = subprocess.run(["git", "diff", "--name-only", "HEAD", "--"] + self.OTHERS, cwd=str(ROOT), capture_output=True, text=True)
         if r.returncode != 0:
             self.skipTest("not a git checkout")
-        self.assertEqual(r.stdout.split(), [])
+        self.assertEqual([f for f in r.stdout.split() if not G.is_approved(ROOT, f)], [])      # update.yml / market_data.yml may carry only the approved SENSEX guard lines
 
     def test_index_html_differs_from_the_commit_only_by_the_market_cap_header(self):
         head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(ROOT), capture_output=True)

@@ -1,11 +1,12 @@
 {
- "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose. It also records the one approved change to each of fundamentals_updater.py and financials_updater.py (the five-stock test batch, research_test_batch.py): each file must differ from the commit by EXACTLY the listed diff lines (an empty difference is fine once they are committed).",
+ "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose. It also records the one approved change to each of fundamentals_updater.py and financials_updater.py (the five-stock test batch, research_test_batch.py): each file must differ from the commit by EXACTLY the listed diff lines (an empty difference is fine once they are committed). Stage 4 (SENSEX publication guard): update.yml and market_data.yml each differ from the commit by EXACTLY the four lines of the SENSEX guard (the closed approval variable on the Build site folder step and the sensex_publish.py call after the last copy); the earlier historical-handoff lines of update.yml are already committed.",
  "update_yml": {
   "path": ".github/workflows/update.yml",
   "added_lines": [
-   "          # the saved daily prices (written to the data branch by \"Save historical price data\"); they replace any copy that came from the saved-data cache",
-   "          if [ -f ledger-branch/historical/historical.json ]; then cp ledger-branch/historical/historical.json _site/out/historical.json; fi",
-   "          if ls ledger-branch/historical/shards/*.json >/dev/null 2>&1; then mkdir -p _site/out/by_symbol/historical; cp ledger-branch/historical/shards/*.json _site/out/by_symbol/historical/; fi"
+   "        env:",
+   "          SENSEX_PUBLIC_DISPLAY_APPROVED: \"false\"",
+   "          # SENSEX end-of-day file: never published unless SENSEX_PUBLIC_DISPLAY_APPROVED is exactly \"true\" (sensex_publish.py). Runs after every copy above.",
+   "          python sensex_publish.py guard --site _site"
   ]
  },
  "pinned_files": {
@@ -32,6 +33,12 @@
    "+import research_test_batch",
    "-        symbols = [s.strip().upper() for s in raw.split(\",\") if s.strip()] if raw else universe.load()",
    "+        symbols = [s.strip().upper() for s in raw.split(\",\") if s.strip()] if raw else research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
+  ],
+  ".github/workflows/market_data.yml": [
+   "+        env:",
+   "+          SENSEX_PUBLIC_DISPLAY_APPROVED: \"false\"",
+   "+          # SENSEX end-of-day file: never published unless SENSEX_PUBLIC_DISPLAY_APPROVED is exactly \"true\" (sensex_publish.py). Runs after every copy above.",
+   "+          python sensex_publish.py guard --site _site"
   ]
  }
 }

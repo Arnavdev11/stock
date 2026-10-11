@@ -66,6 +66,8 @@ jobs:
         run: python validate_market_outputs.py
 
       - name: Build site folder
+        env:
+          SENSEX_PUBLIC_DISPLAY_APPROVED: "false"
         run: |
           mkdir _site
           cp index.html _site/
@@ -73,6 +75,8 @@ jobs:
           cp out/*.json _site/out/
           if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
           cp company_profiles.json _site/out/
+          # SENSEX end-of-day file: never published unless SENSEX_PUBLIC_DISPLAY_APPROVED is exactly "true" (sensex_publish.py). Runs after every copy above.
+          python sensex_publish.py guard --site _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
