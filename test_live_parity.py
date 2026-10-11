@@ -201,7 +201,8 @@ class PageIntegrityTests(unittest.TestCase):
     def test_removing_the_live_layer_leaves_the_phase2_file_byte_identical(self):
         self.assertEqual(len(BLOCK_RE.findall(self.html)), 1, "exactly one stocklens-live block")
         self.assertEqual(len(SEARCH_RE.findall(self.html)), 1, "exactly one stocklens-search module")
-        rest = SEARCH_RE.sub("", BLOCK_RE.sub("", self.html, count=1), count=1)
+        import guard_update_yml
+        rest = guard_update_yml.without_market_cap(SEARCH_RE.sub("", BLOCK_RE.sub("", self.html, count=1), count=1))      # the approved Stock Detail header edit is reversed first
         self.assertEqual(hashlib.sha256(rest.encode("utf-8")).hexdigest(), PHASE2_INDEX_WITHOUT_SEARCH_SHA256,
                          "index.html outside the stocklens-live block and outside the search module differs from the Phase 2 commit f682bbb")
 
@@ -223,7 +224,8 @@ class PageIntegrityTests(unittest.TestCase):
         if r.returncode != 0:
             self.skipTest("commit f682bbb is not in this checkout")
         self.assertEqual(hashlib.sha256(r.stdout).hexdigest(), PHASE2_INDEX_SHA256)
-        self.assertEqual(SEARCH_RE.sub("", BLOCK_RE.sub("", self.html, count=1), count=1).encode("utf-8"), SEARCH_RE.sub("", r.stdout.decode("utf-8"), count=1).encode("utf-8"))
+        import guard_update_yml
+        self.assertEqual(guard_update_yml.without_market_cap(SEARCH_RE.sub("", BLOCK_RE.sub("", self.html, count=1), count=1)).encode("utf-8"), SEARCH_RE.sub("", r.stdout.decode("utf-8"), count=1).encode("utf-8"))
 
     def test_the_block_has_no_token_no_html_sinks_no_outside_address_no_advice(self):
         block = BLOCK_RE.search(self.html).group(0)

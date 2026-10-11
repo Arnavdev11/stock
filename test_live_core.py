@@ -1078,6 +1078,7 @@ class PackageGuardTests(unittest.TestCase):
                 a, b = now, head
                 for pat in pats:
                     a, b = re.sub(pat, "", a, count=1), re.sub(pat, "", b, count=1)
+                a, b = guard_update_yml.without_market_cap(a), guard_update_yml.without_market_cap(b)         # the approved Stock Detail header edit (Market Cap replaces the Sector tile)
                 if a == b and hashlib.sha256(now.split('<script type="module" id="stocklens-search">')[1].split("</script>")[0].encode("utf-8")).hexdigest() == pin:
                     continue
             self.assertFalse(path.endswith(protected) or path.startswith(".github/"), "unexpected change: " + line)

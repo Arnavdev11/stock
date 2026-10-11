@@ -247,7 +247,7 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   ok(t.check().innerHTML.includes("Investment Checklist") && t.check().innerHTML.includes("Descriptive only — this checklist does not provide investment advice."), "the checklist section shows its title and descriptive line");
   eq(t.fetched.filter((u) => u.includes("fundamentals")).length, 3, "fundamentals.json: one fetch each by Stock Detail, Stock Research and the checklist (the checklist adds exactly one)");
   eq(t.fetched.filter((u) => u.includes("historical")).length, 5, "historical.json: chart, snapshot, research, the checklist and (5D.1, in place of scans.json) the Stock Detail price tiles each fetch it once");
-  eq([...new Set(t.fetched.map((u) => u.replace(/\?.*$/, "")))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json", "out/scans.json"].filter((u) => t.fetched.some((f) => f.startsWith(u))).sort(), "no URL beyond the existing data files is requested");
+  eq([...new Set(t.fetched.map((u) => u.replace(/\?.*$/, "")))].sort(), ["out/company_profiles.json", "out/financials.json", "out/fundamentals.json", "out/historical.json", "out/scans.json", "out/shareholding.json"].filter((u) => t.fetched.some((f) => f.startsWith(u))).sort(), "no URL beyond the existing data files is requested");
   ok(t.fetched.every((u) => /^out\/[a-z_]+\.json$/.test(u)), "every request is a relative out/*.json file");
   const page = t.check().innerHTML;
   eq(cell(page, "Revenue"), { v: "2,50,000.5", st: "Available", note: "" }, "rendered row: value, status word, empty note");

@@ -518,6 +518,8 @@ class ModuleGuards(unittest.TestCase):
             a, b = now, head
             for pat in pats:
                 a, b = re.sub(pat, "", a, count=1), re.sub(pat, "", b, count=1)
+            import guard_update_yml as _g
+            a, b = _g.without_market_cap(a), _g.without_market_cap(b)         # the approved Stock Detail header edit (Market Cap replaces the Sector tile)
             if a == b and hashlib.sha256(now.split('<script type="module" id="stocklens-search">')[1].split("</script>")[0].encode("utf-8")).hexdigest() == pin:
                 out.remove("index.html")
         self.assertEqual(out, [])

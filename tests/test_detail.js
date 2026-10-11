@@ -25,10 +25,15 @@ const C = (date, close) => ({ date, open: close, high: close, low: close, close,
 const HIST = { updated: "2026-10-01", source: "Upstox", stocks: {
   TCS: { symbol: "TCS", candles: [C("2026-10-01", 4000.5), C("2026-09-29", 3900), C("2026-09-30", 3950), C("bad-date", 9999), C("2026-10-02", "4100"), C("2026-10-03", null), C("20261004", 1), C("2026-13-45x", 1), { date: 20261005, close: 1 }, { date: "2026-10-04" }, null, 7] },
   INFY: { symbol: "INFY", candles: [C("2026-10-01", 1500), C("2026-09-30", "x"), C("2026-09-29", null)] } } };
+// out/shareholding.json: the NSE-filed share count behind the header's Market Cap (newest AVAILABLE quarter only; older and unavailable quarters must never be used)
+const Q = (quarter_end, status, shares) => ({ quarter_end, status, diagnostics: shares === undefined ? null : { share_basis_total: shares } });
+const SH = { schema: 1, stocks: {
+  TCS: { symbol: "TCS", quarters: [Q("2026-09-30", "unavailable", 999), Q("2026-06-30", "available", 3618087518), Q("2026-03-31", "available", 1000)] },
+  INFY: { symbol: "INFY", quarters: [Q("2026-06-30", "available", 4000000000)] } } };
 // a scans.json whose numbers must never reach the page any more
 const SCANS = { as_of: "2026-10-01", gainers: [{ symbol: "TCS", price: 1, change_pct: 99 }], losers: [], volume_gainers: [], high_52w: [], delivery: [], dma: [{ symbol: "TCS", price: 1 }, { symbol: "INFY", price: 2 }, { symbol: "XYZ", price: 3 }] };
 
-async function boot(hash, files = { "fundamentals.json": VAL, "financials.json": FIN, "historical.json": HIST, "scans.json": SCANS }) {
+async function boot(hash, files = { "fundamentals.json": VAL, "financials.json": FIN, "historical.json": HIST, "shareholding.json": SH, "scans.json": SCANS }) {
   const els = {}, listeners = {}, win = {}, classes = new Set(), fetched = [];
   const mk = (id) => ({ id, innerHTML: "", textContent: "" });
   global.window = { location: { hash }, addEventListener: (t, f) => { win[t] = f; }, scrollTo() {} };
@@ -55,10 +60,12 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   t = await boot("#stock=TCS");
   ok(t.classes.has("detail-mode")); let d = t.detail();
   re(d, /Stock Detail: TCS/); re(d, /← Back to StockLens/);
-  eq(["out/fundamentals.json", "out/financials.json", "out/historical.json"].every((u) => t.fetched.includes(u)), true, "reads fundamentals, financials and historical");
-  eq(t.fetched.length, 3, "still three requests"); ok(!t.fetched.some((u) => u.includes("scans")), "scans.json is not requested");
+  eq(["out/fundamentals.json", "out/financials.json", "out/historical.json", "out/shareholding.json"].every((u) => t.fetched.includes(u)), true, "reads fundamentals, financials, historical and shareholding (the share count behind Market Cap)");
+  eq(t.fetched.length, 4, "four requests: the three it always made plus the already-published shareholding file"); ok(!t.fetched.some((u) => u.includes("scans")), "scans.json is not requested");
   // header
-  eq(tile(d, "Symbol"), "TCS"); eq(tile(d, "Company"), "TCS LIMITED"); eq(tile(d, "Sector"), "IT Services");
+  eq(tile(d, "Symbol"), "TCS"); eq(tile(d, "Company"), "TCS LIMITED"); eq(tile(d, "Sector"), "NOT FOUND", "the header no longer has a Sector tile");
+  eq(tile(d, "Market Cap (₹ crore)"), "14,47,415.91", "4000.5 x 3,618,087,518 / 10^7: the newest AVAILABLE quarter (Jun 2026), not the unavailable Sep or the older Mar one");
+  re(d, /Market Cap = last close × 3,61,80,87,518 shares \(NSE shareholding filing, quarter ended 2026-06-30\), not a live value\./, "the note names the quarter and says it is not live"); no(d, /estimate/i);
   eq(tile(d, "Latest Price (last close, ₹)"), "4,000.50", "latest valid close, from historical.json (not the 1 in scans.json)"); eq(tile(d, "Day change vs previous close"), "+1.28%", "(4000.5 / 3950 - 1) * 100");
   eq(tile(d, "LTP (last close, ₹)"), "NOT FOUND", "old label gone"); eq(tile(d, "Today's change"), "NOT FOUND", "old label gone");
   re(d, /last daily close in the historical data, as of 2026-10-01 \(not a live price\)/, "the candle date is shown and the note says it is not live");
@@ -78,7 +85,7 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
 
   // --- missing values show "-": INFY has no sector, revenue, PBT/PAT, EPS, P/E, ROCE, EV/EBITDA, financing; only one valid candle
   await t.nav("#stock=INFY"); d = t.detail(); re(d, /Stock Detail: INFY/);
-  eq([tile(d, "Sector"), tile(d, "Revenue"), tile(d, "Profit before tax"), tile(d, "EPS basic (₹)"), tile(d, "P/E"), tile(d, "ROCE %"), tile(d, "EV/EBITDA"), tile(d, "Financing cash flow")],
+  eq([tile(d, "Market Cap (₹ crore)"), tile(d, "Revenue"), tile(d, "Profit before tax"), tile(d, "EPS basic (₹)"), tile(d, "P/E"), tile(d, "ROCE %"), tile(d, "EV/EBITDA"), tile(d, "Financing cash flow")],
      ["-", "-", "-", "-", "-", "-", "-", "-"]);
   eq([tile(d, "Latest Price (last close, ₹)"), tile(d, "Day change vs previous close"), tile(d, "Free cash flow"), tile(d, "Debt / Equity")], ["-", "-", "N/A", "N/A"], "one valid candle: no price, no change (scans.json price 2 is ignored)");
   no(d, /as of 20/, "and no date is claimed");
@@ -119,6 +126,22 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   await t.nav("#stock=TCS"); ok(t.classes.has("detail-mode"));
   t.listeners.click({ target: { closest: (s) => (s === "#detailBack" ? {} : null) } }); eq(window.location.hash, "", "Back clears the hash");
   await t.nav(""); ok(!t.classes.has("detail-mode"), "dashboard visible again");
+
+  // --- Market Cap in the header: only a real last close x a real NSE-filed share count; never an estimate, never an older quarter's count
+  const cap = async (sh, hist = HIST, stock = "TCS") => { const tt = await boot("#stock=" + stock, { "fundamentals.json": VAL, "financials.json": FIN, "historical.json": hist, "shareholding.json": sh }), dd = tt.detail();
+    return { dd, m: tile(dd, "Market Cap (₹ crore)") }; };
+  const shOf = (quarters, stock = "TCS") => ({ schema: 1, stocks: { [stock]: { symbol: stock, quarters } } });
+  let mc = await cap(SH); eq(mc.m, "14,47,415.91", "valid close and share count");
+  mc = await cap(undefined); eq(mc.m, "-", "no shareholding.json"); re(mc.dd, /Market Cap shows "-" unless both a last close and an NSE-filed share count are on file\./, "and the note says why");
+  mc = await cap(shOf([Q("2026-06-30", "available", 3618087518)]), { stocks: { TCS: { candles: [C("2026-10-01", 110)] } } }); eq(mc.m, "-", "one valid candle: no price, so no Market Cap");
+  mc = await cap(shOf([Q("2026-09-30", "available"), Q("2026-06-30", "available", 3618087518)])); eq(mc.m, "-", "the newest available quarter has no share count: the older quarter's count is NOT borrowed");
+  mc = await cap(shOf([Q("2026-09-30", "unavailable", 5), Q("2026-06-30", "unavailable", 5)])); eq(mc.m, "-", "no available quarter");
+  for (const bad of [0, -5, "3618087518", null, NaN, Infinity]) { mc = await cap(shOf([Q("2026-06-30", "available", bad)])); eq(mc.m, "-", "unusable share count " + String(bad)); }
+  mc = await cap(shOf([Q("2026-06-30", "available", 3618087518)], "INFY")); eq(mc.m, "-", "another stock's share count is not used");
+  mc = await cap({ schema: 1, stocks: [] }); eq(mc.m, "-", "stocks as an array is not a stock map");
+  mc = await cap(shOf([{ quarter_end: "bad", status: "available", diagnostics: { share_basis_total: 5 } }])); eq(mc.m, "-", "a quarter without a valid date is ignored");
+  mc = await cap(shOf([Q("2026-03-31", "available", 3618087518), Q("2026-06-30", "available", 1000000000)]) ); eq(mc.m, "4,00,050", "quarters are ordered by date, not by position: 4000.5 x 1,000,000,000 / 10^7");
+  for (const m of ["NaN", "undefined", "null", "Infinity"]) no(mc.dd, new RegExp(m));
 
   // --- a failed data file does not break the page
   t = await boot("#stock=TCS", { "fundamentals.json": VAL }); d = t.detail();
