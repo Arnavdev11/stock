@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 import ledger_storage
+import research_test_batch
 import shards
 import universe
 from financials_updater import capex_class, norm
@@ -726,7 +727,7 @@ def main():
     before = copy.deepcopy(ledger)                            # what the ledger held before this run, for the no-loss check
     raw = os.environ.get("HISTORY_SYMBOLS", "").strip()
     try:
-        symbols = [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else universe.load()
+        symbols = [s.strip().upper() for s in raw.split(",") if s.strip()] if raw else research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
     except universe.UniverseError as e:
         fail(str(e))
     fund = read_json(FUNDAMENTALS_FILE) or {}

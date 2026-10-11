@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -479,6 +480,173 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(t.index("ledger_storage.py verify "), t.index("git push origin HEAD:stocklens-data"))
         self.assertLess(t.index("ledger_storage.py verify-first"), t.index("git push origin stocklens-data"))
         self.assertIn("git diff --cached --quiet", t)                                                       # no commit when nothing changed
+
+
+# ---------------------------------------------------------------- the five-stock research test batch (research_test_batch.py)
+class ResearchBatchApi:
+    """Stands in for Upstox: serves the same statements for every ISIN, records which ISINs were asked, and fails the ones in `failing` (symbol -> error)."""
+
+    def __init__(self, token, max_calls, by_isin, failing, responses):
+        self.max_calls, self.calls, self.by_isin, self.failing, self.responses, self.asked = max_calls, 0, by_isin, failing, responses, []
+
+    def get(self, path, params=None):
+        self.calls += 1
+        if self.calls > self.max_calls:
+            return None, "call limit for this run reached"
+        isin, rest = path.split("/", 1)
+        self.asked.append(isin)
+        if self.by_isin.get(isin) in self.failing:
+            return None, self.failing[self.by_isin[isin]]
+        return self.responses.get((rest, (params or {}).get("type")), (None, "HTTP 404"))
+
+
+class ResearchBatchTests(unittest.TestCase):
+    import research_test_batch as _rtb
+    import universe as _uni
+    DEV = list(_uni.TEST_SYMBOLS)
+    FIVE = list(_rtb.SYMBOLS)
+    FRESH = "2026-11-20"                      # fetched 11 days before the run: inside the 30-day refresh window, so the ten are not fetched again
+
+    def setUp(self):
+        self.isins = {s: "INE%08d0" % i for i, s in enumerate(self.DEV + self.FIVE)}
+        self.by_isin = {v: k for k, v in self.isins.items()}
+
+    def dev_ledger(self):
+        stocks = {}
+        for sym in self.DEV:
+            s = fh.new_stock(sym, self.isins[sym], sym + " Ltd", "IT Services")
+            up_income(s, YEARS4, fetched=self.FRESH); up_cash(s, fetched=self.FRESH)
+            s["fetch_state"] = {"income": {"fetched": self.FRESH, "basis": "consolidated", "error": None},
+                                "cash_flow": {"fetched": self.FRESH, "basis": "consolidated", "error": None}}
+            stocks[sym] = s
+        return {"schema": 1, "stocks": stocks}
+
+    def go(self, symbols="", failing=None, missing=(), budget=None, universe_file=None, ledger="dev", day="2026-12-01"):
+        self.api = None
+        meta = {s: {"isin": self.isins[s], "name": s + " Ltd"} for s in self.DEV + self.FIVE if s not in missing}
+
+        def patch(m):
+            m.load_instruments = lambda: meta
+
+            def make(token, max_calls):
+                self.api = ResearchBatchApi(token, max_calls, self.by_isin, failing or {}, resp(YEARS_NEW))
+                return self.api
+            m.Upstox = make
+        env = {"STOCKLENS_UNIVERSE_FILE": universe_file or ""}
+        if budget:
+            env["HISTORY_MAX_CALLS"] = str(budget)
+        with mock.patch.dict(os.environ, env):
+            r = Run(branch_ledger=self.dev_ledger() if ledger == "dev" else ledger, symbols=symbols, day=day, patch=patch)
+        self.addCleanup(r.close)
+        self.root = Path(r.tmp.name)
+        return r
+
+    @staticmethod
+    def kept(before, after, sym):
+        """Year records that were in `before` and are missing or different in `after`. (The committed official FY2022 records for TCS and ITC are added on every run: new, never a change.)"""
+        now = {(y["fy"], y["basis"]): y for y in after["stocks"][sym]["years"]}
+        return [(y["fy"], y["basis"]) for y in before["stocks"][sym]["years"] if now.get((y["fy"], y["basis"])) != y]
+
+    def asked(self):
+        return {self.by_isin[i] for i in self.api.asked}
+
+    def test_1_the_ten_come_first_and_the_five_follow(self):
+        got = self._rtb.extend(self._uni.load({}))
+        self.assertEqual(got[:10], self.DEV)
+        self.assertEqual(got[10:], self.FIVE)
+
+    def test_2_a_configured_universe_gets_no_batch(self):
+        import universe
+        with tempfile.TemporaryDirectory() as d:
+            u = Path(d) / "universe.json"
+            universe.write_doc(u, {"schema_version": 1, "kind": "universe", "stage": "x", "source": "t", "as_of": "2026-10-10", "count": 1,
+                                   "symbols": [{"symbol": "TCS", "isin": "INE467B01029", "name": "TCS"}]})
+            r = self.go(universe_file=str(u))
+        self.assertEqual(r.code, 0, r.stdout)
+        self.assertIn("Universe: 1 stocks", r.stdout)
+        self.assertEqual(self.api.asked, [])                                  # TCS is fresh and nothing else was requested
+
+    def test_3_the_five_are_requested_and_the_fresh_ten_are_not(self):
+        r = self.go()
+        self.assertEqual(r.code, 0, r.stdout)
+        self.assertIn("Universe: 15 stocks", r.stdout)
+        self.assertEqual(self.asked(), set(self.FIVE))
+        self.assertEqual(self.api.calls, 10)                                  # 5 stocks x (income + cash flow), consolidated served at once
+        for sym in self.FIVE:
+            self.assertEqual(len([x for x in self.api.asked if self.by_isin[x] == sym]), 2, sym)
+
+    def test_4_a_manual_symbol_list_is_exactly_what_was_typed(self):
+        r = self.go(symbols="DOMS")
+        self.assertEqual(r.code, 0, r.stdout)
+        self.assertEqual(self.asked(), {"DOMS"})
+        self.assertIn("Universe: 1 stocks", r.stdout)
+        r = self.go(symbols="TCS")
+        self.assertEqual(r.code, 0, r.stdout)
+        self.assertEqual(self.api.asked, [])                                  # the batch is not added to a typed list
+
+    def test_5_core_output_keeps_the_ten_and_the_five_get_their_own_files(self):
+        r = self.go()
+        self.assertEqual(r.code, 0, r.stdout)
+        core = json.loads(r.out_doc.read_text())
+        self.assertEqual(sorted(core["stocks"]), sorted(self.DEV))
+        led = r.ledger()
+        self.assertEqual(sorted(led["stocks"]), sorted(self.DEV + self.FIVE))
+        import shards
+        for sym in self.FIVE + self.DEV:
+            one = shards.read_shard(self.root, "financial_history", sym)
+            self.assertIsNotNone(one, sym)
+            self.assertEqual(list(one["stocks"]), [sym])
+            self.assertTrue(one["stocks"][sym]["years"], sym)
+        self.assertEqual(fh.validate_doc(shards.read_shard(self.root, "financial_history", "DOMS")), [])
+
+    def test_6_the_ten_existing_ledger_records_are_preserved(self):
+        before = self.dev_ledger()
+        r = self.go()
+        self.assertEqual(r.code, 0, r.stdout)
+        after = r.ledger()
+        for sym in self.DEV:
+            self.assertEqual(self.kept(before, after, sym), [], sym)
+        self.assertEqual(ls.no_loss_problems(before, after), [])
+
+    def test_7_one_failing_or_unknown_symbol_harms_nothing(self):
+        before = self.dev_ledger()
+        r = self.go(failing={"DOMS": "HTTP 500"}, missing=("3BBLACKBIO",))
+        self.assertEqual(r.code, 0, r.stdout)
+        led = r.ledger()
+        for sym in ("20MICRONS", "21STCENMGM", "360ONE"):
+            self.assertTrue(led["stocks"][sym]["years"], sym)
+        self.assertNotIn("3BBLACKBIO", led["stocks"])                          # not in the Upstox instrument list: reported, nothing invented
+        self.assertEqual(led["stocks"]["DOMS"]["years"], [])
+        errs = {e["symbol"]: e["error"] for e in json.loads(r.out_doc.read_text()).get("errors", [])}
+        self.assertIn("HTTP 500", errs.get("DOMS", ""))
+        self.assertIn("not found", errs.get("3BBLACKBIO", ""))
+        for sym in self.DEV:
+            self.assertEqual(self.kept(before, led, sym), [], sym)
+        import shards
+        self.assertIsNone(shards.read_shard(self.root, "financial_history", "DOMS"))
+
+    def test_8_a_missing_sector_only_changes_the_layout_label(self):
+        r = self.go()
+        self.assertEqual(r.code, 0, r.stdout)
+        st = r.ledger()["stocks"]["360ONE"]
+        self.assertEqual(st["statement_layout"], "unclassified")
+        want = {fy: y["values"] for fy, y in fh.parse_income(income_body(std_lines(YEARS_NEW, base=1000.0)), "unclassified")["years"].items()}
+        got = {y["fy"]: {k: v for k, v in y["values"].items() if k in want[y["fy"]] and want[y["fy"]][k] is not None} for y in st["years"] if y["fy"] in want}
+        self.assertTrue(got)
+        for fy, vals in got.items():
+            for k, v in vals.items():
+                self.assertEqual(v, want[fy][k], (fy, k))                      # values come only from the response
+
+    def test_9_the_budget_is_respected_and_new_stocks_go_first(self):
+        before = self.dev_ledger()
+        r = self.go(budget=4)
+        self.assertEqual(r.code, 0, r.stdout)
+        self.assertEqual(self.api.calls, 4)
+        self.assertTrue(self.asked() <= set(self.FIVE))
+        self.assertEqual(len(self.asked()), 2)
+        self.assertIn("Not reached in this run (call budget):", r.stdout)        # the ten fresh stocks and the three unreached new ones
+        for sym in self.DEV:
+            self.assertEqual(self.kept(before, r.ledger(), sym), [], sym)
 
 
 if __name__ == "__main__":
