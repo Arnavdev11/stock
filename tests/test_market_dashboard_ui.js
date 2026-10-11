@@ -125,11 +125,113 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   no(s, /class="mk-idx"/, "the SENSEX tab draws no index card"); no(s, /class="mk-perf"/, "and no performance figures"); no(s, /\d[\d,]*\.\d{2}/, "and no SENSEX number at all");
   re(s, /SENSEX is not available yet: its data source has not been verified, so no value is shown/, "it says plainly that SENSEX is unavailable and why"); re(s, /end of day, not live/, "the end-of-day status line stays on the SENSEX tab");
   re(draw("mk-today", empty, { index: "SENSEX" }), /SENSEX is not available yet/, "SENSEX is unavailable with no data loaded either"); re(draw("mk-today", empty), /NIFTY 50 history is not loaded/, "NIFTY 50 without data keeps its fallback text");
-  no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /SENSEX[^\n]*(?:NSE_INDEX|BSE_INDEX|\|)/, "no SENSEX instrument key or identifier is written in the module");
-  no(html.replace(/\/\*[\s\S]*?\*\//g, ""), /BSE_INDEX\|/, "no BSE instrument key anywhere in the page");
+  { const bare = (h) => h.replace(/\/\*[\s\S]*?\*\//g, ""); /* the key is written once, as a strict comparison against the FILE's own key: never requested, subscribed to or looked up */
+    eq((bare(code).match(/BSE_INDEX/g) || []).length, 1, "the BSE key text appears once in the module code"); re(bare(code), /ins\.instrument_key!=="BSE_INDEX\|SENSEX"/, "as a comparison only");
+    eq((bare(html).match(/BSE_INDEX/g) || []).length, 1, "and nowhere else in the page"); }
   /* the click itself is handled by the module's existing generic handler */
   ok(/\[data-mk-tabs\] \[data-tab\]/.test(code) && /STATE\[grp\]=b\.getAttribute\("data-tab"\)/.test(code), "the generic handler stores the chosen tab in STATE and repaints the section (no page reload, no navigation)");
   no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /location\.(reload|href|assign|replace)/, "the module never reloads or navigates"); }
+// ---------- 4b. the SENSEX end-of-day card: two closed gates, strict validation, its own date, lazy loading ----------
+const vm = require("vm");
+const GATE_OFF = "var SENSEX_PAGE_APPROVED=false;";
+eq(code.split(GATE_OFF).length, 2, "the page-level SENSEX gate is declared once and ships closed (false)"); no(code, /SENSEX_PAGE_APPROVED\s*=\s*true/, "and is never set to true in the page");
+eq((code.match(/SENSEX-EOD:start/g) || []).length, 2, "two marked SENSEX blocks (the card, and the lazy request)"); eq((code.match(/SENSEX-EOD:end/g) || []).length, 2, "each closed");
+eq((code.replace(/\/\*[\s\S]*?\*\//g, "").match(/getJson\(SENSEX_FILE\)/g) || []).length, 1, "exactly one request for the SENSEX file"); re(code, /var SENSEX_FILE="out\/sensex_history\.json";/, "to its own file, not out/historical.json");
+re(code, /public redistribution rights for BSE SENSEX data/i, "the rights uncertainty is stated in the page code"); re(code, /unverified candidate/, "and so is the unverified BSE metadata URL");
+const loadMod = (text) => { const ctx = { window: {}, document: { getElementById: () => null, addEventListener() {} }, fetch() { throw new Error("no fetch in this test"); } }; vm.createContext(ctx); vm.runInContext(text, ctx); return ctx.window.SLMarket; };
+const MC = loadMod(code), MO = loadMod(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"));     /* MO: a test-only copy with the page gate OPEN. The shipped page is MC. */
+const ymd = (end, back) => new Date(Date.parse(end + "T00:00:00Z") - back * 864e5).toISOString().slice(0, 10);
+const sxCandles = (end, n = 120, base = 80000) => Array.from({ length: n }, (_, i) => { const c = base + i * 10; return { date: ymd(end, n - 1 - i), open: c, high: c + 50, low: c - 50, close: c, volume: null }; });
+const sxDoc = (end = "2026-10-05", over = {}) => Object.assign({ schema_version: 1, kind: "sensex_history", as_of: end, last_date: end, instrument: { label: "SENSEX", instrument_key: "BSE_INDEX|SENSEX", instrument_name: "SENSEX", exchange: "BSE", segment: "BSE_INDEX", instrument_type: "INDEX" },
+  data_rights_note: "Public redistribution rights for BSE SENSEX data are unconfirmed.", public_display_approved: true, candles: sxCandles(end) }, over);
+const HIST2 = Object.assign({}, HIST, { benchmark: { symbol: "NIFTY 50", candles: sxCandles("2026-10-05", 120, 22000) } });     /* NIFTY ends on the same day as the scans: 2026-10-05 */
+const modelO = (extra = {}) => Object.assign({}, MO.model(SCANS, HIST2, FII), extra);
+const todayO = (m, tab) => MO.sectionHtml("mk-today", m, tab ? { index: tab } : {});
+const UNAVAILABLE = "SENSEX is not available yet: its data source has not been verified, so no value is shown";
+const isNa = (h) => h.includes('<p class="mk-na">Data unavailable<small>' + UNAVAILABLE + "</small></p>") && !/class="mk-idx"/.test(h);
+const f2 = (v) => v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+{ // approved and valid, same day as NIFTY
+  const d = sxDoc(), h = todayO(modelO({ sensex: d }), "SENSEX"), last = d.candles[d.candles.length - 1].close, prev = d.candles[d.candles.length - 2].close;
+  re(h, new RegExp('<b>SENSEX</b><span class="v">' + f2(last).replace(/[.,]/g, "\\$&") + "</span>"), "the card shows SENSEX with ITS OWN last close"); re(h, /As of 2026-10-05/, "and its own latest trading date");
+  for (const l of ["1D", "1W", "30D", "90D"]) re(h, new RegExp("<small>" + l + "</small>"), "performance column " + l); re(h, new RegExp("\\+" + ((last / prev - 1) * 100).toFixed(2).replace(".", "\\.") + "%"), "1D change computed from SENSEX's own previous close");
+  no(h, /not the same trading day/, "no date warning when the day matches NIFTY"); eq((h.match(/class="mk-idx"/g) || []).length, 1, "one card"); no(h, /<b>NIFTY 50<\/b>/, "no NIFTY card on the SENSEX tab when the days match"); no(h, /Data unavailable/, "and not the unavailable message");
+  eq(MO.sectionHtml("mk-today", modelO({ sensex: d }), { index: "SENSEX" }).includes("end of day, not live"), true, "the status line still says end of day, not live"); }
+{ // a date difference from NIFTY is flagged, in both directions, and NIFTY's own date is not borrowed
+  for (const end of ["2026-10-02", "2026-10-06"]) { const h = todayO(modelO({ sensex: sxDoc(end) }), "SENSEX");
+    re(h, new RegExp("As of " + end), "SENSEX keeps its own date " + end); re(h, new RegExp("SENSEX is as of <b>" + end + "</b>; NIFTY 50 is as of <b>2026-10-05</b>\\. These are not the same trading day\\."), "and the difference from NIFTY is stated: " + end); } }
+{ // never NIFTY values: invalid SENSEX data shows the plain message, with the NIFTY model fully loaded
+  const m = modelO(), nlast = f2(m.indices[0].perf.last);
+  ok(isNa(todayO(m, "SENSEX")), "no sensex field at all: the unavailable message, nothing else"); no(todayO(m, "SENSEX"), new RegExp(nlast.replace(/[.,]/g, "\\$&")), "and no NIFTY value on the SENSEX tab");
+  const withCard = todayO(modelO({ sensex: sxDoc("2026-10-02") }), "SENSEX"); no(withCard, new RegExp(">" + nlast.replace(/[.,]/g, "\\$&") + "<"), "a valid SENSEX card never carries NIFTY's number"); no(withCard, /<b>NIFTY 50<\/b>/, "or NIFTY's card"); }
+{ // unavailable for every kind of bad input
+  const bad = { "loading (null)": null, "failed fetch (false)": false, "string": "x", "number": 5, "array": [], "empty object": {},
+    "flag false": sxDoc("2026-10-05", { public_display_approved: false }), "flag missing": (() => { const d = sxDoc(); delete d.public_display_approved; return d; })(), "flag the string true": sxDoc("2026-10-05", { public_display_approved: "true" }),
+    "flag 1": sxDoc("2026-10-05", { public_display_approved: 1 }), "flag null": sxDoc("2026-10-05", { public_display_approved: null }),
+    "wrong kind": sxDoc("2026-10-05", { kind: "index_history" }), "schema 2": sxDoc("2026-10-05", { schema_version: 2 }), "schema string": sxDoc("2026-10-05", { schema_version: "1" }),
+    "other key": sxDoc("2026-10-05", { instrument: { label: "SENSEX", instrument_key: "BSE_INDEX|OTHER" } }), "nse key": sxDoc("2026-10-05", { instrument: { label: "SENSEX", instrument_key: "NSE_INDEX|Nifty 50" } }),
+    "wrong label": sxDoc("2026-10-05", { instrument: { label: "NIFTY 50", instrument_key: "BSE_INDEX|SENSEX" } }), "no instrument": sxDoc("2026-10-05", { instrument: null }),
+    "candles not a list": sxDoc("2026-10-05", { candles: "x" }), "one candle": sxDoc("2026-10-05", { candles: sxCandles("2026-10-05", 1) }), "no candles": sxDoc("2026-10-05", { candles: [] }),
+    "last_date mismatch": sxDoc("2026-10-05", { last_date: "2026-10-04" }), "as_of mismatch": sxDoc("2026-10-05", { as_of: "2026-10-06" }), "no as_of": sxDoc("2026-10-05", { as_of: undefined }) };
+  const mk = (f) => { const d = sxDoc(); f(d.candles); return d; };
+  Object.assign(bad, { "duplicate date": mk((c) => { c[50].date = c[49].date; }), "descending": mk((c) => { c.reverse(); }), "string close": mk((c) => { c[10].close = "80000"; }), "NaN close": mk((c) => { c[10].close = NaN; }),
+    "zero close": mk((c) => { c[10].close = 0; }), "negative close": mk((c) => { c[10].close = -5; }), "null close": mk((c) => { c[10].close = null; }), "bad date": mk((c) => { c[10].date = "2026-13-45"; }),
+    "date not a string": mk((c) => { c[10].date = 20260101; }), "a null candle": mk((c) => { c[10] = null; }), "Infinity close": mk((c) => { c[10].close = Infinity; }) });
+  for (const [name, d] of Object.entries(bad)) ok(isNa(todayO(modelO({ sensex: d }), "SENSEX")), "unavailable message for: " + name); }
+{ // stale: more than 7 days behind the newest date the page knows
+  for (const [end, shown] of [["2026-09-28", true], ["2026-09-27", false], ["2026-09-20", false], ["2026-04-10", false]]) { const h = todayO(modelO({ sensex: sxDoc(end) }), "SENSEX");
+    eq(/class="mk-idx"/.test(h), shown, "SENSEX ending " + end + (shown ? " (7 days behind) is shown, with its date and the difference" : " is too old: unavailable")); if (!shown) ok(isNa(h), "the plain message for " + end); else re(h, /not the same trading day/, "and flagged"); }
+  for (const [what, doc] of [["old", sxDoc("2026-03-01")], ["recent", sxDoc("2026-10-05")]]) {
+    const noRef = Object.assign({}, MO.model(null, null, null), { asOf: null, indices: [], sensex: doc }), h = todayO(noRef, "SENSEX");
+    eq(noRef.asOf, null, "fixture: no page market date"); eq(noRef.indices.length, 0, "fixture: no NIFTY date");
+    ok(isNa(h), "no reference date at all (" + what + " SENSEX file, gate open, approved, valid): the exact unavailable message"); no(h, /class="mk-idx"|mk-perf|81,|8\d,\d{3}/, "and no SENSEX card or price"); }
+}
+{ // the shipped page (gate closed) never shows a value, whatever the file says
+  const m = Object.assign({}, MC.model(SCANS, HIST2, FII), { sensex: sxDoc() }); ok(isNa(MC.sectionHtml("mk-today", m, { index: "SENSEX" })), "page gate closed + perfect file + flag true: still the unavailable message");
+  no(MC.sectionHtml("mk-today", m, { index: "SENSEX" }), /8\d,\d{3}/, "no SENSEX number"); }
+{ // NIFTY non-regression: the NIFTY tab does not depend on SENSEX in any way
+  const base = todayO(modelO(), undefined);
+  for (const sensex of [undefined, null, false, sxDoc(), sxDoc("2026-10-02"), { garbage: 1 }]) eq(todayO(modelO({ sensex }), undefined), base, "NIFTY tab output is identical whatever SENSEX holds");
+  eq(MC.sectionHtml("mk-today", Object.assign({}, MC.model(SCANS, HIST2, FII), { sensex: sxDoc() }), {}), MC.sectionHtml("mk-today", MC.model(SCANS, HIST2, FII), {}), "and on the shipped page"); re(base, /<b>NIFTY 50<\/b><span class="v">/, "with its card"); }
+{ // the SENSEX card is built exactly like the NIFTY card
+  const same = { benchmark: { symbol: "NIFTY 50", candles: sxCandles("2026-10-05") }, stocks: {} }, m = Object.assign({}, MO.model(SCANS, same, FII), { sensex: sxDoc("2026-10-05") });
+  const grid = (h) => (/<div class="mk-idx-grid">[\s\S]*?<p class="mk-sub">As of [^<]*<\/p><\/div><\/div>/.exec(h) || [""])[0];
+  eq(grid(todayO(m, "SENSEX")).replace("<b>SENSEX</b>", "<b>NIFTY 50</b>"), grid(todayO(m)), "same data: the two cards differ only by the name"); ok(grid(todayO(m)).length > 200, "and the card is really there"); }
+{ // the generated page text: markers reverse cleanly (the older pins rely on this)
+  const L = legacy(html); no(L, /SENSEX/, "legacy() removes every SENSEX trace: the older byte-identity pins still see the pre-edit page"); no(L, /SENSEX-EOD/, "including the markers"); }
+
+// lazy loading and initial page-load behavior, driven through the module's real init() with a fake document and fake fetch
+const settle = () => new Promise((r) => setImmediate(r));
+function boot(text, files) {
+  const listeners = [], boxes = {}, fetched = [], doc = { getElementById: (id) => (id === "market" ? {} : null), addEventListener: (t, f) => listeners.push([t, f]),
+    querySelector: (sel) => { const m = /^#([\w-]+) \[data-mk\]$/.exec(sel); return m ? (boxes[m[1]] = boxes[m[1]] || { innerHTML: "" }) : null; } };
+  const ctx = { window: {}, document: doc, fetch: (u) => { fetched.push(u); const f = files[u]; return Promise.resolve(f === undefined ? { ok: false } : { ok: true, json: () => Promise.resolve(f) }); } };
+  vm.createContext(ctx); vm.runInContext(text, ctx);
+  const click = (tab, group = "index") => { const btn = { closest: () => ({ id: "mk-today" }), parentNode: { getAttribute: () => group }, getAttribute: () => tab };
+    for (const [t, f] of listeners) if (t === "click") f({ target: { closest: (sel) => (sel === "[data-mk-tabs] [data-tab]" ? btn : null) } }); };
+  return { boxes, fetched, click };
+}
+const FILES = (extra) => Object.assign({ "out/scans.json": SCANS, "out/historical.json": HIST2, "out/fiidii_history.json": FII, "out/market_sectors.json": null }, extra);
+const FOUR = ["out/market_sector_stocks.json"].length && ["out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json"];
+const lazy = (async () => {
+  const wait = async () => { for (let i = 0; i < 8; i++) await settle(); };
+  { // shipped page: the file is never requested and the tab shows the plain message
+    const b = boot(code, FILES({ "out/sensex_history.json": sxDoc() })); await wait();
+    eq(b.fetched, FOUR, "initial page load requests exactly the four existing files (unchanged), and no SENSEX file"); b.click("NIFTY 50"); b.click("SENSEX"); await wait();
+    eq(b.fetched, FOUR, "gate closed: selecting SENSEX makes no request"); ok(isNa(b.boxes["mk-today"].innerHTML), "and the tab shows the plain unavailable message"); }
+  { // gate open: one request, only on first selection of SENSEX
+    const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES({ "out/sensex_history.json": sxDoc() })); await wait();
+    eq(b.fetched, FOUR, "initial load: still the four files only"); const nifty = b.boxes["mk-today"].innerHTML; re(nifty, /<b>NIFTY 50<\/b>/, "NIFTY tab drawn"); b.click("NIFTY 50"); await wait(); eq(b.fetched, FOUR, "selecting NIFTY 50 requests nothing");
+    b.click("SENSEX"); b.click("SENSEX"); await wait(); eq(b.fetched, FOUR.concat(["out/sensex_history.json"]), "selecting SENSEX (twice, quickly) makes exactly one request, to the SENSEX file");
+    re(b.boxes["mk-today"].innerHTML, /<b>SENSEX<\/b><span class="v">/, "and the SENSEX card is drawn from it"); no(b.boxes["mk-today"].innerHTML, /Data unavailable/, "without the unavailable message");
+    b.click("NIFTY 50"); await wait(); eq(b.boxes["mk-today"].innerHTML, nifty, "back on NIFTY: byte-identical to before SENSEX was ever opened"); b.click("SENSEX"); await wait(); eq(b.fetched.length, 5, "reselecting SENSEX never requests again"); }
+  { // gate open but the file is missing, or says not approved: one request, the plain message, never retried
+    for (const [name, files] of [["missing", {}], ["not approved", { "out/sensex_history.json": sxDoc("2026-10-05", { public_display_approved: false }) }], ["invalid", { "out/sensex_history.json": { kind: "x" } }]]) {
+      const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES(files)); await wait(); b.click("SENSEX"); await wait();
+      eq(b.fetched.filter((u) => u === "out/sensex_history.json").length, 1, name + ": one request"); ok(isNa(b.boxes["mk-today"].innerHTML), name + ": the plain unavailable message"); b.click("SENSEX"); await wait(); eq(b.fetched.length, 5, name + ": no retry"); } }
+  { // another tab group never triggers the request
+    const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES({ "out/sensex_history.json": sxDoc() })); await wait(); b.click("SENSEX", "trending"); await wait(); eq(b.fetched, FOUR, "a SENSEX-named tab in another group does nothing"); }
+})();
+
 { const b = draw("mk-breadth");
   for (const l of ["Advances", "Declines", "Unchanged", "52-week highs", "52-week lows", "Upper circuits", "Lower circuits"]) re(b, new RegExp("<span>" + l + "</span>"), "breadth tile " + l);
   re(b, /1,200 advances/, "advances from the data"); re(b, /800 declines/, "declines"); re(b, /100 unchanged/, "unchanged"); re(b, /<b>33<\/b><span>52-week highs<\/span>/, "52-week highs from the data");
@@ -192,4 +294,4 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   for (const pin of ['id="detail"', "Stock Detail view", 'id="stocklens-search"', 'id="stocklens-compare"', 'id="stocklens-shareholding"', 'id="stocklens-snapshot"', 'id="stocklens-growth"', "Financial Health"]) ok(html.includes(pin), "still present: " + pin);
   re(html, /\.detail-mode \.w>\*:not\(#detail\)\{display:none!important\}/, "an open stock hides the dashboard (it is inside .w)"); ok(html.indexOf('<main id="market">') > html.indexOf('<div class="w">'), "the dashboard is inside .w, so Stock Detail and Compare modes hide it as they hid the old homepage");
   const w = html.slice(html.indexOf('<div class="w">')); ok(!/<main id="market">[\s\S]*<\/main>[\s\S]*<main id="market">/.test(w), "one dashboard"); }
-console.log("Market dashboard tests passed (" + checks + " checks)");
+lazy.then(() => console.log("Market dashboard tests passed (" + checks + " checks)"));

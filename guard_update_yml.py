@@ -65,12 +65,14 @@ _TABS_NEW_HEAD = (
     'var INDEX_TABS=["NIFTY 50","SENSEX"];\nS_["mk-today"]=function(m,st){\n'
     "  var h='',sel=INDEX_TABS.indexOf(st&&st.index)>=0?st.index:INDEX_TABS[0];\n")
 _TABS_OLD_HEAD = 'S_["mk-today"]=function(m){\n  var h=\'\';\n'
-_TABS_BAR = re.compile(r"  h\+='<div class=\"tabs mk-tabs\"[\s\S]*?  if\(sel===\"SENSEX\"\)return h\+na\([^\n]*\);\n")
+_TABS_BAR = re.compile(r"  h\+='<div class=\"tabs mk-tabs\"[\s\S]*?  if\(sel===\"SENSEX\"\)return h\+[^\n]*;\n")
+_SENSEX_EOD = re.compile(r"[ \t]*/\* SENSEX-EOD:start \*/[\s\S]*?/\* SENSEX-EOD:end \*/\n")
 
 
 def without_index_tabs(html):
-    """index.html with exactly the approved Market Today tab edit reversed (the INDEX_TABS list, the tab bar and the SENSEX unavailable branch of S_["mk-today"]).
+    """index.html with exactly the approved Market Today tab edit reversed (the INDEX_TABS list, the tab bar, the SENSEX branch of S_["mk-today"] and the marked SENSEX-EOD blocks).
     A page that does not carry the edit comes back unchanged. Used like without_market_cap: apply to both sides, then compare byte for byte."""
+    html = _SENSEX_EOD.sub("", html)           # the SENSEX end-of-day card: its constants and functions, and the lazy file request (both marked SENSEX-EOD)
     if _TABS_NEW_HEAD not in html:
         return html
     s = html.replace(_TABS_NEW_HEAD, _TABS_OLD_HEAD, 1)

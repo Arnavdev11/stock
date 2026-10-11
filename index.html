@@ -2599,13 +2599,45 @@ var NEED_ALL="needs daily prices for all NSE stocks";
 
 /* ---------- the sections ---------- */
 var S_={};
+/* SENSEX-EOD:start */
+/* SENSEX end-of-day card (Market Today, SENSEX tab). END-OF-DAY ONLY: there is no SENSEX real-time value anywhere in this page.
+   It reads ONE file, out/sensex_history.json, written by sensex_data_updater.py (its own file: out/historical.json, the NIFTY 50 data, is never involved), and only when someone selects the SENSEX tab.
+   TWO gates must both be open before any SENSEX value is drawn or even requested, and both ship CLOSED:
+     1. SENSEX_PAGE_APPROVED below (this constant, default false: it is changed by a deliberate, reviewed edit of this page), and
+     2. the file itself saying public_display_approved === true (strict boolean; the updater writes false unless SENSEX_PUBLIC_DISPLAY_APPROVED is "true").
+   While either gate is closed, or the file is missing, invalid or stale, the tab shows the plain unavailable message and the file is not even fetched (gate 1).
+   NOT YET CONFIRMED, and the reason both gates are closed: public redistribution rights for BSE SENSEX data; the BSE instrument-metadata URL the updater uses is an unverified candidate.
+   The file is checked here again before use: kind, schema version, the instrument key, one valid close per day in strictly ascending order, and last_date = as_of = the last candle.
+   Nothing is ever taken from NIFTY 50: SENSEX shows its own latest trading date, and a difference from NIFTY's date is stated on the card. */
+var SENSEX_PAGE_APPROVED=false;
+var SENSEX_FILE="out/sensex_history.json";
+function idxCardHtml(name,perf){
+  return'<div class="mk-idx-grid"><div class="mk-idx"><div class="mk-idx-h"><b>'+esc(name)+'</b><span class="v">'+fmt(perf.last)+'</span></div>'
+    +'<div class="mk-perf">'+WINDOWS.map(function(w){return'<div><small>'+w.label+'</small><span class="'+cls(perf[w.key])+'">'+pct(perf[w.key])+'</span></div>'}).join("")+'</div>'
+    +'<p class="mk-sub">As of '+esc(perf.date)+'</p></div></div>'}
+function sensexPerf(d){
+  if(SENSEX_PAGE_APPROVED!==true||!d||typeof d!=="object"||d.public_display_approved!==true)return null;
+  if(d.kind!=="sensex_history"||d.schema_version!==1)return null;
+  var ins=d.instrument;if(!ins||typeof ins!=="object"||ins.label!=="SENSEX"||ins.instrument_key!=="BSE_INDEX|SENSEX")return null;
+  var raw=d.candles;if(!Array.isArray(raw)||raw.length<2)return null;
+  for(var i=0;i<raw.length;i++){
+    var c=raw[i];
+    if(!c||typeof c!=="object"||!isDay(c.date)||typeof c.close!=="number"||!isFinite(c.close)||!(c.close>0)||(i>0&&!(raw[i-1].date<c.date)))return null}
+  var p=perfOf(raw);
+  return p&&p.date===raw[raw.length-1].date&&d.last_date===p.date&&d.as_of===p.date?p:null}
+function sensexCard(m){
+  var p=sensexPerf(m&&m.sensex);if(!p)return null;
+  var nf=m.indices&&m.indices.length&&m.indices[0].perf?m.indices[0].perf.date:null,ref=[m.asOf,nf].filter(isDay).sort().pop()||null;
+  if(!ref||dayMs(ref)-dayMs(p.date)>7*DAY)return null;
+  return idxCardHtml("SENSEX",p)+(nf&&nf!==p.date?'<p class="mk-sub">SENSEX is as of <b>'+esc(p.date)+'</b>; NIFTY 50 is as of <b>'+esc(nf)+'</b>. These are not the same trading day.</p>':'')}
+/* SENSEX-EOD:end */
 var INDEX_TABS=["NIFTY 50","SENSEX"];
 S_["mk-today"]=function(m,st){
   var h='',sel=INDEX_TABS.indexOf(st&&st.index)>=0?st.index:INDEX_TABS[0];
   h+='<p class="mk-status">'+(m.asOf?'Latest available market data: <b>'+esc(m.asOf)+'</b> · end of day, not live':'Latest available market data: <b>unavailable</b>')+'</p>';
   h+='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="index">'+INDEX_TABS.map(function(n){return'<button type="button" role="tab" data-tab="'+esc(n)+'" aria-selected="'+(n===sel)+'">'+esc(n)+'</button>'}).join("")+'</div>';
   /* SENSEX is a BSE index. No SENSEX series is published and its instrument identifier has not been verified, so nothing is shown for it and nothing is guessed. */
-  if(sel==="SENSEX")return h+na("SENSEX is not available yet: its data source has not been verified, so no value is shown");
+  if(sel==="SENSEX")return h+(sensexCard(m)||na("SENSEX is not available yet: its data source has not been verified, so no value is shown"));
   if(!m.indices.length)return h+na("NIFTY 50 history is not loaded");
   h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
     return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
@@ -2732,6 +2764,13 @@ function init(){
     STATE.sector=b.getAttribute("data-mk-sector");
     if(M.sectorStocks!==null){paint("mk-sectors");return}
     getJson("out/market_sector_stocks.json").then(function(d){M.sectorStocks=d||false;paint("mk-sectors")})});
+  /* SENSEX-EOD:start */
+  /* the SENSEX file is requested only when the SENSEX tab is first selected, and only if the page-level gate is open */
+  document.addEventListener("click",function(e){
+    var b=e.target&&e.target.closest&&e.target.closest("[data-mk-tabs] [data-tab]");
+    if(!b||!M||SENSEX_PAGE_APPROVED!==true||M.sensex!==undefined||b.getAttribute("data-tab")!=="SENSEX"||!b.parentNode||b.parentNode.getAttribute("data-mk-tabs")!=="index")return;
+    M.sensex=null;getJson(SENSEX_FILE).then(function(d){M.sensex=d||false;paint("mk-today")})});
+  /* SENSEX-EOD:end */
   Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json"),getJson("out/market_sectors.json")]).then(function(r){M=model(r[0],r[1],r[2],r[3]);paintAll()})}
 if(typeof document!=="undefined"&&document.getElementById)init();
 window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
