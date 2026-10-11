@@ -22,6 +22,11 @@
    "+import research_test_batch",
    "-        symbols = universe.load()",
    "+        symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
+  ],
+  "shareholding_updater.py": [
+   "+import research_test_batch",
+   "-        uni = universe.load()",
+   "+        uni = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes"
   ]
  }
 }

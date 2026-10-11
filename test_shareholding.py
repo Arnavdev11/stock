@@ -854,5 +854,120 @@ class Hygiene(unittest.TestCase):
         self.assertEqual(sorted(su.SYMBOLS), sorted("RELIANCE TCS INFY HDFCBANK ICICIBANK SBIN ITC BHARTIARTL LT MARUTI".split()))
 
 
+class ResearchTestBatch(unittest.TestCase):
+    """shareholding_updater.py also requests the five-stock research test batch (research_test_batch.py); nothing else about it changes."""
+    FIVE = ["DOMS", "20MICRONS", "21STCENMGM", "360ONE", "3BBLACKBIO"]
+
+    def setUp(self):
+        OutputAndMain.setUp(self)
+        self.u = lambda r: "https://nsearchives.nseindia.com/corporate/x_%s.xml" % r
+        self.nse.records["DOMS"] = [index_rec("31-DEC-2025", "7", isin="INE321T01012", name="DOMS Industries Ltd")]
+        self.nse.records["360ONE"] = [index_rec("31-DEC-2025", "8", isin="INE466L01038", name="360 ONE WAM Ltd")]
+        self.nse.files[self.u("7")] = make_xbrl(new_rows())
+        self.nse.files[self.u("8")] = make_xbrl(new_rows())
+        os.environ.pop("STOCKLENS_UNIVERSE_FILE", None)
+
+    run_main = OutputAndMain.run_main
+
+    def doc(self):
+        return json.loads((self.t / "out" / "shareholding.json").read_text())
+
+    def ledger(self):
+        return json.loads((self.t / "ledger-out" / "shareholding_ledger.json").read_text())
+
+    def shard(self, sym):
+        return self.t / "out" / "by_symbol" / "shareholding" / (sym + ".json")
+
+    def test_the_ten_come_first_and_the_five_follow(self):
+        import universe
+        import research_test_batch as rtb
+        got = rtb.extend(universe.load())
+        self.assertEqual(got[:10], universe.TEST_SYMBOLS)
+        self.assertEqual(got[10:], self.FIVE)
+
+    def test_a_configured_universe_gets_no_batch(self):
+        import universe
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "universe.json"
+            import universe
+            universe.write_doc(f, {"schema_version": 1, "kind": "universe", "stage": "x", "source": "t", "as_of": "2026-10-10", "count": 1,
+                                   "symbols": [{"symbol": "ITC", "isin": "INE154A01025", "name": "ITC LIMITED"}]})
+            with mock.patch.dict(os.environ, {"STOCKLENS_UNIVERSE_FILE": str(f)}):
+                rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "ITC"})
+                self.assertEqual(rc, 0, text)
+                self.assertIn("universe: 1 ", text)
+                rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "DOMS"})
+                self.assertEqual(rc, 1)
+                self.assertIn("Unknown symbols: DOMS", text)
+
+    def test_the_five_are_selectable_and_unknown_is_still_rejected(self):
+        rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "DOMS,360ONE"})
+        self.assertEqual(rc, 0, text)
+        self.assertIn("universe: 15 ", text)
+        rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "DOMS,NOPE"})
+        self.assertEqual(rc, 1)
+        self.assertIn("Unknown symbols: NOPE", text)
+
+    def test_empty_symbols_requests_all_fifteen(self):
+        n = FakeNse(self.nse.records, self.nse.files)
+        asked = []
+        orig = n.index
+        n.index = lambda sym: (asked.append(sym), orig(sym))[1]
+        rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": ""}, nse=n)
+        self.assertEqual(rc, 0, text)
+        import universe
+        self.assertEqual(sorted(asked), sorted(universe.TEST_SYMBOLS + self.FIVE))
+
+    def test_aggregate_stays_core_and_the_five_get_shards(self):
+        rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "ITC,TCS,DOMS,360ONE"})
+        self.assertEqual(rc, 0, text)
+        self.assertEqual(sorted(self.doc()["stocks"]), ["ITC", "TCS"])
+        self.assertEqual(sorted(self.ledger()["stocks"]), ["360ONE", "DOMS", "ITC", "TCS"])
+        for sym in ("DOMS", "360ONE", "ITC", "TCS"):
+            sh = json.loads(self.shard(sym).read_text())
+            self.assertEqual(list(sh["stocks"]), [sym])
+            self.assertEqual(su.validate_doc(sh), [])
+        self.assertEqual(json.loads(self.shard("DOMS").read_text())["stocks"]["DOMS"]["quarters"][0]["status"], "available")
+        self.assertFalse(self.shard("20MICRONS").exists())
+
+    def test_no_upstox_cross_check_for_the_five(self):
+        fake = mock.Mock()
+        fake.return_value.get.return_value = ({"data": []}, None)
+        isins = mock.Mock(return_value={"DOMS": "INE321T01012", "ITC": "INE154A01025"})
+        rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "ITC,DOMS,360ONE", "UPSTOX_ANALYTICS_TOKEN": SECRET}, upstox=fake, isins=isins)
+        self.assertEqual(rc, 0, text)
+        paths = sorted(c.args[0] for c in fake.return_value.get.call_args_list)
+        self.assertEqual(paths, ["INE154A01025/share-holdings"])
+        self.assertIsNone(json.loads(self.shard("DOMS").read_text())["stocks"]["DOMS"]["cross_check"])
+
+    def test_a_failing_index_for_one_symbol_harms_nothing(self):
+        self.assertEqual(self.run_main({"SHAREHOLDING_SYMBOLS": "ITC,TCS,DOMS"})[0], 0)
+        (self.t / "branch" / sl.LEDGER_NAME).write_text((self.t / "ledger-out" / "shareholding_ledger.json").read_text())
+        before = self.ledger()
+        recs = {k: v for k, v in self.nse.records.items() if k != "DOMS"}      # DOMS now has no index at all
+        n = FakeNse(recs, self.nse.files)
+        rc, text = self.run_main({"SHAREHOLDING_INIT": "false", "SHAREHOLDING_SYMBOLS": "ITC,TCS,DOMS,360ONE"}, nse=n)
+        self.assertEqual(rc, 0, text)
+        self.assertIn("DOMS - PROBLEM", text)
+        after = self.ledger()
+        for sym in ("ITC", "TCS", "DOMS"):
+            self.assertEqual(after["stocks"][sym]["quarters"], before["stocks"][sym]["quarters"], sym)
+        self.assertIn("360ONE", after["stocks"])                                  # the other new symbol still processed
+        self.assertEqual(sl.no_loss_problems(before, after), [])
+
+    def test_existing_records_for_the_original_stocks_are_preserved(self):
+        self.assertEqual(self.run_main({"SHAREHOLDING_SYMBOLS": "ITC,TCS"})[0], 0)
+        (self.t / "branch" / sl.LEDGER_NAME).write_text((self.t / "ledger-out" / "shareholding_ledger.json").read_text())
+        before = self.ledger()
+        rc, text = self.run_main({"SHAREHOLDING_INIT": "false", "SHAREHOLDING_SYMBOLS": "DOMS"})
+        self.assertEqual(rc, 0, text)
+        after = self.ledger()
+        for sym in ("ITC", "TCS"):
+            self.assertEqual(after["stocks"][sym], before["stocks"][sym])
+        self.assertIn("DOMS", after["stocks"])
+        self.assertEqual(sl.no_loss_problems(before, after), [])
+        self.assertEqual(sorted(self.doc()["stocks"]), ["ITC", "TCS"])        # the core file never lists DOMS
+
+
 if __name__ == "__main__":
     unittest.main()
