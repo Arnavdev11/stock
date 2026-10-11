@@ -722,6 +722,168 @@ class RealClient(unittest.TestCase):
         self.assertIn("call limit", problems[0])
 
 
+V2_CANDLE_URL = "https://api.upstox.com/v2/historical-candle/{key}/day/{to}/{frm}"
+FULL_V2_URL = re.compile(r"^https://api\.upstox\.com/v2/historical-candle/BSE_INDEX%7CSENSEX/day/(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})$")
+
+
+class ContractV2(unittest.TestCase):
+    """Offline contract tests for the Upstox Historical Candle V2 request and response as this project uses them. No socket, no token that is real.
+    The V2 shape here is what the code and its fixtures encode; it has NOT been checked against a live endpoint or the official V2 page (see the Stage 7F report)."""
+    run_job = RealClient.run_job
+
+    def requested_windows(self, http):
+        """[(from_date, to_date)] taken from the URLs actually requested, in request order."""
+        out = []
+        for url, _ in http.requests:
+            m = FULL_V2_URL.match(url)
+            self.assertIsNotNone(m, url)
+            out.append((dt.date.fromisoformat(m.group(2)), dt.date.fromisoformat(m.group(1))))      # the URL is .../day/<to>/<from>
+        return out
+
+    # --- the request ---
+
+    def test_candle_url_constant_is_pinned_to_v2(self):
+        # Changing this assertion means migrating to another Upstox API version. That must be a deliberate, separately reviewed change
+        # (shared client, NIFTY pipeline and every test fixture move together); never edit it to make a failing run pass.
+        self.assertEqual(sx.hu.CANDLE_URL, V2_CANDLE_URL)
+        self.assertEqual(sx.hu.WINDOW_DAYS, 360)
+        self.assertEqual(sx.INDEX_YEARS, 2)
+
+    def test_every_request_is_the_full_v2_url_and_nothing_more(self):
+        http, (doc, problems), _ = self.run_job(serve())
+        self.assertEqual(problems, [])
+        self.assertEqual(len(http.requests), 3)
+        for url, _ in http.requests:
+            self.assertRegex(url, FULL_V2_URL)                                          # anchored at both ends: host, /v2/, key, "day", two dates, nothing after
+            self.assertNotIn("?", url)                                                  # no query string
+            self.assertNotIn("#", url)
+            self.assertNotIn("|", url)
+            self.assertIn("/BSE_INDEX%7CSENSEX/", url)                                  # the instrument key, with "|" encoded as %7C (not %257C, not lower-case)
+            self.assertNotIn("%257C", url)
+            for d in FULL_V2_URL.match(url).groups():
+                self.assertEqual(dt.date.fromisoformat(d).isoformat(), d)               # a real calendar date written exactly as YYYY-MM-DD
+        expected = [V2_CANDLE_URL.format(key="BSE_INDEX%7CSENSEX", to=b.isoformat(), frm=a.isoformat())
+                    for a, b in sx.hu.windows(END - dt.timedelta(days=730), END)]
+        self.assertEqual([u for u, _ in http.requests], expected)                       # the exact URLs, in the exact order
+
+    def test_the_session_get_receives_only_the_url_and_a_timeout(self):
+        http, (doc, problems), _ = self.run_job(serve())
+        self.assertEqual(problems, [])
+        for url, timeout in http.requests:
+            self.assertEqual(timeout, 30)
+        # the fake Session.get accepts (url, timeout) only: a params= argument would have raised a TypeError and failed the run above
+
+    # --- the date windows ---
+
+    def test_windows_follow_the_inclusive_endpoint_convention(self):
+        # Derived from hu.windows(): each window is [start, end] with BOTH ends included, end = min(start + WINDOW_DAYS - 1 days, to), next start = end + 1 day.
+        last = dt.date(2026, 10, 6)
+        cases = [(last - dt.timedelta(days=730), last), (last, last), (last - dt.timedelta(days=359), last), (last - dt.timedelta(days=360), last),
+                 (last - dt.timedelta(days=720), last), (last - dt.timedelta(days=10), last)]
+        for frm, to in cases:
+            wins = sx.hu.windows(frm, to)
+            self.assertTrue(wins, (frm, to))
+            self.assertEqual(wins[0][0], frm)                                           # the first boundary is the requested start
+            self.assertEqual(wins[-1][1], to)                                           # the last boundary is the requested end
+            for i, (a, b) in enumerate(wins):
+                self.assertGreaterEqual(b, a)                                           # to_date >= from_date
+                self.assertLessEqual((b - a).days + 1, sx.hu.WINDOW_DAYS)               # inclusive length never above WINDOW_DAYS
+                if i < len(wins) - 1:
+                    self.assertEqual((b - a).days + 1, sx.hu.WINDOW_DAYS)               # every window but the last is full
+                    self.assertEqual(wins[i + 1][0], b + dt.timedelta(days=1))          # contiguous and non-overlapping: no shared day, no gap
+            covered = sum((b - a).days + 1 for a, b in wins)
+            self.assertEqual(covered, (to - frm).days + 1)                              # every day of the range is asked for exactly once
+        self.assertEqual(sx.hu.windows(last, last - dt.timedelta(days=1)), [])          # an inverted range asks for nothing
+
+    def test_the_requested_windows_are_the_real_windows_for_the_intended_range(self):
+        http, (doc, problems), _ = self.run_job(serve())
+        self.assertEqual(problems, [])
+        got = self.requested_windows(http)
+        self.assertEqual(got, sx.hu.windows(END - dt.timedelta(days=730), END))         # two years back to the last complete day, oldest window first
+        self.assertEqual(got[0][0], END - dt.timedelta(days=730))
+        self.assertEqual(got[-1][1], END)
+        for a, b in got:
+            self.assertGreaterEqual(b, a)
+            self.assertLessEqual((b - a).days + 1, sx.hu.WINDOW_DAYS)
+        for (a, b), (c, d) in zip(got, got[1:]):
+            self.assertEqual(c, b + dt.timedelta(days=1))
+
+    def test_an_incremental_run_asks_for_one_window_ending_today(self):
+        old = self.run_job(serve(last=dt.date(2026, 10, 1)))[1][0]
+        http, (doc, problems), _ = self.run_job(serve(), old=old)
+        self.assertEqual(problems, [])
+        got = self.requested_windows(http)
+        self.assertEqual(got, [(dt.date.fromisoformat(old["last_date"]) - dt.timedelta(days=sx.hu.OVERLAP_DAYS), END)])
+
+    # --- the response ---
+
+    def test_the_fixture_is_the_documented_seven_element_row_shape(self):
+        body = ok_body(raw_rows(dt.date(2026, 10, 1), END))
+        self.assertEqual(set(body), {"status", "data"})
+        self.assertEqual(set(body["data"]), {"candles"})
+        for r in body["data"]["candles"]:
+            self.assertEqual(len(r), 7)                                                 # [timestamp, open, high, low, close, volume, open interest]
+        cleaned = sx.hu.clean_candle(body["data"]["candles"][0])
+        self.assertEqual(set(cleaned), {"date", "open", "high", "low", "close", "volume"})
+
+    def test_an_iso_timestamp_with_the_ist_offset_gives_that_calendar_date(self):
+        # The date is the first ten characters of the timestamp as sent. It is NOT converted to UTC (which would move 00:00+05:30 back to the day before).
+        for ts, day in (("2026-10-06T00:00:00+05:30", "2026-10-06"), ("2026-10-05T00:00:00+05:30", "2026-10-05"), ("2026-01-01T00:00:00+05:30", "2026-01-01")):
+            c = sx.hu.clean_candle([ts, 100.0, 110.0, 90.0, 105.0, 5, 0])
+            self.assertEqual(c["date"], day)
+        self.assertEqual(sx.hu.clean_candle(["2026-10-05T00:00:00+05:30", 1, 2, 1, 1, 0, 0])["date"], "2026-10-05")
+        http, (doc, problems), _ = self.run_job(serve())
+        self.assertEqual(problems, [])
+        self.assertEqual(doc["last_date"], END.isoformat())                             # end to end: the row stamped 2026-10-06T00:00:00+05:30 is dated 2026-10-06
+
+    def test_newest_first_and_oldest_first_answers_give_the_same_ascending_file(self):
+        newest_first = serve()
+        def oldest_first(url, n):
+            resp = newest_first(url, n)
+            resp.body["data"]["candles"].reverse()
+            return resp
+        probe = newest_first("https://x/day/2026-10-06/2026-10-01", 0).body["data"]["candles"]
+        self.assertGreater(probe[0][0], probe[-1][0])                                   # the fixture really is newest-first
+        _, (doc_a, pa), _ = self.run_job(newest_first)
+        _, (doc_b, pb), _ = self.run_job(oldest_first)
+        self.assertEqual((pa, pb), ([], []))
+        dates = [c["date"] for c in doc_a["candles"]]
+        self.assertEqual(dates, sorted(set(dates)))                                     # strictly ascending, no duplicate
+        self.assertEqual(doc_a["candles"], doc_b["candles"])                            # the order of the answer does not matter
+
+    def test_unsupported_response_structures_fail_closed(self):
+        good = raw_rows(dt.date(2026, 10, 1), END)
+        epoch = [[1759708800000, 1, 2, 1, 1, 0, 0]]                                     # a millisecond epoch is not an ISO timestamp
+        shapes = {
+            "candles at the top level": {"status": "success", "candles": good},
+            "data is a list": {"status": "success", "data": good},
+            "data is a string": {"status": "success", "data": "x"},
+            "candles is a dict": {"status": "success", "data": {"candles": {"a": 1}}},
+            "candles is null": {"status": "success", "data": {"candles": None}},
+            "candles hold objects, not rows": {"status": "success", "data": {"candles": [{"date": "2026-10-06", "close": 1}]}},
+            "candles hold strings": {"status": "success", "data": {"candles": ["2026-10-06", "2026-10-05"]}},
+            "epoch timestamps only": {"status": "success", "data": {"candles": epoch}},
+            "rows too short": {"status": "success", "data": {"candles": [["2026-10-06T00:00:00+05:30", 1, 2, 1, 1]]}},
+            "status error with candles present": {"status": "error", "data": {"candles": good}},
+            "a V3-style unit/interval payload with no candles": {"status": "success", "data": {"unit": "days", "interval": 1}},
+            "empty object": {},
+            "empty list": [],
+            "plain text": "ok",
+        }
+        for name, body in shapes.items():
+            http, (doc, problems), _ = self.run_job(lambda u, n, b=body: FakeResp(200, b))
+            self.assertIsNone(doc, name)                                                # nothing is accepted as data
+            self.assertTrue(problems, name)                                             # and the reason is reported
+
+    def test_a_five_element_row_is_dropped_not_padded(self):
+        too_short = [["2026-10-03T00:00:00+05:30", 1, 2, 1, 1]]                         # a Saturday, so no genuine candle shares its date
+        self.assertIsNone(sx.hu.clean_candle(too_short[0]))
+        http, (doc, problems), _ = self.run_job(serve(extra=too_short))
+        self.assertEqual(problems, [])
+        self.assertNotIn("2026-10-03", [c["date"] for c in doc["candles"]])
+        self.assertTrue(all(sx.tidy(c) == c for c in doc["candles"]))
+
+
 class RealClientMain(unittest.TestCase):
     """main() end to end: real shared client, faked HTTP, a temporary out/ folder. Nothing about the existing file may change on any failure."""
     def setUp(self):
