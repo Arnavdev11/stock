@@ -2316,6 +2316,1057 @@
      "error": null
     }
    }
+  },
+  "DOMS": {
+   "symbol": "DOMS",
+   "isin": "INE321T01012",
+   "company_name": "DOMS INDUSTRIES LIMITED",
+   "sector": "Stationery",
+   "statement_layout": "standard",
+   "fiscal_year_end_month": 3,
+   "years": [
+    {
+     "fy": 2026,
+     "period": "Mar 2026",
+     "period_end": "2026-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 2326.37,
+      "total_revenue": 2344.93,
+      "profit_before_tax": 322.26,
+      "profit_after_tax": 239.56,
+      "eps_basic": 37.93,
+      "eps_diluted": 37.79,
+      "operating_cash_flow": 254.34,
+      "investing_cash_flow": -148.64,
+      "financing_cash_flow": -112.67,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_revenue_equals_total_revenue"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": false,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2025,
+     "period": "Mar 2025",
+     "period_end": "2025-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 1912.63,
+      "total_revenue": 1935.23,
+      "profit_before_tax": 286.82,
+      "profit_after_tax": 213.54,
+      "eps_basic": 33.34,
+      "eps_diluted": 33.31,
+      "operating_cash_flow": 183.33,
+      "investing_cash_flow": -139.57,
+      "financing_cash_flow": -39.75,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2024,
+     "period": "Mar 2024",
+     "period_end": "2024-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 1537.14,
+      "total_revenue": 1547.27,
+      "profit_before_tax": 214.48,
+      "profit_after_tax": 159.66,
+      "eps_basic": 27.75,
+      "eps_diluted": 27.75,
+      "operating_cash_flow": 182.6,
+      "investing_cash_flow": -457.62,
+      "financing_cash_flow": 297.22,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2023,
+     "period": "Mar 2023",
+     "period_end": "2023-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 1211.89,
+      "total_revenue": 1216.52,
+      "profit_before_tax": 138.76,
+      "profit_after_tax": 102.87,
+      "eps_basic": 18.29,
+      "eps_diluted": 18.29,
+      "operating_cash_flow": 173.26,
+      "investing_cash_flow": -135.94,
+      "financing_cash_flow": -12.37,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    }
+   ],
+   "gaps": {},
+   "fetch_state": {
+    "income": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    },
+    "cash_flow": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    }
+   }
+  },
+  "20MICRONS": {
+   "symbol": "20MICRONS",
+   "isin": "INE144J01027",
+   "company_name": "20 MICRONS LTD",
+   "sector": "Minerals",
+   "statement_layout": "standard",
+   "fiscal_year_end_month": 3,
+   "years": [
+    {
+     "fy": 2026,
+     "period": "Mar 2026",
+     "period_end": "2026-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 953.83,
+      "total_revenue": 960.09,
+      "profit_before_tax": 90.71,
+      "profit_after_tax": 66.67,
+      "eps_basic": 18.94,
+      "eps_diluted": 18.94,
+      "operating_cash_flow": 103.6,
+      "investing_cash_flow": -30.94,
+      "financing_cash_flow": -30.37,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2025,
+     "period": "Mar 2025",
+     "period_end": "2025-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 912.79,
+      "total_revenue": 916.55,
+      "profit_before_tax": 82.7,
+      "profit_after_tax": 62.48,
+      "eps_basic": 17.68,
+      "eps_diluted": 17.68,
+      "operating_cash_flow": 31.79,
+      "investing_cash_flow": -58.85,
+      "financing_cash_flow": 9.61,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2024,
+     "period": "Mar 2024",
+     "period_end": "2024-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 777.49,
+      "total_revenue": 782.0,
+      "profit_before_tax": 76.98,
+      "profit_after_tax": 56.16,
+      "eps_basic": 15.89,
+      "eps_diluted": 15.89,
+      "operating_cash_flow": 54.44,
+      "investing_cash_flow": -23.11,
+      "financing_cash_flow": -2.86,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2023,
+     "period": "Mar 2023",
+     "period_end": "2023-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 701.69,
+      "total_revenue": 704.62,
+      "profit_before_tax": 57.19,
+      "profit_after_tax": 41.96,
+      "eps_basic": 11.85,
+      "eps_diluted": 11.85,
+      "operating_cash_flow": 63.2,
+      "investing_cash_flow": -17.67,
+      "financing_cash_flow": -37.97,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    }
+   ],
+   "gaps": {},
+   "fetch_state": {
+    "income": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    },
+    "cash_flow": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    }
+   }
+  },
+  "21STCENMGM": {
+   "symbol": "21STCENMGM",
+   "isin": "INE253B01015",
+   "company_name": "21ST CENTURY MGMT SERVICE",
+   "sector": "Investment",
+   "statement_layout": "standard",
+   "fiscal_year_end_month": 3,
+   "years": [
+    {
+     "fy": 2026,
+     "period": "Mar 2026",
+     "period_end": "2026-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": -16.86,
+      "profit_before_tax": -23.96,
+      "profit_after_tax": -24.05,
+      "eps_basic": -22.9,
+      "eps_diluted": -22.9,
+      "operating_cash_flow": -2.37,
+      "investing_cash_flow": 5.15,
+      "financing_cash_flow": 0.0,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_revenue_equals_total_revenue"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": false,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2025,
+     "period": "Mar 2025",
+     "period_end": "2025-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": 112.95,
+      "profit_before_tax": 19.51,
+      "profit_after_tax": 12.34,
+      "eps_basic": 11.75,
+      "eps_diluted": 11.75,
+      "operating_cash_flow": 5.15,
+      "investing_cash_flow": -8.37,
+      "financing_cash_flow": 0.0,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_revenue_equals_total_revenue"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": false,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2024,
+     "period": "Mar 2024",
+     "period_end": "2024-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": 38.59,
+      "profit_before_tax": 32.93,
+      "profit_after_tax": 32.17,
+      "eps_basic": 30.64,
+      "eps_diluted": 30.64,
+      "operating_cash_flow": -2.74,
+      "investing_cash_flow": 16.1,
+      "financing_cash_flow": -10.0,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_revenue_equals_total_revenue"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": false,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2023,
+     "period": "Mar 2023",
+     "period_end": "2023-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": -8.95,
+      "profit_before_tax": -17.94,
+      "profit_after_tax": -18.06,
+      "eps_basic": -17.2,
+      "eps_diluted": -17.2,
+      "operating_cash_flow": -4.5,
+      "investing_cash_flow": -4.65,
+      "financing_cash_flow": 9.0,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_revenue_equals_total_revenue"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": false,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    }
+   ],
+   "gaps": {},
+   "fetch_state": {
+    "income": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    },
+    "cash_flow": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    }
+   }
+  },
+  "360ONE": {
+   "symbol": "360ONE",
+   "isin": "INE466L01038",
+   "company_name": "360 ONE WAM LIMITED",
+   "sector": "Finance",
+   "statement_layout": "financial",
+   "fiscal_year_end_month": 3,
+   "years": [
+    {
+     "fy": 2026,
+     "period": "Mar 2026",
+     "period_end": "2026-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": 4477.26,
+      "profit_before_tax": 1576.88,
+      "profit_after_tax": 1216.17,
+      "eps_basic": 30.16,
+      "eps_diluted": 29.19,
+      "operating_cash_flow": -2921.06,
+      "investing_cash_flow": -1613.27,
+      "financing_cash_flow": 4357.0,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": null,
+       "summary_operating_profit_equals_pbt": null,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": [],
+     "other_lines": {
+      "income": {
+       "Other Income": 115.64,
+       "Total Expenses": 2900.38,
+       "Tax": 360.71
+      }
+     }
+    },
+    {
+     "fy": 2025,
+     "period": "Mar 2025",
+     "period_end": "2025-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": 3684.5,
+      "profit_before_tax": 1346.82,
+      "profit_after_tax": 1015.3,
+      "eps_basic": 27.14,
+      "eps_diluted": 26.08,
+      "operating_cash_flow": -2462.17,
+      "investing_cash_flow": -991.97,
+      "financing_cash_flow": 3749.15,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": null,
+       "summary_operating_profit_equals_pbt": null,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": [],
+     "other_lines": {
+      "income": {
+       "Other Income": 313.79,
+       "Total Expenses": 2250.05,
+       "Tax": 331.52
+      }
+     }
+    },
+    {
+     "fy": 2024,
+     "period": "Mar 2024",
+     "period_end": "2024-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": 2924.73,
+      "profit_before_tax": 1008.54,
+      "profit_after_tax": 804.21,
+      "eps_basic": 22.48,
+      "eps_diluted": 21.86,
+      "operating_cash_flow": -470.11,
+      "investing_cash_flow": -1574.58,
+      "financing_cash_flow": 1977.74,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": null,
+       "summary_operating_profit_equals_pbt": null,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": [],
+     "other_lines": {
+      "income": {
+       "Other Income": 418.27,
+       "Total Expenses": 1916.19,
+       "Tax": 204.33
+      }
+     }
+    },
+    {
+     "fy": 2023,
+     "period": "Mar 2023",
+     "period_end": "2023-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": null,
+      "total_revenue": 2061.54,
+      "profit_before_tax": 850.29,
+      "profit_after_tax": 657.89,
+      "eps_basic": 18.51,
+      "eps_diluted": 18.12,
+      "operating_cash_flow": -1322.51,
+      "investing_cash_flow": 776.63,
+      "financing_cash_flow": 555.55,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "revenue"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": null,
+       "summary_operating_profit_equals_pbt": null,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": [],
+     "other_lines": {
+      "income": {
+       "Other Income": 158.91,
+       "Total Expenses": 1211.25,
+       "Tax": 192.4
+      }
+     }
+    }
+   ],
+   "gaps": {},
+   "fetch_state": {
+    "income": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    },
+    "cash_flow": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    }
+   }
+  },
+  "3BBLACKBIO": {
+   "symbol": "3BBLACKBIO",
+   "isin": "INE994E01018",
+   "company_name": "3B BLACKBIO DX LTD.",
+   "sector": "Agrochemicals",
+   "statement_layout": "standard",
+   "fiscal_year_end_month": 3,
+   "years": [
+    {
+     "fy": 2025,
+     "period": "Mar 2025",
+     "period_end": "2025-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 96.47,
+      "total_revenue": 111.55,
+      "profit_before_tax": 64.0,
+      "profit_after_tax": 47.69,
+      "eps_basic": 55.66,
+      "eps_diluted": 55.66,
+      "operating_cash_flow": 43.36,
+      "investing_cash_flow": -33.85,
+      "financing_cash_flow": -3.22,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2024,
+     "period": "Mar 2024",
+     "period_end": "2024-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 74.12,
+      "total_revenue": 86.66,
+      "profit_before_tax": 44.33,
+      "profit_after_tax": 32.1,
+      "eps_basic": 37.46,
+      "eps_diluted": 37.46,
+      "operating_cash_flow": 26.95,
+      "investing_cash_flow": -20.32,
+      "financing_cash_flow": -3.63,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "matched",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2023,
+     "period": "Mar 2023",
+     "period_end": "2023-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 61.84,
+      "total_revenue": 69.1,
+      "profit_before_tax": 35.31,
+      "profit_after_tax": 25.94,
+      "eps_basic": 30.27,
+      "eps_diluted": 30.27,
+      "operating_cash_flow": 20.28,
+      "investing_cash_flow": 14.73,
+      "financing_cash_flow": -5.01,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_revenue_equals_total_revenue"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": false,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    },
+    {
+     "fy": 2022,
+     "period": "Mar 2022",
+     "period_end": "2022-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 80.65,
+      "total_revenue": 87.55,
+      "profit_before_tax": 43.22,
+      "profit_after_tax": 32.2,
+      "eps_basic": 43.4,
+      "eps_diluted": 43.4,
+      "operating_cash_flow": 37.33,
+      "investing_cash_flow": -28.44,
+      "financing_cash_flow": -15.07,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "not_checked",
+      "warnings": [],
+      "checks": {
+       "summary_revenue_equals_total_revenue": null,
+       "summary_operating_profit_equals_pbt": null,
+       "summary_net_profit_equals_pat": null
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-10-11"
+      },
+      "cash_flow": {
+       "endpoint": "cash-flow?type=consolidated&fs=true",
+       "fetched": "2026-10-11"
+      }
+     },
+     "first_seen": "2026-10-11",
+     "last_confirmed": "2026-10-11",
+     "revisions": []
+    }
+   ],
+   "gaps": {},
+   "fetch_state": {
+    "income": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    },
+    "cash_flow": {
+     "fetched": "2026-10-11",
+     "basis": "consolidated",
+     "error": null
+    }
+   }
   }
  },
  "updated": "2026-10-11"
