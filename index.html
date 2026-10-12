@@ -2551,6 +2551,65 @@ function breadth(S){
   var a=num(b.advancing),d=num(b.declining),u=num(b.unchanged);if(a===null||d===null||u===null)return null;
   return{adv:a,dec:d,unch:u,highs:num(b.new_52w_highs),a50:num(b.above_50dma_pct),a200:num(b.above_200dma_pct)}}
 
+/* ---------- out/market_activity.json (written by market_data_updater.py, checked by validate_market_outputs.py) ----------
+   Drawn only when EVERYTHING below holds, and checked again here because this page must never trust a file it did not check:
+     kind market_activity, schema 1, freshness EOD, a real weekday as_of, freshness_detail agreeing with it and saying the data is from the latest trading day and not from an open session,
+     data_quality.status "pass" with no errors, a universe of at least ACT_MIN_UNIVERSE stocks (the updater's own gate), and the SAME date as the rest of this page.
+   Each block is then accepted on its own: Most Active needs metric_status.most_active "safe" and two ranked lists (traded value, traded quantity);
+   the 52-week low needs metric_status.new_52w_low "safe", low_column_available true, and every row must really have closed below its prior low.
+   The updater already leaves out stocks with fewer than 252 prior trading days or a suspected corporate action in the window; nothing here adds those back.
+   Anything else, a different date included, gives the plain unavailable state with the reason. Nothing is estimated, filled in or taken from another file. */
+var ACT_MIN_UNIVERSE=1000;
+function isPlain(o){return!!o&&typeof o==="object"&&!Array.isArray(o)}
+function posNum(v){return typeof v==="number"&&isFinite(v)&&v>0}
+function okChg(v){return v===null||v===undefined||(typeof v==="number"&&isFinite(v))}
+function activeRows(rows,key){
+  if(!Array.isArray(rows)||!rows.length)return null;
+  var out=[],seen=Object.create(null),prev=Infinity;
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    if(!isPlain(r)||r.rank!==i+1||typeof r.symbol!=="string"||!SYM.test(r.symbol)||seen[r.symbol]||!posNum(r.close)||!posNum(r[key])||r[key]>prev||!okChg(r.change_pct))return null;
+    seen[r.symbol]=1;prev=r[key];
+    out.push({symbol:r.symbol,close:r.close,chg:typeof r.change_pct==="number"?r.change_pct:null,v:r[key]})}
+  return out}
+function lowRows(blk){
+  if(!isPlain(blk)||!Array.isArray(blk.rows)||!Number.isInteger(blk.count)||blk.count<blk.rows.length||(blk.rows.length===0&&blk.count!==0))return null;
+  var out=[],seen=Object.create(null);
+  for(var i=0;i<blk.rows.length;i++){
+    var r=blk.rows[i];
+    if(!isPlain(r)||r.rank!==i+1||typeof r.symbol!=="string"||!SYM.test(r.symbol)||seen[r.symbol]||r.state!=="new_low"||!posNum(r.close)||!posNum(r.prior_low_52w)||!(r.close<r.prior_low_52w)||!isDay(r.prior_low_date)||
+       typeof r.distance_pct!=="number"||!isFinite(r.distance_pct)||!(r.distance_pct<0)||Math.abs(r.distance_pct-(r.close/r.prior_low_52w-1)*100)>0.011)return null;
+    seen[r.symbol]=1;
+    out.push({symbol:r.symbol,close:r.close,prior:r.prior_low_52w,dist:r.distance_pct})}
+  return{count:blk.count,rows:out}}
+var LOW_WHY={insufficient_history:"there is not enough price history to find 52-week lows",requires_adjustment:"stocks with a suspected corporate action are left out and none can be ranked safely",unavailable:"the source files do not carry the daily low prices needed"};
+function activityOf(D,ref){
+  if(D===undefined||D===null||D===false)return{state:"missing"};
+  var bad={state:"invalid"};
+  if(!isPlain(D)||D.kind!=="market_activity"||D.schema_version!==1||D.freshness!=="EOD"||!isDay(D.as_of))return bad;
+  var wd=new Date(dayMs(D.as_of)).getUTCDay();if(wd===0||wd===6)return bad;
+  var fd=D.freshness_detail,dq=D.data_quality,ms=D.metric_status;
+  if(!isPlain(fd)||fd.source_date!==D.as_of||fd.label!=="EOD as of "+D.as_of||typeof fd.source_is_latest_trading_day!=="boolean")return bad;
+  if(!isPlain(dq)||dq.status!=="pass"||!Array.isArray(dq.errors)||dq.errors.length||!Number.isInteger(D.universe_count)||D.universe_count<ACT_MIN_UNIVERSE||!isPlain(ms))return bad;
+  if(fd.source_is_latest_trading_day!==true||fd.market_session_open_at_generation===true)return{state:"stale",asOf:D.as_of};
+  if(!ref||ref!==D.as_of)return{state:"date",asOf:D.as_of,ref:ref||null};
+  var out={state:"ok",asOf:D.as_of,universe:D.universe_count,active:null,activeWhy:null,low:null,lowWhy:null},ma=D.most_active,hl=D.high_low_52w;
+  if(ms.most_active!=="safe")out.activeWhy="the file does not mark the most-active lists as safe to use";
+  else{
+    var bv=isPlain(ma)?ma.by_value:null,bq=isPlain(ma)?ma.by_volume:null,v=isPlain(bv)&&/turnover_lakhs/.test(String(bv.ranked_by))?activeRows(bv.rows,"turnover_lakhs"):null,q=isPlain(bq)&&/\bvolume\b/.test(String(bq.ranked_by))?activeRows(bq.rows,"volume"):null;
+    if(v&&q)out.active={byValue:v,byQty:q};else out.activeWhy="the most-active lists in the file were not accepted"}
+  if(ms.new_52w_low!=="safe")out.lowWhy=LOW_WHY[ms.new_52w_low]||"the file does not mark the 52-week lows as safe to use";
+  else if(!isPlain(hl)||hl.low_column_available!==true)out.lowWhy=LOW_WHY.unavailable;
+  else{var L=lowRows(hl.new_low);if(L)out.low=L;else out.lowWhy="the 52-week low list in the file was not accepted"}
+  return out}
+/* why a block cannot be drawn when the file as a whole cannot be used */
+function actWhy(a){
+  if(!a||a.state==="missing")return"the validated market-activity file is not available";
+  if(a.state==="invalid")return"the validated market-activity file was not accepted";
+  if(a.state==="stale")return"the validated market-activity file ("+a.asOf+") is not from the latest trading day";
+  if(a.state==="date")return a.ref?"the validated market-activity file is dated "+a.asOf+", but the market data on this page is dated "+a.ref:"this page has no market date to check the validated file ("+a.asOf+") against";
+  return"the validated market-activity file cannot be used"}
+
 /* ---------- what's happening: facts from the lists above, one line each, with the rule written on it ---------- */
 function events(S){
   var out=[],seen={};
@@ -2596,6 +2655,23 @@ function hvLossTable(rows){return table([["Stock","s"],["Price","n c3"],["Change
 function relTable(rows){return table([["Stock","s"],["Stock","n"],["NIFTY 50","n c3"],["Relative","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),chg(r.stock),chg(r.bench),'<span class="'+cls(r.rel)+'">'+pp(r.rel)+' pts</span>']}))}
 function trackTable(rows,key){return table([["Stock","s"],["Last close","n"],["Change","n"]],rows.slice(0,ROWS).map(function(t){return[link(t.symbol),fmt(t.perf.last),chg(t.perf[key])]}))}
 var NEED_ALL="needs daily prices for all NSE stocks";
+/* All-time high / low: no calculation exists. The saved price history is partial (a limited period, for only some stocks) and is never described as a listing history. */
+var ATH_WHY="needs the complete listing history of every stock; the saved price history is partial (a limited period, for only some stocks), so no all-time high or low is shown";
+function lowTable(rows){return table([["Stock","s"],["Price","n"],["Prev 52W low","n c3"],["vs prev low","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.close),fmt(r.prior),chg(r.dist)]}))}
+function lowBody(m){
+  var a=m.act;if(!a||a.state!=="ok")return na(actWhy(a));
+  if(a.lowWhy)return na(a.lowWhy);
+  var n=Math.min(ROWS,a.low.rows.length);
+  return(a.low.rows.length?lowTable(a.low.rows):'<p class="mk-sub">No new 52-week lows in the latest scan.</p>')
+    +'<p class="mk-sub">Close below the lowest low of the previous 252 trading days · end of day, as of <b>'+esc(a.asOf)+'</b>, not live. Stocks with a shorter history or a suspected split, bonus or rights issue in that window are left out, not estimated.'
+    +(a.low.count>n?" Showing "+n+" of "+a.low.count+".":"")+'</p>'}
+function activeBody(m){
+  var a=m.act;if(!a||a.state!=="ok")return na(actWhy(a));
+  if(a.activeWhy)return na(a.activeWhy);
+  var t=function(rows,h,f){return table([["Stock","s"],["Close","n"],["Change","n c3"],[h,"n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.close),chg(r.chg),f(r.v)]}))};
+  return'<h4 class="mk-h4">By traded value (turnover, \u20b9 lakh)</h4>'+t(a.active.byValue,"Turnover",function(v){return fmt(v)})
+    +'<h4 class="mk-h4">By traded quantity (shares)</h4>'+t(a.active.byQty,"Volume",vol)
+    +'<p class="mk-sub">Two different rankings across all '+esc(fmt(a.universe,0))+' NSE EQ-series stocks, top '+ROWS+' of each · end of day, as of <b>'+esc(a.asOf)+'</b>, not live.</p>'}
 
 /* ---------- the sections ---------- */
 var S_={};
@@ -2709,14 +2785,14 @@ S_["mk-trending"]=function(m,st){
   var mv=byChange(m.gainers.concat(m.losers),1).sort(function(a,b){return Math.abs(num(b.change_pct))-Math.abs(num(a.change_pct))||(a.symbol<b.symbol?-1:1)});
   if(tab==="movers")h+=mv.length?priceTable(mv,{h:"Vol vs avg",f:function(r){return mult(r.volume_x_avg)}}):na("no movers in the latest scan");
   else if(tab==="volume")h+=m.shockers.length?shockerTable(m.shockers):na("no volume shockers in the latest scan");
-  else if(tab==="52w")h+=(m.highs.length?'<h4 class="mk-h4">New 52-week high</h4>'+highTable(m.highs):'')+'<h4 class="mk-h4">New 52-week low</h4>'+na(NEED_ALL);
-  else if(tab==="ath")h+=na("needs the full price history of every stock (the current data holds about one year)");
-  else h+=na("most-active needs traded volume for all NSE stocks");
+  else if(tab==="52w")h+=(m.highs.length?'<h4 class="mk-h4">New 52-week high</h4>'+highTable(m.highs):'')+'<h4 class="mk-h4">New 52-week low</h4>'+lowBody(m);
+  else if(tab==="ath")h+=na(ATH_WHY);
+  else h+=activeBody(m);
   return'<div class="mk-card">'+h+'</div>'}
 S_["mk-52w"]=function(m){
   return'<div class="mk-2">'+card("New 52-Week High","Close above the previous 52-week high",m.highs.length?highTable(m.highs):na("no new highs in the latest scan"))
-    +card("New 52-Week Low","",na(NEED_ALL+" (the scan lists new highs only)"))+'</div>'}
-S_["mk-ath"]=function(){return'<div class="mk-2">'+card("New All-Time High","",na("needs the full price history of every stock"))+card("New All-Time Low","",na("needs the full price history of every stock"))+'</div>'}
+    +card("New 52-Week Low","Close below the previous 52-week low",lowBody(m))+'</div>'}
+S_["mk-ath"]=function(){return'<div class="mk-2">'+card("New All-Time High","",na(ATH_WHY))+card("New All-Time Low","",na(ATH_WHY))+'</div>'}
 S_["mk-volume"]=function(m){return m.shockers.length?box(shockerTable(m.shockers))+'<p class="mk-sub">Volume at least '+VOL_MULT+'x the 20-day average, price up. 20-day average is volume divided by the multiple (3 significant digits).</p>':na("no volume shockers in the latest scan")}
 S_["mk-hvgain"]=function(m){return m.hvGain.length?box(shockerTable(m.hvGain))+'<p class="mk-sub">Volume '+VOL_MULT+'x the average or more and a gain of '+HV_GAIN+'% or more, by volume multiple. From the 25 highest volume multiples in the scan.</p>':na("none in the latest scan")}
 S_["mk-hvloss"]=function(m){return m.hvLoss.length?box(hvLossTable(m.hvLoss))+'<p class="mk-sub">Among the 25 biggest losers: volume '+VOL_MULT+'x the 20-day average or more, by volume multiple.</p>':na("none among the biggest losers in the latest scan")}
@@ -2754,8 +2830,8 @@ S_["mk-swing"]=function(m,st){
   return h+'<div class="mk-g">'+cards.join("")+'</div>'}
 
 /* ---------- the model: everything above, computed once from the three files ---------- */
-function model(S,H,F,X,Y){
-  var tr=tracked(H),m={sec:sectorsOf(X),sectorStocks:Y||null,S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
+function model(S,H,F,X,Y,A){
+  var tr=tracked(H),m={sec:sectorsOf(X),sectorStocks:Y||null,S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,act:activityOf(A,S&&isDay(S.as_of)?S.as_of:null),indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
   WINDOWS.forEach(function(w){m.rel[w.key]=relative(H,w.key)});return m}
 var IDS=["mk-today","mk-breadth","mk-happening","mk-sectors","mk-movers","mk-trending","mk-52w","mk-ath","mk-volume","mk-hvgain","mk-hvloss","mk-relative","mk-fiidii","mk-sectorlead","mk-swing"];
 function sectionHtml(id,m,st){try{return S_[id](m,st||{})}catch(e){return na("this block could not be drawn")}}
@@ -2782,9 +2858,9 @@ function init(){
     if(!b||!M||SENSEX_PAGE_APPROVED!==true||M.sensex!==undefined||b.getAttribute("data-tab")!=="SENSEX"||!b.parentNode||b.parentNode.getAttribute("data-mk-tabs")!=="index")return;
     M.sensex=null;getJson(SENSEX_FILE).then(function(d){M.sensex=d||false;paint("mk-today")})});
   /* SENSEX-EOD:end */
-  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json"),getJson("out/market_sectors.json")]).then(function(r){M=model(r[0],r[1],r[2],r[3]);paintAll()})}
+  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json"),getJson("out/market_sectors.json"),getJson("out/market_activity.json")]).then(function(r){M=model(r[0],r[1],r[2],r[3],null,r[4]);paintAll()})}
 if(typeof document!=="undefined"&&document.getElementById)init();
-window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
+window.SLMarket={activityOf:activityOf,perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
 })();
 </script>
 <script type="module" id="stocklens-live">

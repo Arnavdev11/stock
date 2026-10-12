@@ -5,6 +5,7 @@ really returns for DOMS: that can only be seen on a real run.
 """
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import os
@@ -281,6 +282,79 @@ class Isolation(unittest.TestCase):
         self.assertNotIn('tile("Sector",sector', now)                                       # ... and the header Sector tile is gone
         self.assertEqual(now.count('tile("Sector"'), 0)
         self.assertIn('Sector', now)                                                        # the Business-section Sector, the table column and the checklist row are untouched
+
+    # --- Stage 8D: the Stage 8C market-activity edit is reversed exactly, and only that edit
+    def _page_pair(self):
+        head = subprocess.run(["git", "show", "HEAD:index.html"], cwd=str(ROOT), capture_output=True)
+        if head.returncode != 0:
+            self.skipTest("not a git checkout")
+        return (ROOT / "index.html").read_text(encoding="utf-8"), head.stdout.decode("utf-8")
+
+    def test_stage_8c_reversal_round_trips_to_the_pinned_phase2_page(self):
+        now, _ = self._page_pair()
+        if "market_activity.json" not in now:
+            self.skipTest("the Stage 8C edit is not in the working page")
+        live = re.compile(r'<script type="module" id="stocklens-live">[\s\S]*?</script>\n')
+        search = re.compile(r'<script type="module" id="stocklens-search">[\s\S]*?</script>\n')
+        pin = subprocess.run(["git", "show", "f682bbb:index.html"], cwd=str(ROOT), capture_output=True)
+        if pin.returncode != 0:
+            self.skipTest("the pinned commit is not available")
+        strip = lambda h: search.sub("", live.sub("", h, count=1), count=1)
+        reverted = G.without_market_cap(strip(now))
+        self.assertNotIn("market_activity", reverted)
+        self.assertEqual(reverted.encode("utf-8"), strip(pin.stdout.decode("utf-8")).encode("utf-8"))      # byte for byte the Phase 2 page
+        self.assertEqual(G.without_market_activity(G.without_market_activity(now)), G.without_market_activity(now))   # idempotent
+
+    def test_stage_8c_reversal_is_a_no_op_without_the_edit(self):
+        _, head = self._page_pair()
+        self.assertNotIn("market_activity.json", head)
+        self.assertEqual(G.without_market_activity(head), head)
+        self.assertEqual(G.without_market_activity("<html>nothing</html>"), "<html>nothing</html>")
+
+    def test_stage_8c_reversal_fails_loudly_on_partial_or_duplicate_text(self):
+        now, _ = self._page_pair()
+        if "market_activity.json" not in now:
+            self.skipTest("the Stage 8C edit is not in the working page")
+        for first, _last in G._ACT_BLOCKS:                                             # a duplicated block
+            i = now.index(first.lstrip("\n"))
+            with self.assertRaises(ValueError):
+                G.without_market_activity(now + now[i:i + 200])
+        for new, _old in G._ACT_EDITS:                                                 # an edit that was changed or is missing
+            with self.assertRaises(ValueError):
+                G.without_market_activity(now.replace(new, new[:len(new) // 2] + "~" + new[len(new) // 2:], 1))
+        with self.assertRaises(ValueError):                                            # only a trace of the edit
+            G.without_market_activity("<script>window.SLMarket={activityOf:activityOf,perfOf:</script>")
+
+    def test_any_edit_inside_either_stage_8c_block_fails_the_integrity_check(self):
+        now, _ = self._page_pair()
+        if "market_activity.json" not in now:
+            self.skipTest("the Stage 8C edit is not in the working page")
+        self.assertEqual(len(G._ACT_BLOCK_SHA256), len(G._ACT_BLOCKS))
+        G.without_market_activity(now)                                                 # the approved content passes
+        for (first, last), pin in zip(G._ACT_BLOCKS, G._ACT_BLOCK_SHA256):
+            i = now.index(first)
+            block = now[i:now.index(last, i) + len(last)]
+            self.assertEqual(hashlib.sha256(block.encode("utf-8")).hexdigest(), pin)
+            mid = i + len(first) + 20                                                  # strictly inside the block, past its first line
+            for mutated in (now[:mid] + "x" + now[mid:],                               # an inserted character
+                            now[:mid] + now[mid + 1:],                                 # a deleted character
+                            now[:mid] + ("Z" if now[mid] != "Z" else "Y") + now[mid + 1:],   # a replaced character
+                            now.replace(last, "/*x*/" + last, 1) if last in now else now):   # a change just before the block's last line
+                self.assertNotEqual(mutated, now)
+                with self.assertRaises(ValueError):
+                    G.without_market_activity(mutated)
+                with self.assertRaises(ValueError):
+                    G.without_market_cap(mutated)                                      # and the guards that use the reversal fail too
+
+    def test_an_unrelated_change_is_still_detected_after_the_stage_8c_reversal(self):
+        now, head = self._page_pair()
+        want = G.without_market_cap(head)
+        self.assertEqual(G.without_market_cap(now), want)
+        self.assertNotEqual(G.without_market_cap(now + "<!-- x -->"), want)
+        self.assertNotEqual(G.without_market_cap(now.replace("Overview", "Overview2", 1)), want)
+        if "market_activity.json" in now:                                              # a change OUTSIDE the approved edits, next to them, is still seen
+            self.assertNotEqual(G.without_market_cap(now.replace("var NEED_ALL=", "var NEED_ALL2=", 1)), want)
+            self.assertNotEqual(G.without_market_cap(now.replace("function events(S){", "function events(S){ ", 1)), want)
 
     def test_the_two_updaters_differ_from_the_commit_only_by_the_approved_lines(self):
         for f in ("fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py"):
