@@ -42,11 +42,11 @@ no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /Strong Buy|Bearish|Bullish|Target pri
 global.window = {}; global.document = { getElementById: () => null, addEventListener() {} }; global.fetch = () => { throw new Error("no fetch in this test"); };
 (0, eval)(code);
 const M = window.SLMarket;
-eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "breadth", "cleanCandles", "events", "fiidii", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "perfOf", "relative", "sectionHtml", "sectorsOf", "shockers", "sig3", "stocksOf", "tracked", "vol"], "the public surface is small and fixed");
+eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "activityOf", "breadth", "cleanCandles", "events", "fiidii", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "perfOf", "relative", "sectionHtml", "sectorsOf", "shockers", "sig3", "stocksOf", "tracked", "vol"], "the public surface is small and fixed");
 eq(M.IDS, SECTIONS.map((s) => s[0]), "the module draws exactly the sections in the page");
 eq(M.WINDOWS.map((w) => w.label), ["1D", "1W", "30D", "90D"], "the windows are 1D, 1W, 30D, 90D"); eq([M.LARGE_MOVE, M.VOL_MULT, M.HV_GAIN], [5, 2, 3], "the thresholds");
 no(code, /Upstox|api\.|access_token|Bearer|apikey|api_key|secret|localStorage|sessionStorage|XMLHttpRequest|WebSocket|eval\(|new Function/i, "no API, token, storage, socket or dynamic code in the module");
-eq([...code.matchAll(/getJson\("([^"]*)"\)/g)].map((m) => m[1]), ["out/market_sector_stocks.json", "out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json"], "it reads the three files the site already publishes, plus the two sector files that exist on the site only when sector display is approved (otherwise the fetch fails and the blocks say Sector data unavailable)");
+eq([...code.matchAll(/getJson\("([^"]*)"\)/g)].map((m) => m[1]), ["out/market_sector_stocks.json", "out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json", "out/market_activity.json"], "it reads the three files the site already publishes, plus the two sector files that exist on the site only when sector display is approved (otherwise the fetch fails and the blocks say Sector data unavailable)");
 no(html, /Bearer\s|access_token|UPSTOX_[A-Z_]+\s*=|api\.upstox\.com|Authorization/i, "no token or Upstox call anywhere in the page");
 
 // --- perfOf: windows, calendar days, gaps ---
@@ -116,6 +116,140 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   for (const l of ["1D", "1W", "30D", "90D"]) re(t, new RegExp("<small>" + l + "</small>"), "index performance column " + l);
   re(t, /<b>NIFTY 50<\/b><span class="v">1,099\.00<\/span>/, "NIFTY 50 with its latest value from the data"); re(t, /As of 2026-04-10/, "and the date of that value");
   eq((t.match(/class="mk-idx"/g) || []).length, 1, "one index card"); re(draw("mk-today", empty), /Data unavailable/, "no data: an honest unavailable state"); re(draw("mk-today", empty), /Latest available market data: <b>unavailable<\/b>/, "with no invented date"); }
+// ---------- 4a. the NIFTY 50 / SENSEX tabs in Market Today ----------
+{ const t = draw("mk-today"), s = draw("mk-today", model, { index: "SENSEX" }), tabs = (h) => [...h.matchAll(/<button type="button" role="tab" data-tab="([^"]*)" aria-selected="(true|false)">/g)].map((m) => [m[1], m[2]]);
+  re(t, /<div class="tabs mk-tabs" role="tablist" data-mk-tabs="index">/, "the tab bar uses the page's existing tab mechanism (data-mk-tabs + data-tab)");
+  eq(tabs(t), [["NIFTY 50", "true"], ["SENSEX", "false"]], "two tabs, NIFTY 50 selected by default"); eq(tabs(s), [["NIFTY 50", "false"], ["SENSEX", "true"]], "selecting SENSEX moves the selection");
+  eq(tabs(draw("mk-today", model, { index: "BOGUS" })), tabs(t), "an unknown selection falls back to NIFTY 50");
+  re(t, /<b>NIFTY 50<\/b><span class="v">1,099\.00<\/span>/, "the NIFTY 50 tab keeps the verified end-of-day card"); re(t, /end of day, not live/, "and says end of day, not live");
+  no(s, /class="mk-idx"/, "the SENSEX tab draws no index card"); no(s, /class="mk-perf"/, "and no performance figures"); no(s, /\d[\d,]*\.\d{2}/, "and no SENSEX number at all");
+  re(s, /SENSEX is not available yet: its data source has not been verified, so no value is shown/, "it says plainly that SENSEX is unavailable and why"); re(s, /end of day, not live/, "the end-of-day status line stays on the SENSEX tab");
+  re(draw("mk-today", empty, { index: "SENSEX" }), /SENSEX is not available yet/, "SENSEX is unavailable with no data loaded either"); re(draw("mk-today", empty), /NIFTY 50 history is not loaded/, "NIFTY 50 without data keeps its fallback text");
+  { const bare = (h) => h.replace(/\/\*[\s\S]*?\*\//g, ""); /* the key is written once, as a strict comparison against the FILE's own key: never requested, subscribed to or looked up */
+    eq((bare(code).match(/BSE_INDEX/g) || []).length, 1, "the BSE key text appears once in the module code"); re(bare(code), /ins\.instrument_key!=="BSE_INDEX\|SENSEX"/, "as a comparison only");
+    eq((bare(html).match(/BSE_INDEX/g) || []).length, 1, "and nowhere else in the page"); }
+  /* the click itself is handled by the module's existing generic handler */
+  ok(/\[data-mk-tabs\] \[data-tab\]/.test(code) && /STATE\[grp\]=b\.getAttribute\("data-tab"\)/.test(code), "the generic handler stores the chosen tab in STATE and repaints the section (no page reload, no navigation)");
+  no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /location\.(reload|href|assign|replace)/, "the module never reloads or navigates"); }
+// ---------- 4b. the SENSEX end-of-day card: two closed gates, strict validation, its own date, lazy loading ----------
+const vm = require("vm");
+const GATE_OFF = "var SENSEX_PAGE_APPROVED=false;";
+eq(code.split(GATE_OFF).length, 2, "the page-level SENSEX gate is declared once and ships closed (false)"); no(code, /SENSEX_PAGE_APPROVED\s*=\s*true/, "and is never set to true in the page");
+eq((code.match(/SENSEX-EOD:start/g) || []).length, 2, "two marked SENSEX blocks (the card, and the lazy request)"); eq((code.match(/SENSEX-EOD:end/g) || []).length, 2, "each closed");
+eq((code.replace(/\/\*[\s\S]*?\*\//g, "").match(/getJson\(SENSEX_FILE\)/g) || []).length, 1, "exactly one request for the SENSEX file"); re(code, /var SENSEX_FILE="out\/sensex_history\.json";/, "to its own file, not out/historical.json");
+re(code, /public redistribution rights for BSE SENSEX data/i, "the rights uncertainty is stated in the page code"); re(code, /unverified candidate/, "and so is the unverified BSE metadata URL");
+const loadMod = (text) => { const ctx = { window: {}, document: { getElementById: () => null, addEventListener() {} }, fetch() { throw new Error("no fetch in this test"); } }; vm.createContext(ctx); vm.runInContext(text, ctx); return ctx.window.SLMarket; };
+const MC = loadMod(code), MO = loadMod(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"));     /* MO: a test-only copy with the page gate OPEN. The shipped page is MC. */
+const ymd = (end, back) => new Date(Date.parse(end + "T00:00:00Z") - back * 864e5).toISOString().slice(0, 10);
+const sxCandles = (end, n = 120, base = 80000) => Array.from({ length: n }, (_, i) => { const c = base + i * 10; return { date: ymd(end, n - 1 - i), open: c, high: c + 50, low: c - 50, close: c, volume: null }; });
+const sxDoc = (end = "2026-10-05", over = {}) => Object.assign({ schema_version: 1, kind: "sensex_history", as_of: end, last_date: end, instrument: { label: "SENSEX", instrument_key: "BSE_INDEX|SENSEX", instrument_name: "SENSEX", exchange: "BSE", segment: "BSE_INDEX", instrument_type: "INDEX" },
+  data_rights_note: "Public redistribution rights for BSE SENSEX data are unconfirmed.", public_display_approved: true, candles: sxCandles(end) }, over);
+const HIST2 = Object.assign({}, HIST, { benchmark: { symbol: "NIFTY 50", candles: sxCandles("2026-10-05", 120, 22000) } });     /* NIFTY ends on the same day as the scans: 2026-10-05 */
+const modelO = (extra = {}) => Object.assign({}, MO.model(SCANS, HIST2, FII), extra);
+const todayO = (m, tab) => MO.sectionHtml("mk-today", m, tab ? { index: tab } : {});
+const UNAVAILABLE = "SENSEX is not available yet: its data source has not been verified, so no value is shown";
+const isNa = (h) => h.includes('<p class="mk-na">Data unavailable<small>' + UNAVAILABLE + "</small></p>") && !/class="mk-idx"/.test(h);
+const LOADING = '<p class="mk-na" role="status">Loading SENSEX end-of-day data\u2026</p>';
+const isLoading = (h) => h.includes(LOADING) && !/class="mk-idx"|Data unavailable|mk-perf/.test(h);
+const NOTE = (t) => '<p class="mk-sub">' + t + "</p>";
+const N_LOAD = "The SENSEX end-of-day file could not be loaded.", N_BAD = "The SENSEX end-of-day data was not accepted for display.";
+const N_NOREF = "There is no market date on this page to check the SENSEX end-of-day data against.";
+const N_STALE = (d) => "The latest SENSEX end-of-day date (" + d + ") is more than 7 days behind the market data on this page.";
+const f2 = (v) => v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+{ // approved and valid, same day as NIFTY
+  const d = sxDoc(), h = todayO(modelO({ sensex: d }), "SENSEX"), last = d.candles[d.candles.length - 1].close, prev = d.candles[d.candles.length - 2].close;
+  re(h, new RegExp('<b>SENSEX</b><span class="v">' + f2(last).replace(/[.,]/g, "\\$&") + "</span>"), "the card shows SENSEX with ITS OWN last close"); re(h, /As of 2026-10-05/, "and its own latest trading date");
+  for (const l of ["1D", "1W", "30D", "90D"]) re(h, new RegExp("<small>" + l + "</small>"), "performance column " + l); re(h, new RegExp("\\+" + ((last / prev - 1) * 100).toFixed(2).replace(".", "\\.") + "%"), "1D change computed from SENSEX's own previous close");
+  no(h, /not the same trading day/, "no date warning when the day matches NIFTY"); eq((h.match(/class="mk-idx"/g) || []).length, 1, "one card"); no(h, /<b>NIFTY 50<\/b>/, "no NIFTY card on the SENSEX tab when the days match"); no(h, /Data unavailable/, "and not the unavailable message");
+  eq(MO.sectionHtml("mk-today", modelO({ sensex: d }), { index: "SENSEX" }).includes("end of day, not live"), true, "the status line still says end of day, not live"); }
+{ // a date difference from NIFTY is flagged, in both directions, and NIFTY's own date is not borrowed
+  for (const end of ["2026-10-02", "2026-10-06"]) { const h = todayO(modelO({ sensex: sxDoc(end) }), "SENSEX");
+    re(h, new RegExp("As of " + end), "SENSEX keeps its own date " + end); re(h, new RegExp("SENSEX is as of <b>" + end + "</b>; NIFTY 50 is as of <b>2026-10-05</b>\\. These are not the same trading day\\."), "and the difference from NIFTY is stated: " + end); } }
+{ // never NIFTY values: invalid SENSEX data shows the plain message, with the NIFTY model fully loaded
+  const m = modelO(), nlast = f2(m.indices[0].perf.last);
+  ok(isLoading(todayO(m, "SENSEX")), "no sensex field yet (gate open): the loading line, nothing else"); no(todayO(m, "SENSEX"), new RegExp(nlast.replace(/[.,]/g, "\\$&")), "and no NIFTY value on the SENSEX tab");
+  const withCard = todayO(modelO({ sensex: sxDoc("2026-10-02") }), "SENSEX"); no(withCard, new RegExp(">" + nlast.replace(/[.,]/g, "\\$&") + "<"), "a valid SENSEX card never carries NIFTY's number"); no(withCard, /<b>NIFTY 50<\/b>/, "or NIFTY's card"); }
+{ // unavailable for every kind of bad input
+  const bad = { "string": "x", "number": 5, "array": [], "empty object": {},
+    "flag false": sxDoc("2026-10-05", { public_display_approved: false }), "flag missing": (() => { const d = sxDoc(); delete d.public_display_approved; return d; })(), "flag the string true": sxDoc("2026-10-05", { public_display_approved: "true" }),
+    "flag 1": sxDoc("2026-10-05", { public_display_approved: 1 }), "flag null": sxDoc("2026-10-05", { public_display_approved: null }),
+    "wrong kind": sxDoc("2026-10-05", { kind: "index_history" }), "schema 2": sxDoc("2026-10-05", { schema_version: 2 }), "schema string": sxDoc("2026-10-05", { schema_version: "1" }),
+    "other key": sxDoc("2026-10-05", { instrument: { label: "SENSEX", instrument_key: "BSE_INDEX|OTHER" } }), "nse key": sxDoc("2026-10-05", { instrument: { label: "SENSEX", instrument_key: "NSE_INDEX|Nifty 50" } }),
+    "wrong label": sxDoc("2026-10-05", { instrument: { label: "NIFTY 50", instrument_key: "BSE_INDEX|SENSEX" } }), "no instrument": sxDoc("2026-10-05", { instrument: null }),
+    "candles not a list": sxDoc("2026-10-05", { candles: "x" }), "one candle": sxDoc("2026-10-05", { candles: sxCandles("2026-10-05", 1) }), "no candles": sxDoc("2026-10-05", { candles: [] }),
+    "last_date mismatch": sxDoc("2026-10-05", { last_date: "2026-10-04" }), "as_of mismatch": sxDoc("2026-10-05", { as_of: "2026-10-06" }), "no as_of": sxDoc("2026-10-05", { as_of: undefined }) };
+  const mk = (f) => { const d = sxDoc(); f(d.candles); return d; };
+  Object.assign(bad, { "duplicate date": mk((c) => { c[50].date = c[49].date; }), "descending": mk((c) => { c.reverse(); }), "string close": mk((c) => { c[10].close = "80000"; }), "NaN close": mk((c) => { c[10].close = NaN; }),
+    "zero close": mk((c) => { c[10].close = 0; }), "negative close": mk((c) => { c[10].close = -5; }), "null close": mk((c) => { c[10].close = null; }), "bad date": mk((c) => { c[10].date = "2026-13-45"; }),
+    "date not a string": mk((c) => { c[10].date = 20260101; }), "a null candle": mk((c) => { c[10] = null; }), "Infinity close": mk((c) => { c[10].close = Infinity; }) });
+  for (const [name, d] of Object.entries(bad)) { const h = todayO(modelO({ sensex: d }), "SENSEX");
+    ok(isNa(h), "unavailable message for: " + name); ok(h.endsWith(NOTE(N_BAD)), "followed by the one line saying it was not accepted: " + name); no(h, /8\d,\d{3}|class="mk-idx"/, "and no value for: " + name); }
+  { const h = todayO(modelO({ sensex: false }), "SENSEX"); ok(isNa(h), "failed fetch (false): the unavailable message"); ok(h.endsWith(NOTE(N_LOAD)), "followed by the line saying the file could not be loaded"); }
+  for (const loading of [null, undefined]) ok(isLoading(todayO(modelO({ sensex: loading }), "SENSEX")), "waiting for the file (" + loading + "): the loading line, never blank, never the card"); }
+{ // stale: more than 7 days behind the newest date the page knows
+  for (const [end, shown] of [["2026-09-28", true], ["2026-09-27", false], ["2026-09-20", false], ["2026-04-10", false]]) { const h = todayO(modelO({ sensex: sxDoc(end) }), "SENSEX");
+    eq(/class="mk-idx"/.test(h), shown, "SENSEX ending " + end + (shown ? " (7 days behind) is shown, with its date and the difference" : " is too old: unavailable")); if (!shown) { ok(isNa(h), "the plain message for " + end); ok(h.endsWith(NOTE(N_STALE(end))), "and the line naming SENSEX's own date " + end); } else re(h, /not the same trading day/, "and flagged"); }
+  for (const [what, doc] of [["old", sxDoc("2026-03-01")], ["recent", sxDoc("2026-10-05")]]) {
+    const noRef = Object.assign({}, MO.model(null, null, null), { asOf: null, indices: [], sensex: doc }), h = todayO(noRef, "SENSEX");
+    eq(noRef.asOf, null, "fixture: no page market date"); eq(noRef.indices.length, 0, "fixture: no NIFTY date");
+    ok(isNa(h), "no reference date at all (" + what + " SENSEX file, gate open, approved, valid): the exact unavailable message"); ok(h.endsWith(NOTE(N_NOREF)), "followed by the line saying there is no date to check against"); no(h, /class="mk-idx"|mk-perf|81,|8\d,\d{3}/, "and no SENSEX card or price"); }
+}
+{ // every state is visible and distinct, none is empty, and the shipped page is exactly the old message
+  const states = { loading: undefined, "loading (null)": null, failed: false, bad: { kind: "x" }, stale: sxDoc("2026-04-10"), good: sxDoc() }, seen = new Set();
+  for (const [name, d] of Object.entries(states)) { const h = todayO(modelO({ sensex: d }), "SENSEX"); const body = h.slice(h.indexOf("</div>") + 6);
+    ok(body.length > 40 && /class="mk-na"|class="mk-idx"/.test(h), "gate open, " + name + ": the panel is not empty"); seen.add(body); }
+  eq(seen.size, 5, "five different panels for six states (undefined and null are the same loading line)");
+  const EXACT = '<p class="mk-na">Data unavailable<small>' + UNAVAILABLE + "</small></p>";
+  for (const [name, d] of Object.entries(states)) { const m = Object.assign({}, MC.model(SCANS, HIST2, FII), { sensex: d }), h = MC.sectionHtml("mk-today", m, { index: "SENSEX" });
+    ok(h.endsWith(EXACT), "gate closed, " + name + ": the panel is exactly the original message"); no(h, /Loading|could not be loaded|not accepted|days behind|no market date|class="mk-idx"/, "gate closed, " + name + ": no state wording and no card at all"); } }
+{ // the shipped page (gate closed) never shows a value, whatever the file says
+  const m = Object.assign({}, MC.model(SCANS, HIST2, FII), { sensex: sxDoc() }); ok(isNa(MC.sectionHtml("mk-today", m, { index: "SENSEX" })), "page gate closed + perfect file + flag true: still the unavailable message");
+  no(MC.sectionHtml("mk-today", m, { index: "SENSEX" }), /8\d,\d{3}/, "no SENSEX number"); }
+{ // NIFTY non-regression: the NIFTY tab does not depend on SENSEX in any way
+  const base = todayO(modelO(), undefined);
+  for (const sensex of [undefined, null, false, sxDoc(), sxDoc("2026-10-02"), { garbage: 1 }]) eq(todayO(modelO({ sensex }), undefined), base, "NIFTY tab output is identical whatever SENSEX holds");
+  eq(MC.sectionHtml("mk-today", Object.assign({}, MC.model(SCANS, HIST2, FII), { sensex: sxDoc() }), {}), MC.sectionHtml("mk-today", MC.model(SCANS, HIST2, FII), {}), "and on the shipped page"); re(base, /<b>NIFTY 50<\/b><span class="v">/, "with its card"); }
+{ // the SENSEX card is built exactly like the NIFTY card
+  const same = { benchmark: { symbol: "NIFTY 50", candles: sxCandles("2026-10-05") }, stocks: {} }, m = Object.assign({}, MO.model(SCANS, same, FII), { sensex: sxDoc("2026-10-05") });
+  const grid = (h) => (/<div class="mk-idx-grid">[\s\S]*?<p class="mk-sub">As of [^<]*<\/p><\/div><\/div>/.exec(h) || [""])[0];
+  eq(grid(todayO(m, "SENSEX")).replace("<b>SENSEX</b>", "<b>NIFTY 50</b>"), grid(todayO(m)), "same data: the two cards differ only by the name"); ok(grid(todayO(m)).length > 200, "and the card is really there"); }
+{ // the generated page text: markers reverse cleanly (the older pins rely on this)
+  const L = legacy(html); no(L, /SENSEX/, "legacy() removes every SENSEX trace: the older byte-identity pins still see the pre-edit page"); no(L, /SENSEX-EOD/, "including the markers"); }
+
+// lazy loading and initial page-load behavior, driven through the module's real init() with a fake document and fake fetch
+const settle = () => new Promise((r) => setImmediate(r));
+function boot(text, files) {
+  const listeners = [], boxes = {}, fetched = [], doc = { getElementById: (id) => (id === "market" ? {} : null), addEventListener: (t, f) => listeners.push([t, f]),
+    querySelector: (sel) => { const m = /^#([\w-]+) \[data-mk\]$/.exec(sel); return m ? (boxes[m[1]] = boxes[m[1]] || { innerHTML: "" }) : null; } };
+  const ctx = { window: {}, document: doc, fetch: (u) => { fetched.push(u); const f = files[u]; return Promise.resolve(f === undefined ? { ok: false } : { ok: true, json: () => Promise.resolve(f) }); } };
+  vm.createContext(ctx); vm.runInContext(text, ctx);
+  const click = (tab, group = "index") => { const btn = { closest: () => ({ id: "mk-today" }), parentNode: { getAttribute: () => group }, getAttribute: () => tab };
+    for (const [t, f] of listeners) if (t === "click") f({ target: { closest: (sel) => (sel === "[data-mk-tabs] [data-tab]" ? btn : null) } }); };
+  return { boxes, fetched, click };
+}
+const FILES = (extra) => Object.assign({ "out/scans.json": SCANS, "out/historical.json": HIST2, "out/fiidii_history.json": FII, "out/market_sectors.json": null }, extra);
+const FOUR = ["out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json", "out/market_activity.json"];   // the four files of before, plus the validated market-activity file (Stage 8C)
+const lazy = (async () => {
+  const wait = async () => { for (let i = 0; i < 8; i++) await settle(); };
+  { // shipped page: the file is never requested and the tab shows the plain message
+    const b = boot(code, FILES({ "out/sensex_history.json": sxDoc() })); await wait();
+    eq(b.fetched, FOUR, "initial page load requests exactly the four existing files plus out/market_activity.json, and no SENSEX file"); b.click("NIFTY 50"); b.click("SENSEX"); await wait();
+    eq(b.fetched, FOUR, "gate closed: selecting SENSEX makes no request"); ok(isNa(b.boxes["mk-today"].innerHTML), "and the tab shows the plain unavailable message"); }
+  { // gate open: one request, only on first selection of SENSEX
+    const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES({ "out/sensex_history.json": sxDoc() })); await wait();
+    eq(b.fetched, FOUR, "initial load: still those five files only"); const nifty = b.boxes["mk-today"].innerHTML; re(nifty, /<b>NIFTY 50<\/b>/, "NIFTY tab drawn"); b.click("NIFTY 50"); await wait(); eq(b.fetched, FOUR, "selecting NIFTY 50 requests nothing");
+    b.click("SENSEX"); b.click("SENSEX"); ok(isLoading(b.boxes["mk-today"].innerHTML), "right after the click, before the file answers: the loading line (not blank, not the unavailable message)"); await wait(); eq(b.fetched, FOUR.concat(["out/sensex_history.json"]), "selecting SENSEX (twice, quickly) makes exactly one request, to the SENSEX file");
+    re(b.boxes["mk-today"].innerHTML, /<b>SENSEX<\/b><span class="v">/, "and the SENSEX card is drawn from it"); no(b.boxes["mk-today"].innerHTML, /Data unavailable/, "without the unavailable message");
+    b.click("NIFTY 50"); await wait(); eq(b.boxes["mk-today"].innerHTML, nifty, "back on NIFTY: byte-identical to before SENSEX was ever opened"); b.click("SENSEX"); await wait(); eq(b.fetched.length, FOUR.length + 1, "reselecting SENSEX never requests again"); }
+  { // gate open but the file is missing, or says not approved: one request, the plain message, never retried
+    for (const [name, files] of [["missing", {}], ["not approved", { "out/sensex_history.json": sxDoc("2026-10-05", { public_display_approved: false }) }], ["invalid", { "out/sensex_history.json": { kind: "x" } }]]) {
+      const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES(files)); await wait(); b.click("SENSEX"); await wait();
+      eq(b.fetched.filter((u) => u === "out/sensex_history.json").length, 1, name + ": one request"); ok(isNa(b.boxes["mk-today"].innerHTML), name + ": the plain unavailable message");
+      ok(b.boxes["mk-today"].innerHTML.endsWith(NOTE(name === "missing" ? N_LOAD : N_BAD)), name + ": with its own reason line"); no(b.boxes["mk-today"].innerHTML, /Loading/, name + ": no longer loading"); b.click("SENSEX"); await wait(); eq(b.fetched.length, FOUR.length + 1, name + ": no retry"); } }
+  { // another tab group never triggers the request
+    const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES({ "out/sensex_history.json": sxDoc() })); await wait(); b.click("SENSEX", "trending"); await wait(); eq(b.fetched, FOUR, "a SENSEX-named tab in another group does nothing"); }
+})();
+
 { const b = draw("mk-breadth");
   for (const l of ["Advances", "Declines", "Unchanged", "52-week highs", "52-week lows", "Upper circuits", "Lower circuits"]) re(b, new RegExp("<span>" + l + "</span>"), "breadth tile " + l);
   re(b, /1,200 advances/, "advances from the data"); re(b, /800 declines/, "declines"); re(b, /100 unchanged/, "unchanged"); re(b, /<b>33<\/b><span>52-week highs<\/span>/, "52-week highs from the data");
@@ -124,7 +258,7 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
 { const h = draw("mk-happening");
   ok(hrefs(h).length >= 8, "the feed has clickable stocks"); for (const [href, s] of hrefs(h)) eq(href, "#stock=" + encodeURIComponent(s), "feed link routes to the Stock Detail: " + s);
   re(h, /Rules: new 52-week high; move of 5% or more; volume 2x the 20-day average or more/, "the rules are written on the feed"); re(draw("mk-happening", empty), /Data unavailable/, "no scan: unavailable"); }
-{ for (const id of ["mk-ath"]) { const h = draw(id); re(h, /Data unavailable/, id + " says Data unavailable"); re(h, /needs /, id + " says what is missing"); no(h, /<table|class="up"|class="dn"|[+-]\d+\.\d\d%/, id + " shows no invented numbers"); }
+{ for (const id of ["mk-ath"]) { const h = draw(id); re(h, /Data unavailable/, id + " says Data unavailable"); re(h, /needs the complete listing history of every stock/, id + " says what is missing: the complete listing history"); no(h, /<table|class="up"|class="dn"|[+-]\d+\.\d\d%/, id + " shows no invented numbers"); no(h, /year/i, id + " never calls a one-year or five-year history all-time"); }
   for (const id of ["mk-sectors", "mk-sectorlead"]) { const h = draw(id); eq(h, '<p class="mk-na">Sector data unavailable</p>', id + " says exactly Sector data unavailable while no approved sector file is loaded"); } }
 { const h = draw("mk-movers"), a = h.split("Top Losers")[0], b = h.split("Top Losers")[1];
   eq(hrefs(a).map((x) => x[1]), ["G3", "G1", "G2"], "Top Gainers rows"); eq(hrefs(b).map((x) => x[1]), ["L1", "L3", "L2"], "Top Losers rows");
@@ -137,7 +271,7 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   re(h, /aria-selected="true">Price Movers/, "Price Movers is selected first");
   eq(hrefs(h).map((x) => x[1]).slice(0, 3), ["G3", "L1", "G1"], "movers are ordered by size of move, up or down");
   eq(hrefs(draw("mk-trending", model, { trend: "volume" })).map((x) => x[1]), ["V2", "V1"], "Volume Shockers tab"); const w = draw("mk-trending", model, { trend: "52w" }); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], "52W tab lists the highs"); re(w, /New 52-week low<\/h4><p class="mk-na">Data unavailable/, "and says the lows are unavailable");
-  re(draw("mk-trending", model, { trend: "ath" }), /Data unavailable/, "All-Time tab: unavailable"); re(draw("mk-trending", model, { trend: "active" }), /Data unavailable/, "Most Active tab: unavailable"); }
+  re(draw("mk-trending", model, { trend: "ath" }), /Data unavailable<small>needs the complete listing history of every stock/, "All-Time tab: unavailable, with the accurate reason"); re(draw("mk-trending", model, { trend: "active" }), /Data unavailable<small>the validated market-activity file is not available/, "Most Active tab: unavailable while the validated file is not loaded"); }
 { const h = draw("mk-52w"); eq(hrefs(h).map((x) => x[1]), ["H2", "H1"], "New 52-Week High table"); re(h, /Prev 52W high/, "with the previous high"); re(h, /New 52-Week Low[\s\S]*Data unavailable/, "52-week low is unavailable, not empty"); }
 { const v = draw("mk-volume"); eq(hrefs(v).map((x) => x[1]), ["V2", "V1"], "Volume Shockers rows"); re(v, /7\.50 L/, "V1: 3,000,000 / 4 = 7.50 L"); re(v, /1\.50 L/, "V2: 900,000 / 6 = 1.50 L"); re(v, /6\.0x/, "the multiple");
   eq(hrefs(draw("mk-hvgain")).map((x) => x[1]), ["V1"], "High Volume + High Gain"); eq(hrefs(draw("mk-hvloss")).map((x) => x[1]), ["L1", "L2"], "High Volume + Top Losers");
@@ -164,6 +298,84 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   no(stat, /Math\.random|Date\.now|new Date\(\)/, "no random numbers and no clock: the date shown is the data's");
   no(stat, /"(Live|LIVE)"|>Live<|Live market|real-time/i, "nothing is labelled Live"); }
 
+// ---------- 8C. the validated market-activity file: 52-week lows and Most Active (Stage 8C) ----------
+const ACT_DATE = "2026-10-05";   // the date of SCANS, i.e. of the rest of the page
+const actRow = (i, extra = {}) => Object.assign({ rank: i + 1, symbol: "A" + i, close: 100 + i, prev_close: 99 + i, change: 1, change_pct: 1.01, volume: 1000000 - i * 1000, turnover_lakhs: 50000 - i * 100, delivery_pct: 40 }, extra);
+const lowRow = (i, extra = {}) => Object.assign({ rank: i + 1, symbol: "LW" + i, close: 90 - i, prior_low_52w: 100, prior_low_date: "2026-03-02", distance_pct: Math.round(((90 - i) / 100 - 1) * 10000) / 100, state: "new_low" }, extra);
+const actDoc = (date = ACT_DATE) => ({ schema_version: 1, kind: "market_activity", as_of: date, source: "NSE EOD bhav data", freshness: "EOD",
+  freshness_detail: { label: "EOD as of " + date, source_date: date, generated_at: date + "T21:00:00+05:30", source_is_latest_trading_day: true, market_session_open_at_generation: false, note: "End-of-day data: the last close, not real-time prices." },
+  generated_at: date + "T21:00:00+05:30", universe: "NSE EQ series", universe_count: 2100, filters: {}, data_quality: { status: "pass", errors: [], warnings: [] },
+  metric_status: { most_active: "safe", new_52w_high: "safe", new_52w_low: "safe", volume_vs_20d_average: "safe" },
+  most_active: { by_value: { ranked_by: "turnover_lakhs (traded value, Rs lakhs)", rows: Array.from({ length: 12 }, (_, i) => actRow(i)) },
+                 by_volume: { ranked_by: "volume (traded quantity, shares)", rows: Array.from({ length: 12 }, (_, i) => actRow(i, { symbol: "Q" + i })) } },
+  high_low_52w: { new_high: { count: 0, rows: [] }, near_high: { count: 0, rows: [] }, new_low: { count: 3, rows: [lowRow(0), lowRow(1), lowRow(2)] }, near_low: { count: 0, rows: [] }, window: "previous 252 trading days; the latest day is not in its own window", low_column_available: true } });
+const mut = (f, date) => { const d = actDoc(date); f(d); return d; };
+const mA = (doc, scans = SCANS) => M.model(scans, HIST, FII, null, null, doc);
+const lowPart = (h) => h.split("New 52-Week Low")[1] || "";
+const actTab = (m) => draw("mk-trending", m, { trend: "active" });
+{ // a good file draws the lows and Most Active, with the data date and clear ranking labels
+  const m = mA(actDoc()); eq(m.act.state, "ok", "a good file is accepted"); eq(M.activityOf(actDoc(), ACT_DATE).state, "ok", "the public checker agrees");
+  const w = draw("mk-52w", m); eq(hrefs(w).map((x) => x[1]), ["H2", "H1", "LW0", "LW1", "LW2"], "New 52-Week High (from the scan, unchanged) then the validated lows");
+  re(w, /Prev 52W low/, "with the previous low"); re(lowPart(w), /<span class="dn">-10\.00%<\/span>/, "and the distance below it, as in the file"); re(lowPart(w), /as of <b>2026-10-05<\/b>, not live/, "the data date is shown and it is not called live");
+  no(lowPart(w), /Data unavailable/, "no unavailable message once the data is accepted"); re(lowPart(w), /252 trading days/, "the rule is written on the card"); re(lowPart(w), /left out, not estimated/, "and the exclusions are stated, not hidden");
+  eq(hrefs(draw("mk-trending", m, { trend: "52w" })).map((x) => x[1]), ["H2", "H1", "LW0", "LW1", "LW2"], "the 52W High / Low tab shows the same lows");
+  const t = actTab(m); eq(hrefs(t).length, 20, "ten rows in each of the two rankings"); eq(hrefs(t).slice(0, 10).map((x) => x[1]), Array.from({ length: 10 }, (_, i) => "A" + i), "by traded value, in the file's order"); eq(hrefs(t).slice(10).map((x) => x[1]), Array.from({ length: 10 }, (_, i) => "Q" + i), "by traded quantity, in the file's order");
+  re(t, /By traded value \(turnover, ₹ lakh\)[\s\S]*By traded quantity \(shares\)/, "two clearly labelled rankings"); re(t, /<th class="n">Turnover<\/th>/, "the value column is Turnover"); re(t, /<th class="n">Volume<\/th>/, "the quantity column is Volume"); re(t, /50,000\.00/, "the first turnover as in the file"); re(t, /10\.00 L/, "the first volume as in the file (1,000,000 shares)");
+  re(t, /all 2,100 NSE EQ-series stocks[\s\S]*as of <b>2026-10-05<\/b>, not live/, "the universe size and the data date are on the card"); no(t, /Data unavailable/, "nothing unavailable"); no(t.replace(/not live/g, ""), /\blive\b/i, "never called live");
+  { const low12 = mA(mut((d) => { d.high_low_52w.new_low = { count: 12, rows: Array.from({ length: 12 }, (_, i) => lowRow(i)) }; })); const h = lowPart(draw("mk-52w", low12)); eq(hrefs(h).length, 10, "at most ten lows are listed"); re(h, /Showing 10 of 12\./, "and the card says it is showing part of the list"); }
+  { const none = mA(mut((d) => { d.high_low_52w.new_low = { count: 0, rows: [] }; })); const h = lowPart(draw("mk-52w", none)); re(h, /No new 52-week lows in the latest scan\./, "a good file with no lows says so"); no(h, /Data unavailable|<table/, "and is not shown as unavailable"); } }
+{ // missing, stale, other-day or unusable files: the plain unavailable state with the reason, and no value of any kind
+  const WHY_MISSING = /Data unavailable<small>the validated market-activity file is not available/;
+  for (const [name, m] of [["not loaded", M.model(SCANS, HIST, FII)], ["null (404)", mA(null)], ["false", mA(false)], ["undefined", mA(undefined)]]) { re(lowPart(draw("mk-52w", m)), WHY_MISSING, name + ": lows unavailable"); re(actTab(m), WHY_MISSING, name + ": Most Active unavailable"); no(draw("mk-52w", m) + actTab(m), /LW\d|A0|Q0/, name + ": no value"); }
+  { const m = mA(actDoc("2026-10-02")); eq(m.act.state, "date", "a file from another day is not used"); re(lowPart(draw("mk-52w", m)), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "and the card says both dates"); re(actTab(m), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "Most Active says the same"); no(draw("mk-52w", m) + actTab(m), /LW\d|A0|Q0/, "no value from the other day"); }
+  { const m = M.model(null, HIST, FII, null, null, actDoc()); eq(m.act.state, "date", "no page date to check against: not used"); re(actTab(m), /no market date to check the validated file \(2026-10-05\) against/, "and it says why"); }
+  { const m = mA(mut((d) => { d.freshness_detail.source_is_latest_trading_day = false; })); eq(m.act.state, "stale", "not from the latest trading day: not used"); re(actTab(m), /is not from the latest trading day/, "with the reason"); no(draw("mk-52w", m), /LW\d/, "and no lows"); }
+  { const m = mA(mut((d) => { d.freshness_detail.market_session_open_at_generation = true; })); eq(m.act.state, "stale", "generated while the session was open: not used"); }
+  { const sun = "2026-10-04", m = M.model(Object.assign({}, SCANS, { as_of: sun }), HIST, FII, null, null, actDoc(sun)); eq(m.act.state, "invalid", "a weekend date is refused even when it matches the page"); } }
+{ // every top-level defect refuses the whole file
+  const TOP = { "wrong kind": (d) => { d.kind = "market_breadth"; }, "schema 2": (d) => { d.schema_version = 2; }, "schema as text": (d) => { d.schema_version = "1"; }, "freshness LIVE": (d) => { d.freshness = "LIVE"; }, "as_of not a date": (d) => { d.as_of = "05-10-2026"; },
+    "label differs": (d) => { d.freshness_detail.label = "EOD as of 2026-10-01"; }, "source_date differs": (d) => { d.freshness_detail.source_date = "2026-10-01"; }, "latest flag as text": (d) => { d.freshness_detail.source_is_latest_trading_day = "true"; }, "no freshness_detail": (d) => { delete d.freshness_detail; },
+    "quality failed": (d) => { d.data_quality.status = "fail"; }, "quality has errors": (d) => { d.data_quality.errors = ["x"]; }, "no quality block": (d) => { delete d.data_quality; }, "universe 999": (d) => { d.universe_count = 999; }, "universe as text": (d) => { d.universe_count = "2100"; }, "universe fractional": (d) => { d.universe_count = 2100.5; },
+    "no metric_status": (d) => { delete d.metric_status; } };
+  for (const [name, f] of Object.entries(TOP)) { const m = mA(mut(f)); eq(m.act.state, "invalid", name + ": the file is refused"); re(lowPart(draw("mk-52w", m)), /Data unavailable<small>the validated market-activity file was not accepted/, name + ": lows say it was not accepted"); re(actTab(m), /Data unavailable<small>the validated market-activity file was not accepted/, name + ": Most Active says it too"); no(draw("mk-52w", m) + actTab(m), /LW\d|A0|Q0|<table[^>]*>(?:(?!H[12]).)*A0/, name + ": no value drawn"); }
+  for (const bad of [[], "x", 7, true]) eq(mA(bad).act.state, "invalid", "a non-object document is refused: " + JSON.stringify(bad)); }
+{ // each block is checked on its own: a bad Most Active list does not take the lows down, and the reverse
+  const AC = { "rank gap": (d) => { d.most_active.by_value.rows[1].rank = 3; }, "not sorted": (d) => { d.most_active.by_volume.rows[1].volume = 5e9; }, "duplicate symbol": (d) => { d.most_active.by_value.rows[2].symbol = "A0"; }, "symbol with markup": (d) => { d.most_active.by_value.rows[0].symbol = "A<img src=x>"; },
+    "zero close": (d) => { d.most_active.by_value.rows[0].close = 0; }, "close as text": (d) => { d.most_active.by_value.rows[0].close = "100"; }, "turnover as text": (d) => { d.most_active.by_value.rows[0].turnover_lakhs = "50000"; }, "volume negative": (d) => { d.most_active.by_volume.rows[0].volume = -1; },
+    "change as text": (d) => { d.most_active.by_value.rows[0].change_pct = "1"; }, "empty list": (d) => { d.most_active.by_volume.rows = []; }, "rows not a list": (d) => { d.most_active.by_value.rows = {}; }, "wrong ranking label": (d) => { d.most_active.by_value.ranked_by = "name"; }, "no by_volume": (d) => { delete d.most_active.by_volume; },
+    "no most_active": (d) => { delete d.most_active; }, "status unavailable": (d) => { d.metric_status.most_active = "unavailable"; }, "status missing": (d) => { delete d.metric_status.most_active; } };
+  for (const [name, f] of Object.entries(AC)) { const m = mA(mut(f)); eq(m.act.state, "ok", name + ": the file itself is fine"); eq(m.act.active, null, name + ": Most Active is refused"); ok(m.act.low !== null, name + ": the lows are still accepted");
+    const t = actTab(m); re(t, /Data unavailable<small>the (file does not mark the most-active lists as safe to use|most-active lists in the file were not accepted)/, name + ": the card says why"); no(t, /<table|A0|Q0/, name + ": and shows no partial list"); re(draw("mk-52w", m), /LW0/, name + ": the lows are still drawn"); }
+  const LO = { "close not below prior": (d) => { d.high_low_52w.new_low.rows[0].close = 100; d.high_low_52w.new_low.rows[0].distance_pct = 0; }, "close above prior": (d) => { d.high_low_52w.new_low.rows[0].close = 101; }, "state near_low": (d) => { d.high_low_52w.new_low.rows[0].state = "near_low"; },
+    "distance positive": (d) => { d.high_low_52w.new_low.rows[0].distance_pct = 5; }, "distance inconsistent": (d) => { d.high_low_52w.new_low.rows[0].distance_pct = -9; }, "count below rows": (d) => { d.high_low_52w.new_low.count = 2; }, "rows without count": (d) => { d.high_low_52w.new_low.rows = []; d.high_low_52w.new_low.count = 5; },
+    "rank gap": (d) => { d.high_low_52w.new_low.rows[1].rank = 5; }, "duplicate symbol": (d) => { d.high_low_52w.new_low.rows[1].symbol = "LW0"; }, "symbol with markup": (d) => { d.high_low_52w.new_low.rows[0].symbol = "<img src=x>"; }, "prior date bad": (d) => { d.high_low_52w.new_low.rows[0].prior_low_date = "soon"; },
+    "prior as text": (d) => { d.high_low_52w.new_low.rows[0].prior_low_52w = "100"; }, "no prior": (d) => { delete d.high_low_52w.new_low.rows[0].prior_low_52w; }, "count as text": (d) => { d.high_low_52w.new_low.count = "3"; }, "no new_low block": (d) => { delete d.high_low_52w.new_low; }, "no high_low block": (d) => { delete d.high_low_52w; },
+    "low column missing": (d) => { d.high_low_52w.low_column_available = false; }, "status missing": (d) => { delete d.metric_status.new_52w_low; }, "status unknown": (d) => { d.metric_status.new_52w_low = "maybe"; } };
+  for (const [name, f] of Object.entries(LO)) { const m = mA(mut(f)); eq(m.act.state, "ok", name + ": the file itself is fine"); eq(m.act.low, null, name + ": the lows are refused"); ok(m.act.active !== null, name + ": Most Active is still accepted");
+    const w = draw("mk-52w", m); re(lowPart(w), /Data unavailable<small>/, name + ": the low card says unavailable"); no(lowPart(w), /LW\d|<table|-10\.00%/, name + ": and shows no partial list"); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], name + ": the high card (from the scan) is untouched"); re(actTab(m), /A0/, name + ": Most Active is still drawn"); }
+  for (const [st, why] of [["insufficient_history", /not enough price history to find 52-week lows/], ["requires_adjustment", /suspected corporate action are left out/], ["unavailable", /do not carry the daily low prices/]]) { const m = mA(mut((d) => { d.metric_status.new_52w_low = st; })); re(lowPart(draw("mk-52w", m)), why, "status " + st + " keeps its own plain reason"); no(lowPart(draw("mk-52w", m)), /LW\d/, "and no low is drawn for " + st); } }
+{ // nothing else on the page moves: every other block is byte-identical with or without the file, and the 52-week high card is the scan's
+  const w0 = M.model(SCANS, HIST, FII), w1 = mA(actDoc());
+  for (const id of M.IDS.filter((x) => x !== "mk-52w")) eq(draw(id, w1), draw(id, w0), id + ": unchanged by the validated file"); for (const tab of ["movers", "volume", "ath"]) eq(draw("mk-trending", w1, { trend: tab }), draw("mk-trending", w0, { trend: tab }), "trending tab " + tab + ": unchanged");
+  eq(draw("mk-52w", w1).split("New 52-Week Low")[0], draw("mk-52w", w0).split("New 52-Week Low")[0], "the New 52-Week High card is the scan's, unchanged");
+  eq(w1.highs, w0.highs, "highs come from scans.json only"); eq([w1.gainers, w1.losers, w1.shockers], [w0.gainers, w0.losers, w0.shockers], "movers and shockers come from scans.json only"); }
+{ // All-Time High / Low: accurate wording, never unlocked by any file, never a calculation
+  const ATH = /Data unavailable<small>needs the complete listing history of every stock; the saved price history is partial \(a limited period, for only some stocks\), so no all-time high or low is shown<\/small>/;
+  for (const m of [model, empty, mA(actDoc()), mA(null)]) { const h = draw("mk-ath", m); eq((h.match(new RegExp(ATH.source, "g")) || []).length, 2, "both All-Time cards carry the accurate wording"); re(draw("mk-trending", m, { trend: "ath" }), ATH, "and so does the All-Time tab"); no(h, /<table|class="up"|class="dn"|\d{2,}\.\d\d/, "no all-time figure is invented"); }
+  no(code, /current data holds about one year|needs the full price history of every stock/, "the misleading messages are gone from the module"); no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /all-time[^"']{0,40}(five|5|one|1)[- ]year|(five|5|one|1)[- ]year[^"']{0,40}all-time/i, "no one-year or five-year history is called all-time"); }
+{ // the module reads the new file only through getJson, and nothing else was added
+  eq((code.match(/getJson\("out\/market_activity\.json"\)/g) || []).length, 1, "exactly one read of out/market_activity.json"); eq((code.match(/\bfetch\(/g) || []).length, 1, "still a single fetch call (inside getJson)");
+  eq(code.replace(/\/\*[\s\S]*?\*\//g, "").match(/["']out\/[^"']*["']/g).filter((x, i, a) => a.indexOf(x) === i).sort(), ['"out/fiidii_history.json"', '"out/historical.json"', '"out/market_activity.json"', '"out/market_sector_stocks.json"', '"out/market_sectors.json"', '"out/scans.json"', '"out/sensex_history.json"'].sort(), "the module names exactly these files: the five it reads at load, the sector-stocks file it reads on a click, and the SENSEX file that only its own closed gate may request; no other");
+  re(html, /var SENSEX_PAGE_APPROVED=false;/, "the SENSEX page gate is still closed"); }
+const actLazy = (async () => {
+  const wait = async () => { for (let i = 0; i < 8; i++) await settle(); };
+  { const b = boot(code, FILES({ "out/market_activity.json": actDoc() })); await wait(); eq(b.fetched.filter((u) => u === "out/market_activity.json").length, 1, "the page requests the validated file once");
+    re(b.boxes["mk-52w"].innerHTML, /LW0[\s\S]*LW1[\s\S]*LW2/, "and draws the lows from it"); const a = b.boxes["mk-trending"].innerHTML; no(a, /A0/, "the trending box still opens on Price Movers"); re(b.boxes["mk-movers"].innerHTML, /G3/, "other blocks are drawn as before"); }
+  { const b = boot(code, FILES({})); await wait(); eq(b.fetched.filter((u) => u === "out/market_activity.json").length, 1, "a missing file is requested once");
+    re(lowPart(b.boxes["mk-52w"].innerHTML), /the validated market-activity file is not available/, "and the lows say it is not available"); re(b.boxes["mk-movers"].innerHTML, /G3/, "while every other block still draws"); re(b.boxes["mk-52w"].innerHTML, /H2[\s\S]*H1/, "including the New 52-Week High card"); }
+  { const b = boot(code, FILES({ "out/market_activity.json": { kind: "market_activity", bogus: true } })); await wait(); re(lowPart(b.boxes["mk-52w"].innerHTML), /was not accepted/, "an unusable file is reported as not accepted"); no(b.boxes["mk-52w"].innerHTML, /LW\d/, "and nothing from it is drawn"); }
+  { const b = boot(code, FILES({ "out/market_activity.json": actDoc("2026-10-02") })); await wait(); re(lowPart(b.boxes["mk-52w"].innerHTML), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "a file from another day is reported, not drawn"); no(b.boxes["mk-52w"].innerHTML, /LW\d/, "with no values"); } })();
+
 // ---------- 6. responsive: the dashboard adapts to its own width (no media rules; the older tests pin those) ----------
 { re(css, /\.mk-sec\{/, "section style"); no(css, /@media/, "no new media rules"); re(css, /@container \(max-width:330px\)\{\.mk-t \.c3\{display:none\}\}/, "narrow cards drop their optional column"); re(css, /@container \(max-width:240px\)/, "very narrow: the performance grid goes to two columns");
   re(css, /\.mk-g\{[^}]*repeat\(auto-fit,minmax\(min\(/, "grids use auto-fit with a min() so a column is never wider than the screen"); re(css, /\.mk-2,\.mk-g\{[^}]*repeat\(auto-fit,minmax\(min\(/, "the two-card rows wrap");
@@ -178,4 +390,4 @@ const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/
   for (const pin of ['id="detail"', "Stock Detail view", 'id="stocklens-search"', 'id="stocklens-compare"', 'id="stocklens-shareholding"', 'id="stocklens-snapshot"', 'id="stocklens-growth"', "Financial Health"]) ok(html.includes(pin), "still present: " + pin);
   re(html, /\.detail-mode \.w>\*:not\(#detail\)\{display:none!important\}/, "an open stock hides the dashboard (it is inside .w)"); ok(html.indexOf('<main id="market">') > html.indexOf('<div class="w">'), "the dashboard is inside .w, so Stock Detail and Compare modes hide it as they hid the old homepage");
   const w = html.slice(html.indexOf('<div class="w">')); ok(!/<main id="market">[\s\S]*<\/main>[\s\S]*<main id="market">/.test(w), "one dashboard"); }
-console.log("Market dashboard tests passed (" + checks + " checks)");
+Promise.all([lazy, actLazy]).then(() => console.log("Market dashboard tests passed (" + checks + " checks)"));

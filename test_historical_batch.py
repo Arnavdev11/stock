@@ -585,7 +585,8 @@ class WorkflowWiring(unittest.TestCase):
         r = subprocess.run(["git", "diff", "--name-only", "HEAD", "--"] + files, cwd=str(ROOT), capture_output=True, text=True)
         if r.returncode != 0:
             self.skipTest("not a git checkout")
-        self.assertEqual(r.stdout.split(), [])
+        import guard_update_yml
+        self.assertEqual([f for f in r.stdout.split() if not guard_update_yml.is_approved(ROOT, f)], [])      # update.yml may carry only the approved SENSEX guard lines
 
     def test_the_sector_gate_is_not_referenced(self):
         for f in ("historical_batch.py", "historical_handoff.py"):

@@ -2551,6 +2551,65 @@ function breadth(S){
   var a=num(b.advancing),d=num(b.declining),u=num(b.unchanged);if(a===null||d===null||u===null)return null;
   return{adv:a,dec:d,unch:u,highs:num(b.new_52w_highs),a50:num(b.above_50dma_pct),a200:num(b.above_200dma_pct)}}
 
+/* ---------- out/market_activity.json (written by market_data_updater.py, checked by validate_market_outputs.py) ----------
+   Drawn only when EVERYTHING below holds, and checked again here because this page must never trust a file it did not check:
+     kind market_activity, schema 1, freshness EOD, a real weekday as_of, freshness_detail agreeing with it and saying the data is from the latest trading day and not from an open session,
+     data_quality.status "pass" with no errors, a universe of at least ACT_MIN_UNIVERSE stocks (the updater's own gate), and the SAME date as the rest of this page.
+   Each block is then accepted on its own: Most Active needs metric_status.most_active "safe" and two ranked lists (traded value, traded quantity);
+   the 52-week low needs metric_status.new_52w_low "safe", low_column_available true, and every row must really have closed below its prior low.
+   The updater already leaves out stocks with fewer than 252 prior trading days or a suspected corporate action in the window; nothing here adds those back.
+   Anything else, a different date included, gives the plain unavailable state with the reason. Nothing is estimated, filled in or taken from another file. */
+var ACT_MIN_UNIVERSE=1000;
+function isPlain(o){return!!o&&typeof o==="object"&&!Array.isArray(o)}
+function posNum(v){return typeof v==="number"&&isFinite(v)&&v>0}
+function okChg(v){return v===null||v===undefined||(typeof v==="number"&&isFinite(v))}
+function activeRows(rows,key){
+  if(!Array.isArray(rows)||!rows.length)return null;
+  var out=[],seen=Object.create(null),prev=Infinity;
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    if(!isPlain(r)||r.rank!==i+1||typeof r.symbol!=="string"||!SYM.test(r.symbol)||seen[r.symbol]||!posNum(r.close)||!posNum(r[key])||r[key]>prev||!okChg(r.change_pct))return null;
+    seen[r.symbol]=1;prev=r[key];
+    out.push({symbol:r.symbol,close:r.close,chg:typeof r.change_pct==="number"?r.change_pct:null,v:r[key]})}
+  return out}
+function lowRows(blk){
+  if(!isPlain(blk)||!Array.isArray(blk.rows)||!Number.isInteger(blk.count)||blk.count<blk.rows.length||(blk.rows.length===0&&blk.count!==0))return null;
+  var out=[],seen=Object.create(null);
+  for(var i=0;i<blk.rows.length;i++){
+    var r=blk.rows[i];
+    if(!isPlain(r)||r.rank!==i+1||typeof r.symbol!=="string"||!SYM.test(r.symbol)||seen[r.symbol]||r.state!=="new_low"||!posNum(r.close)||!posNum(r.prior_low_52w)||!(r.close<r.prior_low_52w)||!isDay(r.prior_low_date)||
+       typeof r.distance_pct!=="number"||!isFinite(r.distance_pct)||!(r.distance_pct<0)||Math.abs(r.distance_pct-(r.close/r.prior_low_52w-1)*100)>0.011)return null;
+    seen[r.symbol]=1;
+    out.push({symbol:r.symbol,close:r.close,prior:r.prior_low_52w,dist:r.distance_pct})}
+  return{count:blk.count,rows:out}}
+var LOW_WHY={insufficient_history:"there is not enough price history to find 52-week lows",requires_adjustment:"stocks with a suspected corporate action are left out and none can be ranked safely",unavailable:"the source files do not carry the daily low prices needed"};
+function activityOf(D,ref){
+  if(D===undefined||D===null||D===false)return{state:"missing"};
+  var bad={state:"invalid"};
+  if(!isPlain(D)||D.kind!=="market_activity"||D.schema_version!==1||D.freshness!=="EOD"||!isDay(D.as_of))return bad;
+  var wd=new Date(dayMs(D.as_of)).getUTCDay();if(wd===0||wd===6)return bad;
+  var fd=D.freshness_detail,dq=D.data_quality,ms=D.metric_status;
+  if(!isPlain(fd)||fd.source_date!==D.as_of||fd.label!=="EOD as of "+D.as_of||typeof fd.source_is_latest_trading_day!=="boolean")return bad;
+  if(!isPlain(dq)||dq.status!=="pass"||!Array.isArray(dq.errors)||dq.errors.length||!Number.isInteger(D.universe_count)||D.universe_count<ACT_MIN_UNIVERSE||!isPlain(ms))return bad;
+  if(fd.source_is_latest_trading_day!==true||fd.market_session_open_at_generation===true)return{state:"stale",asOf:D.as_of};
+  if(!ref||ref!==D.as_of)return{state:"date",asOf:D.as_of,ref:ref||null};
+  var out={state:"ok",asOf:D.as_of,universe:D.universe_count,active:null,activeWhy:null,low:null,lowWhy:null},ma=D.most_active,hl=D.high_low_52w;
+  if(ms.most_active!=="safe")out.activeWhy="the file does not mark the most-active lists as safe to use";
+  else{
+    var bv=isPlain(ma)?ma.by_value:null,bq=isPlain(ma)?ma.by_volume:null,v=isPlain(bv)&&/turnover_lakhs/.test(String(bv.ranked_by))?activeRows(bv.rows,"turnover_lakhs"):null,q=isPlain(bq)&&/\bvolume\b/.test(String(bq.ranked_by))?activeRows(bq.rows,"volume"):null;
+    if(v&&q)out.active={byValue:v,byQty:q};else out.activeWhy="the most-active lists in the file were not accepted"}
+  if(ms.new_52w_low!=="safe")out.lowWhy=LOW_WHY[ms.new_52w_low]||"the file does not mark the 52-week lows as safe to use";
+  else if(!isPlain(hl)||hl.low_column_available!==true)out.lowWhy=LOW_WHY.unavailable;
+  else{var L=lowRows(hl.new_low);if(L)out.low=L;else out.lowWhy="the 52-week low list in the file was not accepted"}
+  return out}
+/* why a block cannot be drawn when the file as a whole cannot be used */
+function actWhy(a){
+  if(!a||a.state==="missing")return"the validated market-activity file is not available";
+  if(a.state==="invalid")return"the validated market-activity file was not accepted";
+  if(a.state==="stale")return"the validated market-activity file ("+a.asOf+") is not from the latest trading day";
+  if(a.state==="date")return a.ref?"the validated market-activity file is dated "+a.asOf+", but the market data on this page is dated "+a.ref:"this page has no market date to check the validated file ("+a.asOf+") against";
+  return"the validated market-activity file cannot be used"}
+
 /* ---------- what's happening: facts from the lists above, one line each, with the rule written on it ---------- */
 function events(S){
   var out=[],seen={};
@@ -2596,12 +2655,76 @@ function hvLossTable(rows){return table([["Stock","s"],["Price","n c3"],["Change
 function relTable(rows){return table([["Stock","s"],["Stock","n"],["NIFTY 50","n c3"],["Relative","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),chg(r.stock),chg(r.bench),'<span class="'+cls(r.rel)+'">'+pp(r.rel)+' pts</span>']}))}
 function trackTable(rows,key){return table([["Stock","s"],["Last close","n"],["Change","n"]],rows.slice(0,ROWS).map(function(t){return[link(t.symbol),fmt(t.perf.last),chg(t.perf[key])]}))}
 var NEED_ALL="needs daily prices for all NSE stocks";
+/* All-time high / low: no calculation exists. The saved price history is partial (a limited period, for only some stocks) and is never described as a listing history. */
+var ATH_WHY="needs the complete listing history of every stock; the saved price history is partial (a limited period, for only some stocks), so no all-time high or low is shown";
+function lowTable(rows){return table([["Stock","s"],["Price","n"],["Prev 52W low","n c3"],["vs prev low","n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.close),fmt(r.prior),chg(r.dist)]}))}
+function lowBody(m){
+  var a=m.act;if(!a||a.state!=="ok")return na(actWhy(a));
+  if(a.lowWhy)return na(a.lowWhy);
+  var n=Math.min(ROWS,a.low.rows.length);
+  return(a.low.rows.length?lowTable(a.low.rows):'<p class="mk-sub">No new 52-week lows in the latest scan.</p>')
+    +'<p class="mk-sub">Close below the lowest low of the previous 252 trading days · end of day, as of <b>'+esc(a.asOf)+'</b>, not live. Stocks with a shorter history or a suspected split, bonus or rights issue in that window are left out, not estimated.'
+    +(a.low.count>n?" Showing "+n+" of "+a.low.count+".":"")+'</p>'}
+function activeBody(m){
+  var a=m.act;if(!a||a.state!=="ok")return na(actWhy(a));
+  if(a.activeWhy)return na(a.activeWhy);
+  var t=function(rows,h,f){return table([["Stock","s"],["Close","n"],["Change","n c3"],[h,"n"]],rows.slice(0,ROWS).map(function(r){return[link(r.symbol),fmt(r.close),chg(r.chg),f(r.v)]}))};
+  return'<h4 class="mk-h4">By traded value (turnover, \u20b9 lakh)</h4>'+t(a.active.byValue,"Turnover",function(v){return fmt(v)})
+    +'<h4 class="mk-h4">By traded quantity (shares)</h4>'+t(a.active.byQty,"Volume",vol)
+    +'<p class="mk-sub">Two different rankings across all '+esc(fmt(a.universe,0))+' NSE EQ-series stocks, top '+ROWS+' of each · end of day, as of <b>'+esc(a.asOf)+'</b>, not live.</p>'}
 
 /* ---------- the sections ---------- */
 var S_={};
-S_["mk-today"]=function(m){
-  var h='';
+/* SENSEX-EOD:start */
+/* SENSEX end-of-day card (Market Today, SENSEX tab). END-OF-DAY ONLY: there is no SENSEX real-time value anywhere in this page.
+   It reads ONE file, out/sensex_history.json, written by sensex_data_updater.py (its own file: out/historical.json, the NIFTY 50 data, is never involved), and only when someone selects the SENSEX tab.
+   TWO gates must both be open before any SENSEX value is drawn or even requested, and both ship CLOSED:
+     1. SENSEX_PAGE_APPROVED below (this constant, default false: it is changed by a deliberate, reviewed edit of this page), and
+     2. the file itself saying public_display_approved === true (strict boolean; the updater writes false unless SENSEX_PUBLIC_DISPLAY_APPROVED is "true").
+   While either gate is closed, or the file is missing, invalid or stale, the tab shows the plain unavailable message and the file is not even fetched (gate 1).
+   NOT YET CONFIRMED, and the reason both gates are closed: public redistribution rights for BSE SENSEX data; the BSE instrument-metadata URL the updater uses is an unverified candidate.
+   The file is checked here again before use: kind, schema version, the instrument key, one valid close per day in strictly ascending order, and last_date = as_of = the last candle.
+   Nothing is ever taken from NIFTY 50: SENSEX shows its own latest trading date, and a difference from NIFTY's date is stated on the card. */
+var SENSEX_PAGE_APPROVED=false;
+var SENSEX_FILE="out/sensex_history.json";
+function idxCardHtml(name,perf){
+  return'<div class="mk-idx-grid"><div class="mk-idx"><div class="mk-idx-h"><b>'+esc(name)+'</b><span class="v">'+fmt(perf.last)+'</span></div>'
+    +'<div class="mk-perf">'+WINDOWS.map(function(w){return'<div><small>'+w.label+'</small><span class="'+cls(perf[w.key])+'">'+pct(perf[w.key])+'</span></div>'}).join("")+'</div>'
+    +'<p class="mk-sub">As of '+esc(perf.date)+'</p></div></div>'}
+function sensexPerf(d){
+  if(SENSEX_PAGE_APPROVED!==true||!d||typeof d!=="object"||d.public_display_approved!==true)return null;
+  if(d.kind!=="sensex_history"||d.schema_version!==1)return null;
+  var ins=d.instrument;if(!ins||typeof ins!=="object"||ins.label!=="SENSEX"||ins.instrument_key!=="BSE_INDEX|SENSEX")return null;
+  var raw=d.candles;if(!Array.isArray(raw)||raw.length<2)return null;
+  for(var i=0;i<raw.length;i++){
+    var c=raw[i];
+    if(!c||typeof c!=="object"||!isDay(c.date)||typeof c.close!=="number"||!isFinite(c.close)||!(c.close>0)||(i>0&&!(raw[i-1].date<c.date)))return null}
+  var p=perfOf(raw);
+  return p&&p.date===raw[raw.length-1].date&&d.last_date===p.date&&d.as_of===p.date?p:null}
+var SENSEX_NA="SENSEX is not available yet: its data source has not been verified, so no value is shown";
+function sxNote(t){return'<p class="mk-sub">'+t+'</p>'}
+/* What the SENSEX tab shows. It is never empty and never takes anything from NIFTY 50:
+   - gate closed: exactly the unavailable message, nothing else (the shipped page);
+   - gate open, file not answered yet: a loading line;
+   - otherwise either the card, or that same unavailable message followed by one line saying why (not loaded, not accepted, no date to check against, out of date). */
+function sensexView(m){
+  if(SENSEX_PAGE_APPROVED!==true)return na(SENSEX_NA);
+  var d=m&&m.sensex;
+  if(d===undefined||d===null)return'<p class="mk-na" role="status">Loading SENSEX end-of-day data\u2026</p>';
+  if(d===false)return na(SENSEX_NA)+sxNote("The SENSEX end-of-day file could not be loaded.");
+  var p=sensexPerf(d);if(!p)return na(SENSEX_NA)+sxNote("The SENSEX end-of-day data was not accepted for display.");
+  var nf=m.indices&&m.indices.length&&m.indices[0].perf?m.indices[0].perf.date:null,ref=[m.asOf,nf].filter(isDay).sort().pop()||null;
+  if(!ref)return na(SENSEX_NA)+sxNote("There is no market date on this page to check the SENSEX end-of-day data against.");
+  if(dayMs(ref)-dayMs(p.date)>7*DAY)return na(SENSEX_NA)+sxNote("The latest SENSEX end-of-day date ("+esc(p.date)+") is more than 7 days behind the market data on this page.");
+  return idxCardHtml("SENSEX",p)+(nf&&nf!==p.date?'<p class="mk-sub">SENSEX is as of <b>'+esc(p.date)+'</b>; NIFTY 50 is as of <b>'+esc(nf)+'</b>. These are not the same trading day.</p>':'')}
+/* SENSEX-EOD:end */
+var INDEX_TABS=["NIFTY 50","SENSEX"];
+S_["mk-today"]=function(m,st){
+  var h='',sel=INDEX_TABS.indexOf(st&&st.index)>=0?st.index:INDEX_TABS[0];
   h+='<p class="mk-status">'+(m.asOf?'Latest available market data: <b>'+esc(m.asOf)+'</b> · end of day, not live':'Latest available market data: <b>unavailable</b>')+'</p>';
+  h+='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="index">'+INDEX_TABS.map(function(n){return'<button type="button" role="tab" data-tab="'+esc(n)+'" aria-selected="'+(n===sel)+'">'+esc(n)+'</button>'}).join("")+'</div>';
+  /* SENSEX is a BSE index. No SENSEX series is published and its instrument identifier has not been verified, so nothing is shown for it and nothing is guessed. */
+  if(sel==="SENSEX")return h+sensexView(m);
   if(!m.indices.length)return h+na("NIFTY 50 history is not loaded");
   h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
     return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
@@ -2662,14 +2785,14 @@ S_["mk-trending"]=function(m,st){
   var mv=byChange(m.gainers.concat(m.losers),1).sort(function(a,b){return Math.abs(num(b.change_pct))-Math.abs(num(a.change_pct))||(a.symbol<b.symbol?-1:1)});
   if(tab==="movers")h+=mv.length?priceTable(mv,{h:"Vol vs avg",f:function(r){return mult(r.volume_x_avg)}}):na("no movers in the latest scan");
   else if(tab==="volume")h+=m.shockers.length?shockerTable(m.shockers):na("no volume shockers in the latest scan");
-  else if(tab==="52w")h+=(m.highs.length?'<h4 class="mk-h4">New 52-week high</h4>'+highTable(m.highs):'')+'<h4 class="mk-h4">New 52-week low</h4>'+na(NEED_ALL);
-  else if(tab==="ath")h+=na("needs the full price history of every stock (the current data holds about one year)");
-  else h+=na("most-active needs traded volume for all NSE stocks");
+  else if(tab==="52w")h+=(m.highs.length?'<h4 class="mk-h4">New 52-week high</h4>'+highTable(m.highs):'')+'<h4 class="mk-h4">New 52-week low</h4>'+lowBody(m);
+  else if(tab==="ath")h+=na(ATH_WHY);
+  else h+=activeBody(m);
   return'<div class="mk-card">'+h+'</div>'}
 S_["mk-52w"]=function(m){
   return'<div class="mk-2">'+card("New 52-Week High","Close above the previous 52-week high",m.highs.length?highTable(m.highs):na("no new highs in the latest scan"))
-    +card("New 52-Week Low","",na(NEED_ALL+" (the scan lists new highs only)"))+'</div>'}
-S_["mk-ath"]=function(){return'<div class="mk-2">'+card("New All-Time High","",na("needs the full price history of every stock"))+card("New All-Time Low","",na("needs the full price history of every stock"))+'</div>'}
+    +card("New 52-Week Low","Close below the previous 52-week low",lowBody(m))+'</div>'}
+S_["mk-ath"]=function(){return'<div class="mk-2">'+card("New All-Time High","",na(ATH_WHY))+card("New All-Time Low","",na(ATH_WHY))+'</div>'}
 S_["mk-volume"]=function(m){return m.shockers.length?box(shockerTable(m.shockers))+'<p class="mk-sub">Volume at least '+VOL_MULT+'x the 20-day average, price up. 20-day average is volume divided by the multiple (3 significant digits).</p>':na("no volume shockers in the latest scan")}
 S_["mk-hvgain"]=function(m){return m.hvGain.length?box(shockerTable(m.hvGain))+'<p class="mk-sub">Volume '+VOL_MULT+'x the average or more and a gain of '+HV_GAIN+'% or more, by volume multiple. From the 25 highest volume multiples in the scan.</p>':na("none in the latest scan")}
 S_["mk-hvloss"]=function(m){return m.hvLoss.length?box(hvLossTable(m.hvLoss))+'<p class="mk-sub">Among the 25 biggest losers: volume '+VOL_MULT+'x the 20-day average or more, by volume multiple.</p>':na("none among the biggest losers in the latest scan")}
@@ -2707,8 +2830,8 @@ S_["mk-swing"]=function(m,st){
   return h+'<div class="mk-g">'+cards.join("")+'</div>'}
 
 /* ---------- the model: everything above, computed once from the three files ---------- */
-function model(S,H,F,X,Y){
-  var tr=tracked(H),m={sec:sectorsOf(X),sectorStocks:Y||null,S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
+function model(S,H,F,X,Y,A){
+  var tr=tracked(H),m={sec:sectorsOf(X),sectorStocks:Y||null,S:S,asOf:S&&isDay(S.as_of)?S.as_of:null,act:activityOf(A,S&&isDay(S.as_of)?S.as_of:null),indices:indices(H),breadth:breadth(S),events:events(S),gainers:gainers(S),losers:losers(S),highs:highs(S),shockers:shockers(S),hvGain:hvGain(S),hvLoss:hvLoss(S),fiidii:fiidii(F),track:tr,trackedCount:tr.length,rel:{}};
   WINDOWS.forEach(function(w){m.rel[w.key]=relative(H,w.key)});return m}
 var IDS=["mk-today","mk-breadth","mk-happening","mk-sectors","mk-movers","mk-trending","mk-52w","mk-ath","mk-volume","mk-hvgain","mk-hvloss","mk-relative","mk-fiidii","mk-sectorlead","mk-swing"];
 function sectionHtml(id,m,st){try{return S_[id](m,st||{})}catch(e){return na("this block could not be drawn")}}
@@ -2728,9 +2851,16 @@ function init(){
     STATE.sector=b.getAttribute("data-mk-sector");
     if(M.sectorStocks!==null){paint("mk-sectors");return}
     getJson("out/market_sector_stocks.json").then(function(d){M.sectorStocks=d||false;paint("mk-sectors")})});
-  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json"),getJson("out/market_sectors.json")]).then(function(r){M=model(r[0],r[1],r[2],r[3]);paintAll()})}
+  /* SENSEX-EOD:start */
+  /* the SENSEX file is requested only when the SENSEX tab is first selected, and only if the page-level gate is open */
+  document.addEventListener("click",function(e){
+    var b=e.target&&e.target.closest&&e.target.closest("[data-mk-tabs] [data-tab]");
+    if(!b||!M||SENSEX_PAGE_APPROVED!==true||M.sensex!==undefined||b.getAttribute("data-tab")!=="SENSEX"||!b.parentNode||b.parentNode.getAttribute("data-mk-tabs")!=="index")return;
+    M.sensex=null;getJson(SENSEX_FILE).then(function(d){M.sensex=d||false;paint("mk-today")})});
+  /* SENSEX-EOD:end */
+  Promise.all([getJson("out/scans.json"),getJson("out/historical.json"),getJson("out/fiidii_history.json"),getJson("out/market_sectors.json"),getJson("out/market_activity.json")]).then(function(r){M=model(r[0],r[1],r[2],r[3],null,r[4]);paintAll()})}
 if(typeof document!=="undefined"&&document.getElementById)init();
-window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
+window.SLMarket={activityOf:activityOf,perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked:tracked,relative:relative,events:events,fiidii:fiidii,breadth:breadth,gainers:gainers,losers:losers,highs:highs,shockers:shockers,hvGain:hvGain,hvLoss:hvLoss,sectorsOf:sectorsOf,stocksOf:stocksOf,model:model,sectionHtml:sectionHtml,IDS:IDS,WINDOWS:WINDOWS,LARGE_MOVE:LARGE_MOVE,VOL_MULT:VOL_MULT,HV_GAIN:HV_GAIN,num:num,sig3:sig3,vol:vol};
 })();
 </script>
 <script type="module" id="stocklens-live">
@@ -2745,7 +2875,7 @@ window.SLMarket={perfOf:perfOf,cleanCandles:cleanCandles,indices:indices,tracked
 (function(){
 "use strict";
 var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
-var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:5000,timeout:4000,maxBytes:65536,defaultPort:8765};
+var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765};
 var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
 var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
 var SOURCE="Upstox market data feed V3 (ltpc)",SYM=/^[A-Z0-9&._-]{1,30}$/;
@@ -2828,19 +2958,28 @@ function accepts(d,serverNow){
   return out}
 
 /* ---------- one poll's answer -> what may be shown ---------- */
-function Controller(){this.lastTs=null;this.lastAdvance=null;this.lastSeq=null}
+function Controller(){this.lastTs=null;this.lastAdvance=null;this.lastSeq=null;this.good=null}
+/* kind says what the page may say: live | stale (a valid snapshot that is no longer current, shown only as STALE with its own time) | closed | unavailable.
+   state keeps the older three-way answer (live | hidden | unavailable). Only "live" ever carries blocks; only "stale" carries a snapshot in .last. */
 Controller.prototype.ingest=function(res,localNow){
-  var none=function(state,why){return{state:state,reason:why,blocks:null,doc:null}};
-  if(!res||res.error||res.status!==200||typeof res.text!=="string")return none("unavailable",res&&res.error?String(res.error):"no answer");
+  var self=this,none=function(state,why,kind,last){return{state:state,reason:why,kind:kind||"unavailable",blocks:null,doc:null,last:last||null}};
+  var failed=function(why){var g=self.good;return g&&localNow>=g.at&&localNow-g.at<=CFG.staleKeep?none("unavailable",why,"stale",g.doc):none("unavailable",why)};
+  if(!res||res.error||res.status!==200||typeof res.text!=="string")return failed(res&&res.error?String(res.error):"no answer");
   if(res.text.length>CFG.maxBytes)return none("hidden","response too large");
   var d;try{d=JSON.parse(res.text)}catch(e){return none("hidden","not valid JSON")}
-  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0];
+  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0],stalled=false;
   if(validate(d).length===0){
     if(this.lastTs!==null&&d.server_ts_ms<this.lastTs)return none("hidden","snapshot is older than one already seen");
     if(this.lastTs===null||d.server_ts_ms>this.lastTs){this.lastTs=d.server_ts_ms;this.lastSeq=d.seq;this.lastAdvance=localNow}
-    else if(localNow-this.lastAdvance>CFG.stall)return none("hidden","snapshot is not advancing")}
-  if(!any)return{state:"hidden",reason:v.indices[1],blocks:null,doc:null};
-  return{state:"live",reason:"",blocks:v,doc:d}};
+    else if(localNow-this.lastAdvance>CFG.stall)stalled=true;
+    var age=serverNow-d.server_ts_ms;
+    if(d.scope.universe==="test_set"||!d.quality.ok)return none("hidden",!d.quality.ok?"relay reports a problem: "+d.quality.reasons.join(","):"test snapshot");
+    if(d.market.status==="closed"||d.market.status==="pre_open")return none("hidden","market is "+(d.market.status==="closed"?"closed":"not open yet"),"closed");
+    if(d.market.status==="open"&&(stalled||age>CFG.maxAge)&&age>=-CFG.skew&&age<=CFG.staleKeep)return none("hidden",stalled?"snapshot is not advancing":"snapshot is "+Math.round(age/1000)+" s old","stale",d)}
+  if(!any)return none("hidden",v.indices[1]);
+  this.good={doc:d,at:localNow};
+  return{state:"live",reason:"",kind:"live",blocks:v,doc:d,last:null}};
+function labelOf(v){return!v?"UNAVAILABLE":v.state==="live"?"LIVE":v.kind==="stale"?"STALE":v.kind==="closed"?"CLOSED":"UNAVAILABLE"}
 
 /* ---------- drawing (textContent only) ---------- */
 function fmt(v,dp){return v.toLocaleString("en-IN",{minimumFractionDigits:dp,maximumFractionDigits:dp})}
@@ -2849,8 +2988,10 @@ function tone(v){return v>0?"up":v<0?"dn":""}
 var CSS=".lv-chip{margin:0 0 10px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--acs);color:var(--ink);font-size:.8rem}"
   +".lv-panel{margin:0 0 12px;padding:10px 12px;border:1px solid var(--ac);border-radius:12px;background:var(--card)}"
   +".lv-head{margin:0 0 8px;font-size:.8rem;color:var(--mute)}.lv-head b{color:var(--ac)}.lv-note{margin:8px 0 0;font-size:.74rem;color:var(--mute)}"
+  +".lv-panel.lv-stale{border-style:dashed;border-color:var(--mute)}.lv-panel.lv-stale .lv-head b{color:var(--mute)}"
   +".lv-chg{display:flex;gap:10px;margin-top:6px;font-variant-numeric:tabular-nums;font-size:.9rem}";
-function Ui(doc){this.doc=doc;this.panels={};this.chip=null;this.css=null}
+var TABS=["NIFTY 50","SENSEX"];
+function Ui(doc){this.doc=doc;this.panels={};this.chip=null;this.css=null;this.sel=TABS[0];this.view=null}
 Ui.prototype.el=function(tag,cls,text){var e=this.doc.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=String(text);return e};
 Ui.prototype.mount=function(){
   if(this.css)return;
@@ -2861,18 +3002,27 @@ Ui.prototype.drop=function(name){var e=this.panels[name];if(e&&e.parentNode)e.pa
 Ui.prototype.put=function(name,secId,node){
   this.drop(name);var sec=this.doc.getElementById(secId);if(!sec)return;
   var box=sec.querySelector("[data-mk]");sec.insertBefore(node,box||null);this.panels[name]=node};
-Ui.prototype.head=function(doc,what){
-  var h=this.el("p","lv-head"),b=this.el("b",null,"Live");h.appendChild(b);
-  h.appendChild(this.el("span",null," · "+what+" · updated "+doc.generated_at.slice(11,19)+" IST · private test"));return h};
-Ui.prototype.indices=function(doc){
-  var n=this.el("div","lv-panel"),g=this.el("div","mk-idx-grid");n.setAttribute("data-lv","indices");n.appendChild(this.head(doc,"indices"));
-  doc.indices.forEach(function(x){
-    var c=this.el("div","mk-idx"),h=this.el("div","mk-idx-h");h.appendChild(this.el("b",null,x.name));h.appendChild(this.el("span","v",fmt(x.ltp,2)));c.appendChild(h);
-    var row=this.el("div","lv-chg");
-    if(x.cp&&isNum(x.change_pct)){var cl=tone(x.change_pct);row.appendChild(this.el("span",cl,signed(x.change,2)));row.appendChild(this.el("span",cl,signed(x.change_pct,2)+"%"))}
-    else row.appendChild(this.el("span",null,"previous close not available"));
-    c.appendChild(row);g.appendChild(c)},this);
-  n.appendChild(g);n.appendChild(this.el("p","lv-note","Last traded prices from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
+Ui.prototype.head=function(doc,what,lab){
+  var h=this.el("p","lv-head"),b=this.el("b",null,lab||"LIVE");h.appendChild(b);
+  h.appendChild(this.el("span",null," · "+what+(lab==="STALE"?" · last update ":" · updated ")+doc.generated_at.slice(11,19)+" IST · private test"));return h};
+/* the one panel for the selected tab: its own live value, or a plain statement that there is none. Nothing is guessed for an index the snapshot does not carry. */
+Ui.prototype.indices=function(doc,lab){
+  var sel=this.sel,x=null;
+  doc.indices.forEach(function(r){if(r.name===sel)x=r});
+  /* the header says LIVE or STALE only when the selected index has its own row; otherwise it says there is no live value */
+  if(!x)lab="No live value";
+  var n=this.el("div","lv-panel"+(lab==="STALE"?" lv-stale":""));n.setAttribute("data-lv","indices");n.setAttribute("data-lv-index",sel);
+  n.appendChild(this.head(doc,sel,lab));
+  if(!x){
+    n.appendChild(this.el("p","mk-na",sel==="SENSEX"?"SENSEX has no live value: its data source has not been verified, so none is shown.":sel+" is not in the live snapshot."));
+    return n}
+  var c=this.el("div","mk-idx"),h=this.el("div","mk-idx-h");h.appendChild(this.el("b",null,x.name));h.appendChild(this.el("span","v",fmt(x.ltp,2)));c.appendChild(h);
+  var row=this.el("div","lv-chg");
+  if(x.cp&&isNum(x.change_pct)){var cl=tone(x.change_pct);row.appendChild(this.el("span",cl,signed(x.change,2)));row.appendChild(this.el("span",cl,signed(x.change_pct,2)+"%"))}
+  else row.appendChild(this.el("span",null,"previous close not available"));
+  c.appendChild(row);n.appendChild(c);
+  n.appendChild(this.el("p","lv-note",lab==="STALE"?"This value is no longer current. It is the last one received, shown with its own time. The end-of-day figures below are unchanged."
+    :"Last traded price from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
 Ui.prototype.breadth=function(doc){
   var n=this.el("div","lv-panel"),t=this.el("div","mk-tiles"),b=doc.breadth;n.setAttribute("data-lv","breadth");n.appendChild(this.head(doc,"breadth"));
   [["Advances",b.advances],["Declines",b.declines],["Unchanged",b.unchanged]].forEach(function(x){var tile=this.el("div","mk-tile");tile.appendChild(this.el("b",null,fmt(x[1],0)));tile.appendChild(this.el("span",null,x[0]));t.appendChild(tile)},this);
@@ -2891,20 +3041,26 @@ Ui.prototype.movers=function(doc){
       tb.appendChild(bd);card.appendChild(tb)}
     two.appendChild(card)},this);
   n.appendChild(two);n.appendChild(this.el("p","lv-note","Change against the previous close, among the liquid stocks being tracked live. Descriptive figures only."));return n};
-Ui.prototype.update=function(view){
-  this.mount();
-  var say=function(t){if(this.chip)this.chip.textContent=t}.bind(this);
-  if(view.state==="live"){
+Ui.prototype.select=function(name){if(TABS.indexOf(name)<0||name===this.sel)return;this.sel=name;if(this.view)this.render()};
+Ui.prototype.update=function(view){this.mount();this.view=view;this.render()};
+Ui.prototype.render=function(){
+  var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre="Live (private test) · "+lab;
+  if(lab==="LIVE"){
     var b=view.blocks,d=view.doc;
-    if(b.indices[0])this.put("indices","mk-today",this.indices(d));else this.drop("indices");
+    if(b.indices[0])this.put("indices","mk-today",this.indices(d,"LIVE"));else this.drop("indices");
     if(b.breadth[0])this.put("breadth","mk-breadth",this.breadth(d));else this.drop("breadth");
     if(b.movers[0])this.put("movers","mk-movers",this.movers(d));else this.drop("movers");
     var off=["indices","breadth","movers"].filter(function(k){return !b[k][0]});
-    say("Live (private test) · updated "+d.generated_at.slice(11,19)+" IST"+(off.length?" · not shown: "+off.map(function(k){return k+" ("+b[k][1]+")"}).join("; "):"")+" · end-of-day figures below are unchanged")}
-  else{
-    ["indices","breadth","movers"].forEach(this.drop,this);
-    say(view.state==="unavailable"?"Live (private test): the local relay is not reachable. Showing end-of-day data."
-      :"Live (private test): not shown ("+view.reason+"). Showing end-of-day data.")}};
+    say(pre+" · updated "+d.generated_at.slice(11,19)+" IST"+(off.length?" · not shown: "+off.map(function(k){return k+" ("+b[k][1]+")"}).join("; "):"")+" · end-of-day figures below are unchanged");return}
+  ["breadth","movers"].forEach(this.drop,this);
+  if(lab==="STALE"&&view.last&&view.last.indices){
+    this.put("indices","mk-today",this.indices(view.last,"STALE"));
+    say(pre+" · "+view.reason+" · showing the last value received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
+  this.drop("indices");
+  say(lab==="CLOSED"?pre+" · "+view.reason+". Showing end-of-day data, which is not live."
+    :lab==="STALE"?pre+" · "+view.reason+". Showing end-of-day data."
+    :view.state==="unavailable"?pre+" · the local relay is not reachable. Showing end-of-day data."
+    :pre+" · not shown ("+view.reason+"). Showing end-of-day data.")};
 
 /* ---------- the loop ---------- */
 function poll(url){
@@ -2916,14 +3072,22 @@ function poll(url){
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
     return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
-  var ctl=new Controller(),ui=new Ui(env.document);
+  var ctl=new Controller(),ui=new Ui(env.document),busy=false;
   function next(){env.setTimeout(tick,CFG.poll)}
-  function tick(){
-    if(env.document.visibilityState==="hidden"){next();return}
+  /* one request at a time: a call while another is still in flight does nothing */
+  function refresh(){
+    if(busy)return false;
+    busy=true;
     poll(g.url).then(function(res){
-      try{ui.update(ctl.ingest(res,Date.now()))}catch(e){try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}}}).then(next,next)}
-  ui.mount();tick();return{ui:ui,controller:ctl}}
-window.SLLive={gate:gate,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start};
+      try{ui.update(ctl.ingest(res,Date.now()))}catch(e){try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}}}).then(function(){busy=false},function(){busy=false});
+    return true}
+  function tick(){if(env.document.visibilityState!=="hidden")refresh();next()}
+  /* the page's own index tabs choose which index the live panel shows; the click only redraws what was already received */
+  if(typeof env.document.addEventListener==="function")env.document.addEventListener("click",function(e){
+    var t=e&&e.target,b=t&&typeof t.closest==="function"?t.closest("[data-mk-tabs] [data-tab]"):null;
+    if(b&&typeof b.getAttribute==="function"&&b.parentNode&&b.parentNode.getAttribute("data-mk-tabs")==="index")ui.select(b.getAttribute("data-tab"))});
+  ui.mount();refresh();next();return{ui:ui,controller:ctl,refresh:refresh}}
+window.SLLive={gate:gate,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
 })();

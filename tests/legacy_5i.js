@@ -17,6 +17,11 @@ function legacy(h) {
   s = s.replace("  var company=v.company_name||f.company_name,mc=marketCap(d.sh,s,p.price);\n", () => "  var company=v.company_name||f.company_name,sector=v.sector;\n");
   s = s.replace('tile("Market Cap (₹ crore)",cr(mc.cap))', () => 'tile("Sector",sector?esc(sector):"-")');
   s = s.replace(/ '\+\(mc\.cap!==null\?[\s\S]*?\)\+'<\/p>';/, () => "</p>';");
+  /* SENSEX end-of-day card: its marked blocks (constants and functions, and the lazy file request) */
+  s = s.replace(/[ \t]*\/\* SENSEX-EOD:start \*\/[\s\S]*?\/\* SENSEX-EOD:end \*\/\n/g, "");
+  /* Market Today index tabs (NIFTY 50 / SENSEX): put back the single-card S_["mk-today"] head */
+  s = s.replace('var INDEX_TABS=["NIFTY 50","SENSEX"];\nS_["mk-today"]=function(m,st){\n  var h=\'\',sel=INDEX_TABS.indexOf(st&&st.index)>=0?st.index:INDEX_TABS[0];\n', () => 'S_["mk-today"]=function(m){\n  var h=\'\';\n');
+  s = s.replace(/  h\+='<div class="tabs mk-tabs"[\s\S]*?  if\(sel==="SENSEX"\)return h\+[^\n]*;\n/, "");
   /* Phase 5J: the market dashboard replaced the old home page (its markup, its scripts and its footer); put the old ones back */
   s = s.replace(/<style id="marketCss">[\s\S]*?<\/style>/, "");
   s = s.replace(/<script type="module" id="stocklens-market">[\s\S]*?<\/script>\n/, "");
