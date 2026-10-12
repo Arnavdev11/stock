@@ -306,7 +306,10 @@ class Isolation(unittest.TestCase):
         self.assertEqual(G.without_market_activity(G.without_market_activity(now)), G.without_market_activity(now))   # idempotent
 
     def test_stage_8c_reversal_is_a_no_op_without_the_edit(self):
-        _, head = self._page_pair()
+        pin = subprocess.run(["git", "show", "f682bbb:index.html"], cwd=str(ROOT), capture_output=True)       # the Phase 2 page never carried the edit (HEAD does, once committed)
+        if pin.returncode != 0:
+            self.skipTest("the pinned commit is not available")
+        head = pin.stdout.decode("utf-8")
         self.assertNotIn("market_activity.json", head)
         self.assertEqual(G.without_market_activity(head), head)
         self.assertEqual(G.without_market_activity("<html>nothing</html>"), "<html>nothing</html>")
