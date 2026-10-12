@@ -156,6 +156,20 @@ jobs:
         continue-on-error: true
         run: python validate_outputs.py
 
+      # Market activity (52-week lows, most active). Reads only the saved NSE files, downloads nothing, uses no credential.
+      # If either command fails, the four derived files are removed (so nothing old or unchecked is published) and the step fails; the site still publishes
+      # (the page shows "not available" for those blocks).
+      - name: Derive and validate market activity data
+        continue-on-error: true
+        run: |
+          if python market_data_updater.py && python validate_market_outputs.py; then
+            echo "Market activity data derived and validated."
+          else
+            rm -f out/market_breadth.json out/market_movers.json out/market_activity.json out/market_dma.json
+            echo "::error::Market activity data failed; the derived files were removed and will not be published."
+            exit 1
+          fi
+
       - name: Build site folder
         env:
           SENSEX_PUBLIC_DISPLAY_APPROVED: "false"
@@ -171,6 +185,10 @@ jobs:
           if [ -f ledger-branch/historical/historical.json ]; then cp ledger-branch/historical/historical.json _site/out/historical.json; fi
           if ls ledger-branch/historical/shards/*.json >/dev/null 2>&1; then mkdir -p _site/out/by_symbol/historical; cp ledger-branch/historical/shards/*.json _site/out/by_symbol/historical/; fi
           cp company_profiles.json _site/out/
+          # index_history.json (Upstox index candles) is not published until its redistribution rights are approved.
+          rm -f _site/out/index_history.json
+          # market_breadth.json, market_movers.json and market_dma.json are not published until their publication has been approved. Only market_activity.json (validated above) is.
+          rm -f _site/out/market_breadth.json _site/out/market_movers.json _site/out/market_dma.json
           # SENSEX end-of-day file: never published unless SENSEX_PUBLIC_DISPLAY_APPROVED is exactly "true" (sensex_publish.py). Runs after every copy above.
           python sensex_publish.py guard --site _site
 

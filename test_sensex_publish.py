@@ -315,6 +315,11 @@ def step_of(name):
     return steps[0]
 
 
+# Stage 9D: the daily build (update.yml) removes out/index_history.json from the site folder (Upstox index candles; redistribution rights not yet approved).
+# market_data.yml is unchanged and still copies it.
+HELD_BACK = {"update.yml": "out/index_history.json"}
+
+
 class Workflows(unittest.TestCase):
     """The real build steps, run with bash in a throw-away working folder."""
 
@@ -340,6 +345,87 @@ class Workflows(unittest.TestCase):
         e.update(env)
         return subprocess.run(["bash", "-eo", "pipefail", "-c", script], cwd=str(root), env=e, capture_output=True, text=True, timeout=120)
 
+    def test_the_daily_build_derives_market_activity_without_credentials_and_without_index_history(self):
+        t = (ROOT / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8")
+        i, j, k = t.index("Derive and validate market activity data"), t.index("- name: Build site folder"), t.index("python sensex_publish.py guard")
+        self.assertTrue(t.index("- name: Validate outputs") < i < j < k)                   # after the other validation, before the site is built, guard still last
+        step = t[i:j]
+        self.assertIn("continue-on-error: true", step)                                       # a failure never stops the site from publishing
+        self.assertIn("python market_data_updater.py", step)
+        self.assertIn("python validate_market_outputs.py", step)
+        for banned in ("UPSTOX", "secrets.", "index_data_updater", "curl", "wget"):
+            self.assertNotIn(banned, step)                                                   # reads the saved NSE files only; the Upstox index file is never fetched here
+        build = t[j:k]
+        self.assertIn("rm -f _site/out/index_history.json", build)                          # and an index file from the cache is held back from the site
+        self.assertTrue(build.index("cp out/*.json _site/out/") < build.index("rm -f _site/out/index_history.json"))
+        self.assertEqual(t.count("python sensex_publish.py guard --site _site"), 1)
+
+    # --- Stage 9D: the generation step's cleanup, and which derived files the daily build may publish
+    MARKET_FILES = ["market_breadth.json", "market_movers.json", "market_activity.json", "market_dma.json"]
+
+    def run_market_step(self, upd_rc, val_rc):
+        """The real generation step, run with bash -e in a throw-away folder. The two scripts are stand-ins that only exit with the given code."""
+        t = (ROOT / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8")
+        script = t[t.index("Derive and validate market activity data"):t.index("- name: Build site folder")].split("run: |\n", 1)[1]
+        script = "\n".join(l[10:] if l.startswith(" " * 10) else l for l in script.splitlines() if not l.strip().startswith("#"))
+        script = script.replace("python ", '"%s" ' % sys.executable)
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "out").mkdir()
+            for name in self.MARKET_FILES + ["scans.json", "historical.json", "index_history.json"]:
+                write(root / "out" / name, '{"old":1}')
+            write(root / "market_data_updater.py", "import sys\nsys.exit(%d)\n" % upd_rc)
+            write(root / "validate_market_outputs.py", "import sys\nsys.exit(%d)\n" % val_rc)
+            r = subprocess.run(["bash", "-e", "-c", script], cwd=str(root), capture_output=True, text=True, timeout=60)
+            left = sorted(p.name for p in (root / "out").iterdir())
+            return r, left
+
+    def test_the_generation_step_keeps_the_files_when_both_commands_succeed(self):
+        r, left = self.run_market_step(0, 0)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(left, sorted(self.MARKET_FILES + ["scans.json", "historical.json", "index_history.json"]))
+
+    def test_the_generation_step_removes_the_four_files_and_fails_when_either_command_fails(self):
+        for upd, val in ((1, 0), (0, 1), (1, 1), (2, 0), (0, 3)):
+            r, left = self.run_market_step(upd, val)
+            self.assertNotEqual(r.returncode, 0, (upd, val, r.stdout + r.stderr))               # the failure stays visible
+            for name in self.MARKET_FILES:
+                self.assertNotIn(name, left, (upd, val))                                         # nothing old or unchecked is left to publish
+            self.assertEqual(sorted(set(left) & {"scans.json", "historical.json", "index_history.json"}), ["historical.json", "index_history.json", "scans.json"], (upd, val))   # nothing else is touched
+
+    def test_the_validator_is_not_run_after_a_failed_updater(self):
+        t = (ROOT / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8")
+        step = t[t.index("Derive and validate market activity data"):t.index("- name: Build site folder")]
+        self.assertIn("if python market_data_updater.py && python validate_market_outputs.py; then", step)      # && : the validator only runs after a successful updater
+        self.assertEqual(step.count("exit 1"), 1)
+        self.assertIn("rm -f out/market_breadth.json out/market_movers.json out/market_activity.json out/market_dma.json", step)
+
+    def test_only_market_activity_may_reach_the_site_from_the_derived_files(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t)
+            self.lay_out(root, False)
+            for name in self.MARKET_FILES:
+                write(root / "out" / name, '{"k":"%s"}' % name)
+            r = self.run_step("update.yml", root, None)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            site = sorted(p.name for p in (root / "_site" / "out").iterdir() if p.is_file())
+            self.assertIn("market_activity.json", site)                                           # eligible
+            for held in ("market_breadth.json", "market_movers.json", "market_dma.json", "index_history.json", "sensex_history.json"):
+                self.assertNotIn(held, site)                                                      # held back
+            self.assertEqual((root / "_site" / "out" / "market_activity.json").read_bytes(), (root / "out" / "market_activity.json").read_bytes())
+        with tempfile.TemporaryDirectory() as t:                                                  # market_data.yml is unchanged: it still copies them all
+            root = Path(t)
+            self.lay_out(root, False)
+            for name in self.MARKET_FILES:
+                write(root / "out" / name, '{"k":"%s"}' % name)
+            self.assertEqual(self.run_step("market_data.yml", root, None).returncode, 0)
+            for name in self.MARKET_FILES + ["index_history.json"]:
+                self.assertTrue((root / "_site" / "out" / name).exists(), name)
+
+    def test_a_failed_run_cannot_leave_a_stale_activity_file_in_the_site(self):
+        r, left = self.run_market_step(1, 0)
+        self.assertNotIn("market_activity.json", left)                                           # removed by the step, so the later copy has nothing to publish
+
     def test_the_file_is_excluded_by_default_even_when_it_sits_in_out(self):
         for name in WORKFLOWS:
             with tempfile.TemporaryDirectory() as t:
@@ -350,6 +436,9 @@ class Workflows(unittest.TestCase):
                 self.assertFalse((root / "_site" / "out" / "sensex_history.json").exists(), name)
                 self.assertTrue((root / "out" / "sensex_history.json").exists(), "the guard touches only the site folder, never out/")
                 for rel in files:                                                          # everything else is copied exactly as before
+                    if rel == HELD_BACK.get(name):
+                        self.assertFalse((root / "_site" / rel).exists(), name + " must not publish " + rel)
+                        continue
                     site_rel = "_site/" + rel if rel == "index.html" else "_site/out/" + (rel[4:] if rel.startswith("out/") else rel)
                     self.assertEqual((root / site_rel).read_bytes(), (root / rel).read_bytes(), name + " " + rel)
 
@@ -377,8 +466,11 @@ class Workflows(unittest.TestCase):
                 r = self.run_step(name, root, None)
                 self.assertEqual(r.returncode, 0, name + r.stdout + r.stderr)
                 copied = sorted(p.relative_to(root / "_site").as_posix() for p in (root / "_site").rglob("*") if p.is_file())
-                self.assertEqual(copied, sorted(["index.html", "out/historical.json", "out/scans.json", "out/fiidii_history.json", "out/index_history.json",
-                                                 "out/by_symbol/AAA.json", "out/company_profiles.json"]), name)
+                expected = ["index.html", "out/historical.json", "out/scans.json", "out/fiidii_history.json", "out/index_history.json",
+                            "out/by_symbol/AAA.json", "out/company_profiles.json"]
+                if name in HELD_BACK:
+                    expected.remove(HELD_BACK[name])
+                self.assertEqual(copied, sorted(expected), name)
 
     def test_the_file_can_only_get_in_through_the_explicit_approval(self):
         for name in WORKFLOWS:

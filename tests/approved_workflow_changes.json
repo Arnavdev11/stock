@@ -1,12 +1,26 @@
 {
- "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose. It also records the one approved change to each of fundamentals_updater.py and financials_updater.py (the five-stock test batch, research_test_batch.py): each file must differ from the commit by EXACTLY the listed diff lines (an empty difference is fine once they are committed). Stage 4 (SENSEX publication guard): update.yml and market_data.yml each differ from the commit by EXACTLY the four lines of the SENSEX guard (the closed approval variable on the Build site folder step and the sensex_publish.py call after the last copy); the earlier historical-handoff lines of update.yml are already committed. Stage 6B: .github/workflows/sensex_data.yml (the manual, non-publishing SENSEX pipeline) is a NEW file pinned byte for byte by SHA-256, like the two historical workflows; any edit to it needs this record updated on purpose.",
+ "note": "The workflow changes approved for the historical-data handoff. Read by guard_update_yml.py (Python guards) and tests/approved_workflows.js (JavaScript guards). update.yml must differ from the commit by EXACTLY these added lines (an empty difference is fine once they are committed); the two historical workflows must be byte-for-byte the pinned versions. Any other edit to these files, or any edit to another workflow, still trips the protected-file guards. Changing them again means updating this file on purpose. It also records the one approved change to each of fundamentals_updater.py and financials_updater.py (the five-stock test batch, research_test_batch.py): each file must differ from the commit by EXACTLY the listed diff lines (an empty difference is fine once they are committed). Stage 4 (SENSEX publication guard): update.yml and market_data.yml each differ from the commit by EXACTLY the four lines of the SENSEX guard (the closed approval variable on the Build site folder step and the sensex_publish.py call after the last copy); the earlier historical-handoff lines of update.yml are already committed. Stage 6B: .github/workflows/sensex_data.yml (the manual, non-publishing SENSEX pipeline) is a NEW file pinned byte for byte by SHA-256, like the two historical workflows; any edit to it needs this record updated on purpose. Stage 9D (market activity in the daily build): update.yml differs from the commit by EXACTLY the added lines listed under update_yml: one continue-on-error step that runs market_data_updater.py then validate_market_outputs.py and, if either fails, removes the four derived market_*.json files and exits non-zero; and, before the SENSEX guard, rm -f of _site/out/index_history.json, market_breadth.json, market_movers.json and market_dma.json (only market_activity.json stays eligible). Once committed, the difference is empty again.",
  "update_yml": {
   "path": ".github/workflows/update.yml",
   "added_lines": [
-   "        env:",
-   "          SENSEX_PUBLIC_DISPLAY_APPROVED: \"false\"",
-   "          # SENSEX end-of-day file: never published unless SENSEX_PUBLIC_DISPLAY_APPROVED is exactly \"true\" (sensex_publish.py). Runs after every copy above.",
-   "          python sensex_publish.py guard --site _site"
+   "      # Market activity (52-week lows, most active). Reads only the saved NSE files, downloads nothing, uses no credential.",
+   "      # If either command fails, the four derived files are removed (so nothing old or unchecked is published) and the step fails; the site still publishes",
+   "      # (the page shows \"not available\" for those blocks).",
+   "      - name: Derive and validate market activity data",
+   "        continue-on-error: true",
+   "        run: |",
+   "          if python market_data_updater.py && python validate_market_outputs.py; then",
+   "            echo \"Market activity data derived and validated.\"",
+   "          else",
+   "            rm -f out/market_breadth.json out/market_movers.json out/market_activity.json out/market_dma.json",
+   "            echo \"::error::Market activity data failed; the derived files were removed and will not be published.\"",
+   "            exit 1",
+   "          fi",
+   "",
+   "          # index_history.json (Upstox index candles) is not published until its redistribution rights are approved.",
+   "          rm -f _site/out/index_history.json",
+   "          # market_breadth.json, market_movers.json and market_dma.json are not published until their publication has been approved. Only market_activity.json (validated above) is.",
+   "          rm -f _site/out/market_breadth.json _site/out/market_movers.json _site/out/market_dma.json"
   ]
  },
  "pinned_files": {
