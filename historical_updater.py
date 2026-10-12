@@ -171,6 +171,26 @@ def last_complete_day():
     return now.date() if now.hour >= 16 else now.date() - dt.timedelta(days=1)
 
 
+def expected_latest_day(end):
+    """The newest weekday on or before `end`: the day whose candle a complete series should already hold. Exchange holidays are not known here,
+    so a miss on one is only a warning (see freshness_warning), never an error."""
+    d = end
+    while d.weekday() >= 5:                       # Saturday and Sunday: the last candle expected is Friday's
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def freshness_warning(candles, end):
+    """None when the newest stored candle is on or after the expected weekday; otherwise one plain sentence naming both dates.
+    Read-only: it never adds, changes or invents a candle, and it is not a fetch error."""
+    expected = expected_latest_day(end).isoformat()
+    newest = candles[-1]["date"] if candles else None
+    if newest is not None and newest >= expected:
+        return None
+    return ("%s freshness: the newest candle is %s but the newest weekday expected is %s. The series has no candle for it, so none is shown; "
+            "no price was invented. A later run asks again." % (BENCHMARK_SYMBOL, newest or "none", expected))
+
+
 def merge(old, new):
     """Union by date; a freshly fetched candle replaces an older one. Sorted ascending."""
     by_date = {c["date"]: c for c in old}
@@ -280,6 +300,8 @@ def main():
         else:
             errors.append({"symbol": BENCHMARK_SYMBOL, "request": bench_key, "error": "Upstox returned no valid candles"})
 
+    bench_stale = freshness_warning(bench["candles"], end) if bench else None      # a warning only: not an entry in `errors`
+
     meta_doc = {"updated": dt.date.today().isoformat(), "source": "Upstox", "interval": "1day",
                 "notes": {"candles": "Daily OHLCV, prices in INR, ascending dates, exactly as provided by Upstox. "
                                      "Days without a valid candle are absent, never filled in.",
@@ -346,6 +368,9 @@ def main():
         msg = "%s: %s (request: %s)" % (e["symbol"], e["error"], e["request"])
         print("::warning::" + msg)
         lines.append("- " + msg)
+    if bench_stale:
+        print("::warning::" + bench_stale)
+        lines.append("- " + bench_stale)
     if pending:
         lines.append("- %d stock(s) not reached in this run (call budget %d); they go first next time" % (pending, MAX_CALLS_PER_RUN))
         log("Not reached in this run (call budget):", pending, "stock(s)")
