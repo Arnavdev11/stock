@@ -111,6 +111,80 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
   c = new L.Controller(); const a = withTs(now - 2000); a.seq = 500; c.ingest(res(a, now), now); const b = withTs(now - 1000); b.seq = 1; eq(c.ingest(res(b, now), now).state, "live", "restart with a newer timestamp is tolerated");
 }
 
+/* ---- private test set: accepted ONLY with ?live=local&live_set=private_test on a loopback page ---- */
+{
+  const L = load(loc("example.com", "")).L, g = L.gate, U = "http://127.0.0.1:8765/v1/live/snapshot.json";
+  const gj = (l) => JSON.parse(JSON.stringify(g(l)));
+  eq(gj(loc("127.0.0.1", "?live=local")), { port: 8765, url: U }, "no private test without the option (the answer is exactly the old one)");
+  for (const h of ["127.0.0.1", "localhost", "[::1]"]) eq(gj(loc(h, "?live=local&live_set=private_test")), { port: 8765, url: U, privateTest: true }, "private test on " + h);
+  eq(gj(loc("127.0.0.1", "?live_set=private_test&live=local&live_port=9000")).privateTest, true, "order does not matter");
+  for (const s of ["?live_set=private_test", "?live=1&live_set=private_test", "?live=LOCAL&live_set=private_test"]) eq(g(loc("127.0.0.1", s)), null, "the option alone opens nothing: " + s);
+  for (const h of ["example.com", "stock.github.io", "192.168.1.5", "0.0.0.0"]) eq(g(loc(h, "?live=local&live_set=private_test")), null, "not on a non-loopback host: " + h);
+  for (const v of ["1", "true", "PRIVATE_TEST", "private_test ", "private", ""]) eq(gj(loc("127.0.0.1", "?live=local&live_set=" + v)).privateTest, undefined, "other value stays off: '" + v + "'");
+
+  const base = FIX.cases.find((c) => c.name === "test_set universe"), good = FIX.cases.find((c) => c.name === "good nifty500"), now = base.now;
+  const clone = (d) => JSON.parse(JSON.stringify(d)), PT = { privateTest: true };
+  const ts = base.doc, v0 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, !!v[0]]));
+  /* production path: test_set refused in full, with or without a non-true option */
+  eq(v0(L.accepts(ts, now)), { indices: false, breadth: false, movers: false, prices: false }, "production path refuses test_set");
+  for (const o of [undefined, null, {}, { privateTest: false }, { privateTest: "true" }, { privateTest: 1 }, { privateTest: "private_test" }]) eq(v0(L.accepts(ts, now, o)), { indices: false, breadth: false, movers: false, prices: false }, "refused with option " + JSON.stringify(o));
+  ok(/few instruments/.test(L.accepts(ts, now).indices[1]), "the production reason is unchanged");
+  /* private path: only indices and prices */
+  eq(v0(L.accepts(ts, now, PT)), { indices: true, breadth: false, movers: false, prices: true }, "private path shows only indices and prices");
+  ok(/not a market breadth/.test(L.accepts(ts, now, PT).breadth[1]), "breadth reason");
+  /* every safeguard still applies with the option on */
+  const none = (d, n, why) => eq(v0(L.accepts(d, n, PT)), { indices: false, breadth: false, movers: false, prices: false }, "still refused: " + why);
+  none(ts, base.doc.server_ts_ms + 20001, "older than 20 s"); none(ts, base.doc.server_ts_ms - 5001, "from the future");
+  for (const st of ["closed", "pre_open", "unknown"]) { const d = clone(ts); d.market.status = st; none(d, now, "market " + st); }
+  { const d = clone(ts); d.quality.ok = false; d.quality.reasons = ["x"]; none(d, now, "relay reports a problem"); }
+  { const d = clone(ts); d.extra = 1; none(d, now, "extra key"); }
+  { const d = clone(ts); d.private_test = true; none(d, now, "a snapshot cannot opt itself in"); }
+  { const d = clone(ts); d.schema = 2; none(d, now, "wrong schema"); }
+  { const d = clone(ts); d.indices[0].ltp = -1; none(d, now, "bad index price"); }
+  { const d = clone(ts); d.scope.universe = "nope"; none(d, now, "unknown universe"); }
+  { const d = clone(ts); d.indices.pop(); eq(v0(L.accepts(d, now, PT)).indices, false, "a missing index is not shown"); }
+  { const d = clone(ts); d.prices = {}; eq(v0(L.accepts(d, now, PT)).prices, false, "no prices is not shown"); }
+  /* real universes: the option changes nothing */
+  for (const c of FIX.cases) if (c.doc && c.doc.scope && c.doc.scope.universe !== "test_set") eq(v0(L.accepts(c.doc, c.now, PT)), v0(L.accepts(c.doc, c.now)), "option changes nothing for " + c.name);
+
+  /* controller */
+  const res = (d, n) => ({ status: 200, text: JSON.stringify(d), dateMs: n });
+  eq(new L.Controller().ingest(res(ts, now), now).state, "hidden", "default controller hides test_set");
+  eq(new L.Controller({ privateTest: "true" }).ingest(res(ts, now), now).state, "hidden", "non-true option hides test_set");
+  let c = new L.Controller({ privateTest: true }), v = c.ingest(res(ts, now), now);
+  eq([v.state, v.kind], ["live", "live"], "private controller shows test_set"); eq(v0(v.blocks), { indices: true, breadth: false, movers: false, prices: true }, "only two blocks");
+  { const o = clone(ts); o.server_ts_ms -= 1000; o.generated_at = new Date(o.server_ts_ms + 19800000).toISOString().slice(0, 23) + "+05:30"; eq(c.ingest(res(o, now), now).state, "hidden", "private: an older timestamp is refused (sequence)"); }
+  { const d = clone(ts); d.market.status = "closed"; eq(new L.Controller({ privateTest: true }).ingest(res(d, now), now).kind, "closed", "private: closed market is CLOSED"); }
+  eq(new L.Controller({ privateTest: true }).ingest(res(ts, base.doc.server_ts_ms + 60000), base.doc.server_ts_ms + 60000).state, "hidden", "private: an old snapshot is not live");
+  { const d = clone(ts); d.quality.ok = false; d.quality.reasons = ["feed_silent"]; eq(new L.Controller({ privateTest: true }).ingest(res(d, now), now).state, "hidden", "private: an unhealthy relay is hidden"); }
+  c = new L.Controller({ privateTest: true }); c.ingest(res(ts, now), now);
+  const f = c.ingest({ error: "request failed" }, now + 1000); eq([f.state, f.kind], ["unavailable", "stale"], "private: a failed poll keeps the last values only as STALE");
+  eq(new L.Controller({ privateTest: true }).ingest(res(good.doc, good.now), good.now).state, "live", "private controller still handles a real universe");
+
+  /* rendering */
+  const mk = (priv) => { const doc = makeDoc(); return { doc, ui: new L.Ui(doc, priv), panels: () => doc.byId["market"].all((n) => n.attrs["data-lv"]).map((n) => n.attrs["data-lv"]) }; };
+  const eod = (doc) => ["mk-today", "mk-breadth", "mk-movers"].map((id) => doc.byId[id].querySelector("[data-mk]").textContent);
+  { const r = mk(true), before = eod(r.doc), pc = new L.Controller({ privateTest: true });
+    r.ui.update(pc.ingest(res(ts, now), now));
+    eq(r.panels(), ["private-test"], "one separate panel, no indices/breadth/movers panels");
+    const txt = r.doc.byId["market"].textContent;
+    ok(/PRIVATE TEST SET — not a market dashboard/.test(txt), "labelled private test set"); ok(/NIFTY 50/.test(txt) && /TST00001/.test(txt) && /TST00003/.test(txt), "instruments listed");
+    ok(/-0\.40%/.test(txt) && /09:59:59/.test(txt), "percentage change and last-trade time shown");
+    eq(r.doc.byId["mk-today"].all((n) => n.attrs["data-lv"]).length, 0, "nothing inside the Market Today card"); eq(r.doc.byId["mk-breadth"].all((n) => n.attrs["data-lv"]).length + r.doc.byId["mk-movers"].all((n) => n.attrs["data-lv"]).length, 0, "no breadth or movers");
+    ok(!/Advances|Live gainers|Live losers/.test(txt), "no breadth or rankings text"); eq(eod(r.doc), before, "EOD content untouched");
+    ok(/^Live \(PRIVATE TEST SET\) · LIVE/.test(r.doc.byId["market"].firstChild.textContent), "chip says private test set");
+    r.ui.update(pc.ingest({ error: "request failed" }, now + 1000)); eq(r.panels(), ["private-test"], "stale: the private panel stays, dashed"); ok(/STALE/.test(r.doc.byId["market"].textContent) && /not current/.test(r.doc.byId["market"].textContent), "labelled STALE, not current");
+    eq(r.doc.byId["mk-today"].all((n) => n.attrs["data-lv"]).length, 0, "stale: still not in the Market Today card");
+    r.ui.update(new L.Controller({ privateTest: true }).ingest({ error: "request failed" }, now)); eq(r.panels(), [], "unavailable: panel removed"); ok(/not reachable/.test(r.doc.byId["market"].textContent), "unavailable text");
+    const cl = clone(ts); cl.market.status = "closed"; r.ui.update(new L.Controller({ privateTest: true }).ingest(res(cl, now), now)); eq(r.panels(), [], "closed: no panel"); ok(/CLOSED/.test(r.doc.byId["market"].textContent), "closed label"); eq(eod(r.doc), before, "EOD still untouched"); }
+  { const r = mk(false); r.ui.update({ state: "live", kind: "live", reason: "", blocks: { indices: [true, ""], breadth: [false, "x"], movers: [false, "x"], prices: [true, ""] }, doc: ts, last: null });
+    ok(!r.panels().includes("private-test"), "a Ui without the option never draws the private panel"); }
+  { const evil = clone(ts); evil.indices[0].name = "<img src=x onerror=alert(1)>"; const r = mk(true); r.ui.update(new L.Controller({ privateTest: true }).ingest(res(evil, now), now));
+    ok(r.doc.byId["market"].textContent.includes("<img src=x onerror=alert(1)>") && r.doc.byId["market"].all((n) => n.tag === "img").length === 0, "markup in the private panel stays text"); }
+  /* end to end through start(): only the explicit option reaches the private panel */
+  { const rr = load(loc("127.0.0.1", "?live=local&live_set=private_test"), () => new Promise(() => {})); eq(rr.fetches.length, 1, "one request"); eq(rr.fetches[0][0], U, "same fixed loopback address"); }
+}
+
 /* ---- rendering ---- */
 {
   const r = load(loc("127.0.0.1", "?live=local"), () => new Promise(() => {})), good = FIX.cases.find((c) => c.name === "good nifty500"), now = good.now;

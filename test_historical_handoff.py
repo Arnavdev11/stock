@@ -455,9 +455,11 @@ class WorkflowWiring(unittest.TestCase):
     def test_a_push_never_saves_or_uploads(self):
         for name in ("Check the result and prepare the hand-over", "Hand the result to the save job"):
             seg = self.H.split("- name: " + name)[1].split("- name:")[0].split("\n  save-historical")[0]
-            self.assertIn("if: github.event_name == 'workflow_dispatch'", seg, name)
+            self.assertIn("if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'", seg, name)          # manual and scheduled runs, never a push
+            self.assertNotIn("push", seg.split("if:")[1].split("\n")[0], name)
         save = block(self.H, "save-historical")
-        self.assertIn("if: ${{ github.event_name == 'workflow_dispatch' }}", save)
+        self.assertIn("if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}", save)
+        self.assertNotIn("push", save.split("if:")[1].split("\n")[0])
         self.assertIn("needs: historical", save)
 
     def test_only_the_save_job_can_write_and_it_holds_no_secret(self):

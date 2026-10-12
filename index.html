@@ -2729,7 +2729,9 @@ S_["mk-today"]=function(m,st){
   h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
     return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
       +'<div class="mk-perf">'+WINDOWS.map(function(w){return'<div><small>'+w.label+'</small><span class="'+cls(x.perf[w.key])+'">'+pct(x.perf[w.key])+'</span></div>'}).join("")+'</div>'
-      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p></div>'}).join("")+'</div>';
+      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p>'
+      +(isDay(m.asOf)&&isDay(x.perf.date)&&dayMs(m.asOf)>dayMs(x.perf.date)?'<p class="mk-sub mk-stale">Stale: this NIFTY 50 value is from <b>'+esc(x.perf.date)+'</b>, older than the market data dated <b>'+esc(m.asOf)+'</b>. It is the last value available and is not current.</p>':'')
+      +'</div>'}).join("")+'</div>';
   return h}
 S_["mk-breadth"]=function(m){
   var b=m.breadth;if(!b)return na("breadth is not in the latest scan");
@@ -2887,7 +2889,9 @@ function gate(loc){
   if(q.get("live")!=="local")return null;
   var port=CFG.defaultPort,p=q.get("live_port");
   if(p!==null){if(!/^[0-9]{4,5}$/.test(p))return null;port=+p;if(port<1024||port>65535)return null}
-  return{port:port,url:"http://127.0.0.1:"+port+"/v1/live/snapshot.json"}}
+  var out={port:port,url:"http://127.0.0.1:"+port+"/v1/live/snapshot.json"};
+  if(q.get("live_set")==="private_test")out.privateTest=true;      /* present ONLY with the explicit option, so every ordinary gate answer is exactly what it was */
+  return out}
 
 /* ---------- validation: the same rules as the relay's validate_snapshot ---------- */
 function isNum(x){return typeof x==="number"&&isFinite(x)}
@@ -2939,7 +2943,7 @@ function validate(d){
   return p}
 
 /* ---------- acceptance: block by block, the same rules as the relay's client_accepts ---------- */
-function accepts(d,serverNow){
+function accepts(d,serverNow,opts){
   var refuse=function(why){return{indices:[false,why],breadth:[false,why],movers:[false,why],prices:[false,why]}};
   var pr=validate(d);
   if(pr.length)return refuse("invalid snapshot: "+pr[0]);
@@ -2948,7 +2952,12 @@ function accepts(d,serverNow){
   var age=serverNow-d.server_ts_ms;
   if(age>CFG.maxAge)return refuse("snapshot is "+age+" ms old");
   if(age<-CFG.skew)return refuse("snapshot is from the future");
-  if(d.scope.universe==="test_set")return refuse("test snapshot (a few instruments only): not market data for the page");
+  if(d.scope.universe==="test_set"){
+    /* the explicit private-test option (?live_set=private_test, set by the URL only, never by a snapshot) lets ONLY the indices and prices blocks through, and only for a test_set snapshot */
+    if(!opts||opts.privateTest!==true)return refuse("test snapshot (a few instruments only): not market data for the page");
+    return{indices:d.scope.indices_expected>0&&d.indices.length===d.scope.indices_expected?[true,""]:[false,"not every index has a price"],
+      breadth:[false,"private test set: not a market breadth"],movers:[false,"private test set: no movers"],
+      prices:Object.keys(d.prices).length?[true,""]:[false,"no prices"]}}
   var sc=d.scope,out={};
   out.indices=sc.indices_expected>0&&d.indices.length===sc.indices_expected?[true,""]:[false,"not every index has a price"];
   var cov=sc.coverage>=CFG.minCoverage&&d.breadth.counted>0;
@@ -2958,7 +2967,7 @@ function accepts(d,serverNow){
   return out}
 
 /* ---------- one poll's answer -> what may be shown ---------- */
-function Controller(){this.lastTs=null;this.lastAdvance=null;this.lastSeq=null;this.good=null}
+function Controller(opts){this.privateTest=!!(opts&&opts.privateTest===true);this.lastTs=null;this.lastAdvance=null;this.lastSeq=null;this.good=null}
 /* kind says what the page may say: live | stale (a valid snapshot that is no longer current, shown only as STALE with its own time) | closed | unavailable.
    state keeps the older three-way answer (live | hidden | unavailable). Only "live" ever carries blocks; only "stale" carries a snapshot in .last. */
 Controller.prototype.ingest=function(res,localNow){
@@ -2967,13 +2976,13 @@ Controller.prototype.ingest=function(res,localNow){
   if(!res||res.error||res.status!==200||typeof res.text!=="string")return failed(res&&res.error?String(res.error):"no answer");
   if(res.text.length>CFG.maxBytes)return none("hidden","response too large");
   var d;try{d=JSON.parse(res.text)}catch(e){return none("hidden","not valid JSON")}
-  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0],stalled=false;
+  var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow,{privateTest:this.privateTest}),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0],stalled=false;
   if(validate(d).length===0){
     if(this.lastTs!==null&&d.server_ts_ms<this.lastTs)return none("hidden","snapshot is older than one already seen");
     if(this.lastTs===null||d.server_ts_ms>this.lastTs){this.lastTs=d.server_ts_ms;this.lastSeq=d.seq;this.lastAdvance=localNow}
     else if(localNow-this.lastAdvance>CFG.stall)stalled=true;
     var age=serverNow-d.server_ts_ms;
-    if(d.scope.universe==="test_set"||!d.quality.ok)return none("hidden",!d.quality.ok?"relay reports a problem: "+d.quality.reasons.join(","):"test snapshot");
+    if((d.scope.universe==="test_set"&&!this.privateTest)||!d.quality.ok)return none("hidden",!d.quality.ok?"relay reports a problem: "+d.quality.reasons.join(","):"test snapshot");
     if(d.market.status==="closed"||d.market.status==="pre_open")return none("hidden","market is "+(d.market.status==="closed"?"closed":"not open yet"),"closed");
     if(d.market.status==="open"&&(stalled||age>CFG.maxAge)&&age>=-CFG.skew&&age<=CFG.staleKeep)return none("hidden",stalled?"snapshot is not advancing":"snapshot is "+Math.round(age/1000)+" s old","stale",d)}
   if(!any)return none("hidden",v.indices[1]);
@@ -2991,7 +3000,7 @@ var CSS=".lv-chip{margin:0 0 10px;padding:7px 12px;border:1px solid var(--line);
   +".lv-panel.lv-stale{border-style:dashed;border-color:var(--mute)}.lv-panel.lv-stale .lv-head b{color:var(--mute)}"
   +".lv-chg{display:flex;gap:10px;margin-top:6px;font-variant-numeric:tabular-nums;font-size:.9rem}";
 var TABS=["NIFTY 50","SENSEX"];
-function Ui(doc){this.doc=doc;this.panels={};this.chip=null;this.css=null;this.sel=TABS[0];this.view=null}
+function Ui(doc,privateTest){this.privateTest=privateTest===true;this.doc=doc;this.panels={};this.chip=null;this.css=null;this.sel=TABS[0];this.view=null}
 Ui.prototype.el=function(tag,cls,text){var e=this.doc.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=String(text);return e};
 Ui.prototype.mount=function(){
   if(this.css)return;
@@ -3023,6 +3032,26 @@ Ui.prototype.indices=function(doc,lab){
   c.appendChild(row);n.appendChild(c);
   n.appendChild(this.el("p","lv-note",lab==="STALE"?"This value is no longer current. It is the last one received, shown with its own time. The end-of-day figures below are unchanged."
     :"Last traded price from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
+/* the private test set: one separate panel at the top of the Market Today page. It is never the Market Today NIFTY 50 card, and it never carries breadth, movers or rankings. */
+Ui.prototype.privatePanel=function(doc,lab){
+  var n=this.el("div","lv-panel"+(lab==="STALE"?" lv-stale":"")),h=this.el("p","lv-head"),b=this.el("b",null,lab),rows=[];
+  n.setAttribute("data-lv","private-test");
+  doc.indices.forEach(function(r){rows.push({name:r.name,ltp:r.ltp,pct:r.change_pct,ltt:r.ltt,cp:r.cp})});
+  Object.keys(doc.prices).sort().forEach(function(k){var v=doc.prices[k];rows.push({name:k,ltp:v.ltp,pct:v.change_pct,ltt:v.ltt,cp:v.cp})});
+  h.appendChild(b);h.appendChild(this.el("span",null," · PRIVATE TEST SET — not a market dashboard · "+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
+  var tb=this.el("table","mk-t"),th=this.el("thead"),hr=this.el("tr"),bd=this.el("tbody");
+  [["Instrument","s"],["Last price","n"],["Change","n"],["Last trade (IST)","n"]].forEach(function(c){hr.appendChild(this.el("th",c[1],c[0]))},this);th.appendChild(hr);tb.appendChild(th);
+  rows.forEach(function(r){
+    var tr=this.el("tr"),c1=this.el("td","s",r.name),c2=this.el("td","n",fmt(r.ltp,2)),c3=this.el("td","n"),c4=this.el("td","n",typeof r.ltt==="string"&&r.ltt.length>=19?r.ltt.slice(11,19):"–");
+    if(r.cp&&isNum(r.pct))c3.appendChild(this.el("span",tone(r.pct),signed(r.pct,2)+"%"));else c3.textContent="–";
+    tr.appendChild(c1);tr.appendChild(c2);tr.appendChild(c3);tr.appendChild(c4);bd.appendChild(tr)},this);
+  tb.appendChild(bd);n.appendChild(tb);
+  n.appendChild(this.el("p","lv-note","Private test of the local feed only. These instruments are not the market: no breadth, movers or rankings are shown, and this is not the Market Today NIFTY 50 card. The end-of-day figures below are unchanged. Not for publication."));
+  return n};
+Ui.prototype.putPrivate=function(doc,lab){
+  this.drop("private");["indices","breadth","movers"].forEach(this.drop,this);
+  var main=this.doc.getElementById("market");if(!main)return;
+  var n=this.privatePanel(doc,lab);main.insertBefore(n,this.chip&&this.chip.parentNode===main?this.chip.nextSibling:main.firstChild);this.panels["private"]=n};
 Ui.prototype.breadth=function(doc){
   var n=this.el("div","lv-panel"),t=this.el("div","mk-tiles"),b=doc.breadth;n.setAttribute("data-lv","breadth");n.appendChild(this.head(doc,"breadth"));
   [["Advances",b.advances],["Declines",b.declines],["Unchanged",b.unchanged]].forEach(function(x){var tile=this.el("div","mk-tile");tile.appendChild(this.el("b",null,fmt(x[1],0)));tile.appendChild(this.el("span",null,x[0]));t.appendChild(tile)},this);
@@ -3045,14 +3074,21 @@ Ui.prototype.select=function(name){if(TABS.indexOf(name)<0||name===this.sel)retu
 Ui.prototype.update=function(view){this.mount();this.view=view;this.render()};
 Ui.prototype.render=function(){
   var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre="Live (private test) · "+lab;
+  if(lab==="LIVE"&&this.privateTest&&view.doc.scope.universe==="test_set"){
+    this.putPrivate(view.doc,"LIVE");
+    say("Live (PRIVATE TEST SET) · LIVE · updated "+view.doc.generated_at.slice(11,19)+" IST · not a market dashboard · end-of-day figures below are unchanged");return}
   if(lab==="LIVE"){
+    this.drop("private");
     var b=view.blocks,d=view.doc;
     if(b.indices[0])this.put("indices","mk-today",this.indices(d,"LIVE"));else this.drop("indices");
     if(b.breadth[0])this.put("breadth","mk-breadth",this.breadth(d));else this.drop("breadth");
     if(b.movers[0])this.put("movers","mk-movers",this.movers(d));else this.drop("movers");
     var off=["indices","breadth","movers"].filter(function(k){return !b[k][0]});
     say(pre+" · updated "+d.generated_at.slice(11,19)+" IST"+(off.length?" · not shown: "+off.map(function(k){return k+" ("+b[k][1]+")"}).join("; "):"")+" · end-of-day figures below are unchanged");return}
-  ["breadth","movers"].forEach(this.drop,this);
+  ["breadth","movers","private"].forEach(this.drop,this);
+  if(lab==="STALE"&&this.privateTest&&view.last&&view.last.scope&&view.last.scope.universe==="test_set"){
+    this.drop("indices");this.putPrivate(view.last,"STALE");
+    say("Live (PRIVATE TEST SET) · STALE · "+view.reason+" · showing the last values received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
   if(lab==="STALE"&&view.last&&view.last.indices){
     this.put("indices","mk-today",this.indices(view.last,"STALE"));
     say(pre+" · "+view.reason+" · showing the last value received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
@@ -3072,7 +3108,7 @@ function poll(url){
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
     return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
-  var ctl=new Controller(),ui=new Ui(env.document),busy=false;
+  var ctl=new Controller({privateTest:g.privateTest===true}),ui=new Ui(env.document,g.privateTest===true),busy=false;
   function next(){env.setTimeout(tick,CFG.poll)}
   /* one request at a time: a call while another is still in flight does nothing */
   function refresh(){
