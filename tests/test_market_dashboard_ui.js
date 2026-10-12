@@ -390,4 +390,25 @@ const actLazy = (async () => {
   for (const pin of ['id="detail"', "Stock Detail view", 'id="stocklens-search"', 'id="stocklens-compare"', 'id="stocklens-shareholding"', 'id="stocklens-snapshot"', 'id="stocklens-growth"', "Financial Health"]) ok(html.includes(pin), "still present: " + pin);
   re(html, /\.detail-mode \.w>\*:not\(#detail\)\{display:none!important\}/, "an open stock hides the dashboard (it is inside .w)"); ok(html.indexOf('<main id="market">') > html.indexOf('<div class="w">'), "the dashboard is inside .w, so Stock Detail and Compare modes hide it as they hid the old homepage");
   const w = html.slice(html.indexOf('<div class="w">')); ok(!/<main id="market">[\s\S]*<\/main>[\s\S]*<main id="market">/.test(w), "one dashboard"); }
+// ---------- 9. a NIFTY 50 value older than the market data is labelled stale, never shown as current ----------
+{ const HN = (end) => Object.assign({}, HIST, { benchmark: { symbol: "NIFTY 50", candles: sxCandles(end, 120, 22000) } });
+  const view = (end, scans = SCANS, tab) => MC.sectionHtml("mk-today", MC.model(scans, HN(end), FII), tab ? { index: tab } : {});
+  const money = (v) => Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fresh = view("2026-10-05");
+  no(fresh, /mk-stale|Stale:/, "NIFTY on the same day as the scans: no stale notice"); re(fresh, /<p class="mk-sub">As of 2026-10-05<\/p>/, "and its own date is shown");
+  no(view("2026-10-06"), /mk-stale|Stale:/, "NIFTY newer than the scans: no stale notice");
+  const old = view("2026-10-02");
+  re(old, /<p class="mk-sub">As of 2026-10-02<\/p>/, "an older NIFTY keeps showing its own real date");
+  re(old, /<p class="mk-sub mk-stale">Stale: this NIFTY 50 value is from <b>2026-10-02<\/b>, older than the market data dated <b>2026-10-05<\/b>\. It is the last value available and is not current\.<\/p>/, "and a stale notice naming both dates");
+  const lastClose = sxCandles("2026-10-02", 120, 22000).slice(-1)[0].close;
+  ok(old.includes(money(lastClose)), "the value shown is still that day's close (nothing is replaced, estimated or relabelled)"); eq((old.match(/Stale:/g) || []).length, 1, "one notice only");
+  no(old, /\bLIVE\b|Live\b/, "nothing is called live"); re(old, /end of day, not live/, "the status line still says end of day, not live");
+  no(view("2026-10-02", Object.assign({}, SCANS, { as_of: null })), /mk-stale|Stale:/, "no market date to compare against: no notice (and no claim)");
+  no(view("2026-10-02", Object.assign({}, SCANS, { as_of: "not a date" })), /mk-stale|Stale:/, "an unusable market date: no notice");
+  const missing = MC.sectionHtml("mk-today", MC.model(SCANS, Object.assign({}, HIST, { benchmark: null }), FII), {});
+  re(missing, /NIFTY 50 history is not loaded/, "no benchmark at all: the plain unavailable message"); no(missing, /Stale:|class="mk-idx"/, "with no invented value");
+  no(MC.sectionHtml("mk-today", MC.model(SCANS, HN("2026-10-02"), FII), { index: "SENSEX" }), /Stale: this NIFTY 50/, "the SENSEX tab never carries the NIFTY notice");
+  // the shown value and date come from the same candle as the benchmark's last entry
+  const ix = MC.indices(HN("2026-10-02")); eq([ix.length, ix[0].perf.date, ix[0].perf.last], [1, "2026-10-02", lastClose], "indices(): last candle date and close agree with what is displayed"); }
+
 Promise.all([lazy, actLazy]).then(() => console.log("Market dashboard tests passed (" + checks + " checks)"));

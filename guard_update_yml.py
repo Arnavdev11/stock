@@ -69,9 +69,28 @@ _TABS_BAR = re.compile(r"  h\+='<div class=\"tabs mk-tabs\"[\s\S]*?  if\(sel===\
 _SENSEX_EOD = re.compile(r"[ \t]*/\* SENSEX-EOD:start \*/[\s\S]*?/\* SENSEX-EOD:end \*/\n")
 
 
+# ---------------------------------------------------------------- index.html: the approved stale-NIFTY 50 notice in the Market Today panel
+_STALE_NEW = ("""      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p>'\n"""
+              """      +(isDay(m.asOf)&&isDay(x.perf.date)&&dayMs(m.asOf)>dayMs(x.perf.date)?'<p class="mk-sub mk-stale">Stale: this NIFTY 50 value is from <b>'+esc(x.perf.date)+'</b>, older than the market data dated <b>'+esc(m.asOf)+'</b>. It is the last value available and is not current.</p>':'')\n"""
+              """      +'</div>'}).join("")+'</div>';""")
+_STALE_OLD = """      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p></div>'}).join("")+'</div>';"""
+
+
+def without_nifty_stale_notice(html):
+    """index.html with exactly the approved stale-NIFTY notice reversed. A page without any trace of it comes back unchanged; a page with part of it, or with it twice, raises ValueError."""
+    n = html.count(_STALE_NEW)
+    marks = ("Stale: this NIFTY 50 value is from", "mk-stale", "older than the market data dated")
+    if n == 0 and not any(m in html for m in marks):
+        return html
+    if n != 1 or any(html.count(m) != 1 for m in marks):
+        raise ValueError("stale-NIFTY notice expected exactly once, found %d" % n)
+    return html.replace(_STALE_NEW, _STALE_OLD, 1)
+
+
 def without_index_tabs(html):
     """index.html with exactly the approved Market Today tab edit reversed (the INDEX_TABS list, the tab bar, the SENSEX branch of S_["mk-today"] and the marked SENSEX-EOD blocks).
     A page that does not carry the edit comes back unchanged. Used like without_market_cap: apply to both sides, then compare byte for byte."""
+    html = without_nifty_stale_notice(html)
     html = _SENSEX_EOD.sub("", html)           # the SENSEX end-of-day card: its constants and functions, and the lazy file request (both marked SENSEX-EOD)
     if _TABS_NEW_HEAD not in html:
         return without_market_activity(html)

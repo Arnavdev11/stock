@@ -17,6 +17,11 @@ on:
   push:
     branches:
       - phase1
+  # Every weekday at 19:00 IST (13:30 UTC): after the 16:00 IST cut-off the updater uses for a completed trading day, and before the 20:45 IST site build copies the saved files.
+  # A scheduled run does what the default manual run does (TCS, which also refreshes the NIFTY 50 benchmark; no batch) and saves through the same checked hand-over.
+  # On a non-trading day nothing new arrives and nothing is committed.
+  schedule:
+    - cron: "30 13 * * 1-5"
   workflow_dispatch:
     inputs:
       symbols:
@@ -118,9 +123,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.batch_size != ''
         run: python historical_batch.py record --report batch/report.json --out out --saved ledger-branch/historical --attempts-out batch/attempts.json
 
-      # Manual runs only. The files are checked here, before anything is uploaded; the token is not available to these steps.
+      # Manual and scheduled runs only (never a push). The files are checked here, before anything is uploaded; the token is not available to these steps.
       - name: Check the result and prepare the hand-over
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         run: |
           args=""
           if [ -d ledger-branch/historical ]; then args="--baseline ledger-branch/historical"; fi
@@ -128,7 +133,7 @@ jobs:
           python historical_handoff.py stage out handoff $args
 
       - name: Hand the result to the save job
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         uses: actions/upload-artifact@v4
         with:
           name: historical-handoff
@@ -136,10 +141,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Saves the checked files to the data branch (under historical/ only). Manual runs only; a push to phase1 never writes to the data branch.
+  # Saves the checked files to the data branch (under historical/ only). Manual and scheduled runs only; a push to phase1 never writes to the data branch.
   save-historical:
     needs: historical
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     permissions:
       contents: write
     uses: ./.github/workflows/save_historical.yml

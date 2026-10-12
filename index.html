@@ -2729,7 +2729,9 @@ S_["mk-today"]=function(m,st){
   h+='<div class="mk-idx-grid">'+m.indices.map(function(x){
     return'<div class="mk-idx"><div class="mk-idx-h"><b>'+esc(x.name)+'</b><span class="v">'+fmt(x.perf.last)+'</span></div>'
       +'<div class="mk-perf">'+WINDOWS.map(function(w){return'<div><small>'+w.label+'</small><span class="'+cls(x.perf[w.key])+'">'+pct(x.perf[w.key])+'</span></div>'}).join("")+'</div>'
-      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p></div>'}).join("")+'</div>';
+      +'<p class="mk-sub">As of '+esc(x.perf.date)+'</p>'
+      +(isDay(m.asOf)&&isDay(x.perf.date)&&dayMs(m.asOf)>dayMs(x.perf.date)?'<p class="mk-sub mk-stale">Stale: this NIFTY 50 value is from <b>'+esc(x.perf.date)+'</b>, older than the market data dated <b>'+esc(m.asOf)+'</b>. It is the last value available and is not current.</p>':'')
+      +'</div>'}).join("")+'</div>';
   return h}
 S_["mk-breadth"]=function(m){
   var b=m.breadth;if(!b)return na("breadth is not in the latest scan");
