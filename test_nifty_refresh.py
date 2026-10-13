@@ -22,25 +22,35 @@ def cron_of(text):
 
 
 class Schedule(unittest.TestCase):
-    def test_there_is_one_weekday_schedule_after_the_close_and_before_the_site_build(self):
+    def test_there_is_one_morning_schedule_after_upstox_publishes_the_previous_days_candle(self):
+        # Upstox serves a trading day's daily candle only from about 07:00 IST the NEXT day (a run at 23:32 IST on 12 Oct had no 12 Oct candle; the 19:19 IST run on 13 Oct had it).
+        # A 19:00 IST schedule can therefore never see the day it was meant to capture; the run has to be a morning one, Tuesday to Saturday (Monday's candle is Tuesday's, Friday's is Saturday's).
         c = cron_of(H)
         self.assertEqual(len(c), 1)
         minute, hour, dom, mon, dow = c[0].split()
-        self.assertEqual((dom, mon, dow), ("*", "*", "1-5"))                         # weekdays only
+        self.assertEqual((dom, mon, dow), ("*", "*", "2-6"))
         utc = int(hour) * 60 + int(minute)
-        ist = utc + 330
-        self.assertGreaterEqual(ist, 16 * 60 + 30)                                   # after the updater's 16:00 IST "completed trading day" cut-off, with margin
-        site = cron_of(U)
-        self.assertEqual(len(site), 1)
-        s_minute, s_hour = site[0].split()[:2]
-        self.assertLess(utc + 60, int(s_hour) * 60 + int(s_minute))                  # at least an hour before "Update data and publish site" copies the saved files
+        ist = (utc + 330) % 1440
+        self.assertGreaterEqual(ist, hu.PUBLISHED_AFTER.hour * 60 + hu.PUBLISHED_AFTER.minute)      # not before the candle exists
+        self.assertLess(ist, 12 * 60)                                                              # and still the morning
+        self.assertLess(utc + 330, 1440)                                                           # the same IST day, so 2-6 really is Tuesday to Saturday in IST too
 
-    def test_the_updater_cut_off_matches_the_schedule(self):
-        src = (ROOT / "historical_updater.py").read_text(encoding="utf-8")
-        self.assertIn("now.hour >= 16", src)                                         # the hour the schedule is measured against
+    def test_the_morning_publish_follows_the_morning_history_run_and_the_evening_publish_stays(self):
+        h_min, h_hour = cron_of(H)[0].split()[:2]
+        site = cron_of(U)
+        self.assertEqual(sorted(site), ["15 15 * * 1-5", "30 4 * * 2-6"])                         # the 20:45 IST evening build is unchanged; one morning build is added
+        m_min, m_hour, _, _, m_dow = "30 4 * * 2-6".split()
+        self.assertEqual(m_dow, cron_of(H)[0].split()[4])                                         # the same days as the history run
+        self.assertGreaterEqual((int(m_hour) * 60 + int(m_min)) - (int(h_hour) * 60 + int(h_min)), 90)    # room for the history run and for GitHub's start-up delay (observed up to ~20 min)
+
+    def test_the_updater_expects_a_days_candle_only_from_the_next_morning(self):
+        self.assertEqual(hu.PUBLISHED_AFTER, dt.time(7, 30))
+        self.assertEqual(hu.IST.utcoffset(None), dt.timedelta(hours=5, minutes=30))
 
     def test_a_scheduled_run_is_the_default_manual_run_not_a_batch_and_not_a_wider_universe(self):
         self.assertIn('HISTORICAL_SYMBOLS: "${{ env.CHOSEN_SYMBOLS || (github.event_name == \'push\' && \'TCS\' || inputs.symbols || \'TCS\') }}"', H)
+        self.assertEqual(H.count("HISTORICAL_REFRESH_SAVED:"), 1)
+        self.assertIn("HISTORICAL_REFRESH_SAVED: ${{ github.event_name == 'schedule' && 'true' || '' }}", H)      # only a scheduled run refreshes every saved stock; manual and push runs do what they listed
         for name in ("Choose the next batch of stocks", "Record which stocks gained candles"):
             seg = H.split("- name: " + name)[1].split("\n      - name:")[0]
             self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.batch_size != ''", seg)       # a schedule can never pick a batch
@@ -101,7 +111,7 @@ class Benchmark(unittest.TestCase):
         try:
             self.assertEqual(hu.last_complete_day(), dt.date(2026, 10, 11))
             FakeDT.now = classmethod(lambda cls, tz=None: cls(2026, 10, 12, 19, 0, tzinfo=tz))
-            self.assertEqual(hu.last_complete_day(), dt.date(2026, 10, 12))          # at 19:00 IST the day is complete
+            self.assertEqual(hu.last_complete_day(), dt.date(2026, 10, 12))          # the newest day a run ASKS for (Upstox may not serve it yet: see published_through)
         finally:
             hu.dt.datetime = real
 
