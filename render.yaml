@@ -21,6 +21,8 @@ services:
         sync: false
       - key: LIVE_PUBLIC_SERVE_SNAPSHOT
         value: "false"                 # the gate: set it to "true" in the dashboard only for the first real-feed test (a later Blueprint sync puts it back to "false")
+      - key: LIVE_PUBLIC_PROBE_SECONDS
+        value: "0"                     # 0 = off. Set 120 in the dashboard for a PRIVATE connection test: evidence goes to the log only, nothing is served (see live_public/DEPLOY_RENDER.md)
       - key: ALLOWED_ORIGIN
         value: https://arnavdev11.github.io
       # ALLOWED_HOSTS is deliberately not set: the service then allows exactly RENDER_EXTERNAL_HOSTNAME, which Render provides (it is also the Host header of Render's health check).

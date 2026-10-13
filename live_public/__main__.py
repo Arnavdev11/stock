@@ -24,6 +24,7 @@ from live_service import relay, upstox
 from live_service.safety import ConfigError, Log, Scrubber
 
 from . import config as cfgmod
+from . import probe
 from .server import PublicServer
 
 HOLIDAYS_FILE = os.path.join("data", "holidays.txt")          # optional, same format as the local relay's; without it only weekends count as closed
@@ -44,16 +45,16 @@ def build(cfg, *, http_get=None, transport_factory=None, fetch_bytes=None, clock
     scrub = Scrubber()
     scrub.add(cfg.token())
     log = Log(scrub, stream=stream, clock_ms=clock_ms)
-    if cfg.serve_snapshot:
+    if cfg.serve_snapshot or cfg.probe_seconds:                   # the private probe needs the real instruments exactly as the live relay does
         rows = upstox.load_instrument_rows(None, fetch_bytes or upstox.requests_fetch_bytes)
         ins = upstox.build_instruments(rows, list(cfg.symbols))
         del rows
-    else:                                                         # gate off: the relay never runs and nothing is served, so the (large) instrument file is neither downloaded nor parsed.
+    else:                                                         # gate off and no probe: the relay never runs and nothing is served, so the (large) instrument file is neither downloaded nor parsed.
         ins = ins_mod.Instruments({}, {}, {})                     # An empty universe only lets the idle RelayService and /healthz be constructed; it is never subscribed.
     htext = _read_text(holidays_file)
     holidays = market_hours.parse_holidays(htext) if htext is not None else None
     liquid = ins_mod.load_liquid(liquid_file) if os.path.exists(liquid_file) else set()
-    rcfg = relay.Config(list(cfg.symbols), snapshot_every_s=2.0, holidays=holidays, liquid=liquid, universe="test_set")
+    rcfg = relay.Config(list(cfg.symbols), snapshot_every_s=2.0, holidays=holidays, liquid=liquid, universe="test_set", ignore_window=bool(cfg.probe_seconds))     # the probe may connect outside 08:55-15:45 to prove authorization; never the live relay
     svc = relay.RelayService(ins, rcfg, cfg.token(), http_get=http_get or upstox.requests_http_get,
                              transport_factory=transport_factory or (lambda: upstox.WebsocketsTransport(scrub)), log=log, scrub=scrub, clock_ms=clock_ms, sleep=sleep)
     if holidays is None:
@@ -70,6 +71,7 @@ async def amain(env=None, *, stop=None, on_ready=None, install_signals=False, po
     srv = PublicServer(cfg, svc)
     await srv.start(port=port)                                    # binds the configured HOST and PORT; an OSError here propagates before the relay has started
     relay_task = None
+    probe_task = None
     waiter = None
     code = 0
     try:
@@ -85,6 +87,9 @@ async def amain(env=None, *, stop=None, on_ready=None, install_signals=False, po
         if cfg.serve_snapshot:
             log.info("snapshot serving is ON: starting the relay (%d instruments, one WebSocket)" % (len(svc.ins.indices) + len(svc.ins.equities)))
             relay_task = asyncio.ensure_future(svc.run(stop))
+        elif cfg.probe_seconds:
+            log.warn("PROBE mode: a private %d s Upstox connection test runs; snapshot serving stays OFF and nothing is served" % cfg.probe_seconds)
+            probe_task = asyncio.ensure_future(probe.run(svc, log, stop, cfg.probe_seconds, cfg.stale_after_s * 1000))
         else:
             log.warn("snapshot serving is OFF (LIVE_PUBLIC_SERVE_SNAPSHOT is not \"true\"): the relay is not started and no Upstox connection is made")
         if on_ready is not None:
@@ -109,6 +114,14 @@ async def amain(env=None, *, stop=None, on_ready=None, install_signals=False, po
                 await asyncio.gather(relay_task, return_exceptions=True)
             except (asyncio.CancelledError, Exception):
                 await asyncio.gather(relay_task, return_exceptions=True)
+        if probe_task is not None:                                # it stops the relay it started and writes its verdict
+            try:
+                await asyncio.wait_for(asyncio.shield(probe_task), grace_s + probe.STOP_GRACE_S)
+            except asyncio.TimeoutError:
+                probe_task.cancel()
+                await asyncio.gather(probe_task, return_exceptions=True)
+            except (asyncio.CancelledError, Exception):
+                await asyncio.gather(probe_task, return_exceptions=True)
         log.info("stopped")
     return code
 

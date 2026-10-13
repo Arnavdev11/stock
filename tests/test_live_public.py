@@ -123,6 +123,32 @@ class Hosts(unittest.TestCase):
                 C.parse_hosts(b)
 
 
+class ProbeConfig(unittest.TestCase):
+    def test_off_by_default_and_bounded(self):
+        self.assertEqual(C.load(env()).probe_seconds, 0)
+        self.assertEqual(C.load(env(LIVE_PUBLIC_PROBE_SECONDS="")).probe_seconds, 0)
+        for ok in ("0", "30", "120", "900"):
+            self.assertEqual(C.load(env(LIVE_PUBLIC_PROBE_SECONDS=ok)).probe_seconds, int(ok))
+        for bad in ("29", "901", "-1", "abc", "1.5", " 60", "60 ", "1e2", "0x40", "1" * 7):
+            with self.assertRaises(ConfigError, msg=repr(bad)) as cm:
+                C.load(env(LIVE_PUBLIC_PROBE_SECONDS=bad))
+            self.assertIn("LIVE_PUBLIC_PROBE_SECONDS", str(cm.exception))
+            if len(bad.strip()) >= 4:                                                   # a rejected value is never echoed back
+                self.assertNotIn(bad.strip(), str(cm.exception))
+
+    def test_it_cannot_be_combined_with_public_serving(self):
+        with self.assertRaises(ConfigError) as cm:
+            C.load(env(LIVE_PUBLIC_SERVE_SNAPSHOT="true", LIVE_PUBLIC_PROBE_SECONDS="60"))
+        self.assertIn("LIVE_PUBLIC_PROBE_SECONDS", str(cm.exception))
+        self.assertEqual(C.load(env(LIVE_PUBLIC_SERVE_SNAPSHOT="true", LIVE_PUBLIC_PROBE_SECONDS="0")).probe_seconds, 0)
+        self.assertEqual(C.load(env(LIVE_PUBLIC_SERVE_SNAPSHOT="false", LIVE_PUBLIC_PROBE_SECONDS="60")).serve_snapshot, False)
+
+    def test_it_is_described_without_the_token(self):
+        c = C.load(env(LIVE_PUBLIC_PROBE_SECONDS="60"))
+        self.assertEqual(c.describe()["probe_seconds"], 60)
+        self.assertNotIn(TOKEN, repr(c) + str(c.describe()))
+
+
 class NumbersAndFlags(unittest.TestCase):
     def test_integers_are_strict_and_bounded(self):
         for var, ok_lo, ok_hi, bad in (("PORT", "1", "65535", ("0", "65536", "-1", "abc", "1e3", " 80", "80 ", "8.0", "0x50", "1" * 7)),
@@ -1180,6 +1206,168 @@ class RuntimeEndToEnd(unittest.TestCase):
         self.assertEqual(was_cancelled, [True])                                             # it was cancelled by the shutdown, not left running
 
 
+import live_public.probe as P                                               # noqa: E402
+
+
+def ev_base(**over):
+    e = {"state": "streaming", "market": "open", "auth_ok": 1, "auth_failed": 0, "auth_http": 200, "connects": 1, "connect_failed": 0, "frames": 5, "decode_errors": 0, "text_frames": 0,
+         "accepted_ticks": 6, "rejected": {}, "index": {"n": 1, "recv_age_ms": 500, "ltt_age_ms": 800, "today": True},
+         "equity": {"n": 5, "recv_age_ms": 600, "ltt_age_ms": 900, "today": True}, "expected": {"index": 1, "equity": 5}, "last_error": None}
+    e.update(over)
+    return e
+
+
+class ProbeVerdict(unittest.TestCase):
+    def v(self, **over):
+        return P.verdict(ev_base(**over), 30000)
+
+    def test_pass_needs_authorization_connection_streaming_and_fresh_index_and_equity(self):
+        self.assertEqual(self.v()[0], "PASS")
+
+    def test_a_rejected_or_missing_authorization_is_a_failure_even_when_a_token_exists(self):
+        self.assertEqual(self.v(auth_ok=0, auth_failed=2, auth_http=401, state="auth_stopped")[0], "FAIL")
+        self.assertIn("401", self.v(auth_ok=0, auth_failed=2, auth_http=401, state="auth_stopped")[1])
+        self.assertEqual(self.v(auth_ok=0, auth_failed=0, auth_http=None, state="off_hours")[0], "FAIL")
+
+    def test_authorized_but_never_connected_is_a_failure(self):
+        self.assertEqual(self.v(connects=0, connect_failed=3)[0], "FAIL")
+
+    def test_old_data_is_not_fresh(self):
+        old_exchange_time = dict(ev_base()["index"], ltt_age_ms=120000)               # a replayed last-traded tick from earlier
+        old_receipt = dict(ev_base()["index"], recv_age_ms=45000)
+        not_today = dict(ev_base()["index"], today=False)
+        for bad in (old_exchange_time, old_receipt, not_today, dict(ev_base()["index"], ltt_age_ms=None), dict(ev_base()["index"], n=0, recv_age_ms=None, ltt_age_ms=None)):
+            self.assertEqual(self.v(index=bad)[0], "FAIL", bad)
+        for bad in (dict(ev_base()["equity"], recv_age_ms=45000), dict(ev_base()["equity"], today=False), dict(ev_base()["equity"], n=0, recv_age_ms=None, ltt_age_ms=None)):
+            self.assertEqual(self.v(equity=bad)[0], "FAIL", bad)
+        self.assertEqual(self.v(state="backoff")[0], "FAIL")
+
+    def test_partial_only_when_the_market_is_not_open(self):
+        quiet = dict(frames=1, index={"n": 0, "recv_age_ms": None, "ltt_age_ms": None, "today": False}, equity={"n": 0, "recv_age_ms": None, "ltt_age_ms": None, "today": False})
+        self.assertEqual(self.v(market="closed", **quiet)[0], "PARTIAL")
+        self.assertEqual(self.v(market="pre_open", **quiet)[0], "PARTIAL")
+        self.assertEqual(self.v(market="open", **quiet)[0], "FAIL")
+        self.assertEqual(self.v(market="open", frames=0, **{k: v for k, v in quiet.items() if k != "frames"})[0], "FAIL")
+
+
+class ProbeRuntime(unittest.TestCase):
+    def probe_env(self, **over):
+        return dict({"LIVE_PUBLIC_SERVE_SNAPSHOT": "false", "LIVE_PUBLIC_PROBE_SECONDS": "30"}, **over)
+
+    async def finish(self, h):
+        assert await h.until(lambda: "PROBE RESULT" in h.stream.getvalue()), h.stream.getvalue()
+
+    def test_a_good_probe_proves_authorization_connection_and_fresh_data_without_serving_anything(self):
+        h = Harness(**self.probe_env())
+        seen = {"snap": [], "health": []}
+        async def scenario(h):
+            t = await h.streaming()
+            for _ in range(4):                                                          # 40 s of fake time, a frame every 10 s
+                h.ft.advance(10000)
+                t.feed(h.frame())
+                n = h.svc.c["frames"]
+                assert await h.until(lambda: h.svc.c["frames"] > n or "PROBE RESULT" in h.stream.getvalue())
+                seen["snap"].append(await h.get(extra="Origin: %s\r\n" % ORIGIN))
+            await self.finish(h)
+            seen["health"].append(await h.get(HEALTH))
+            seen["latest"] = h.svc.latest
+            seen["closed"] = t.closed
+        self.assertEqual(run_rt(h, scenario), 0)
+        log = h.stream.getvalue()
+        self.assertIn("PROBE RESULT: PASS", log)
+        self.assertIn("authorized (HTTP 200)", log)
+        self.assertIn("PROBE evidence", log)
+        self.assertEqual(len(h.auth_calls), 1)                                          # one authorization, one WebSocket
+        self.assertEqual(len(h.made), 1)
+        self.assertTrue(seen["closed"])                                                 # the probe stops its own connection when the time is up
+        self.assertIsNotNone(seen["latest"])                                            # the relay did build snapshots internally ...
+        for r in seen["snap"]:                                                          # ... and none was ever served
+            self.assertEqual((r.status, r.json()), (503, {"error": "snapshot_disabled"}))
+        self.assertEqual(seen["health"][0].json()["snapshot"], "disabled")
+        for needle in ("20100", "101.0", "feed.example.test", "ONETIMECODE", TLS.TOKEN):          # no price, no connection address, no token in the log
+            self.assertNotIn(needle, log)
+        self.assertEqual(h.secrets_seen(), [])
+
+    def test_a_rejected_token_is_reported_as_a_failure_with_the_http_status(self):
+        rej = (401, {"errors": [{"errorCode": "UDAPI100050", "message": "Invalid token " + TLS.TOKEN}]})
+        h = Harness(auth=[rej, rej], **self.probe_env())
+        async def scenario(h):
+            assert await h.until(lambda: h.svc.c["auth_failed"] >= 1)
+            h.ft.advance(5000)
+            assert await h.until(lambda: h.svc.c["auth_failed"] >= 2)
+            h.ft.advance(30000)
+            await self.finish(h)
+        self.assertEqual(run_rt(h, scenario), 0)
+        log = h.stream.getvalue()
+        self.assertIn("PROBE RESULT: FAIL", log)
+        self.assertIn("401", log.split("PROBE RESULT:")[1])
+        self.assertEqual(h.made, [])                                                    # no WebSocket was opened with a rejected token
+        self.assertEqual(h.secrets_seen(), [])
+
+    def test_a_replayed_old_tick_is_not_fresh_data(self):
+        h = Harness(**self.probe_env())
+        async def scenario(h):
+            t = await h.streaming()
+            for _ in range(4):
+                h.ft.advance(10000)
+                t.feed(h.frame(ms=h.ft.ms - 300000))                                    # exchange timestamps five minutes old
+                n = h.svc.c["frames"]
+                assert await h.until(lambda: h.svc.c["frames"] > n or "PROBE RESULT" in h.stream.getvalue())
+            await self.finish(h)
+        self.assertEqual(run_rt(h, scenario), 0)
+        self.assertIn("PROBE RESULT: FAIL", h.stream.getvalue())
+
+    def test_outside_market_hours_the_probe_can_prove_authorization_but_never_claims_fresh_data(self):
+        h = Harness(**self.probe_env())
+        h.ft = TLS.FakeTime(TLS.T_NIGHT)                                                # 23:00 IST, outside the live relay's connection window
+        async def scenario(h):
+            await h.streaming()
+            h.ft.advance(35000)
+            await self.finish(h)
+        self.assertEqual(run_rt(h, scenario), 0)
+        log = h.stream.getvalue()
+        self.assertIn("PROBE RESULT: PARTIAL", log)
+        self.assertNotIn("PROBE RESULT: PASS", log)
+        self.assertEqual(len(h.auth_calls), 1)
+
+    def test_without_the_probe_the_window_still_applies_and_nothing_connects_at_night(self):
+        h = Harness(LIVE_PUBLIC_SERVE_SNAPSHOT="true")                                  # the live relay keeps its connection window
+        h.ft = TLS.FakeTime(TLS.T_NIGHT)
+        async def scenario(h):
+            await asyncio.sleep(0.2)
+            h.ft.advance(5000)
+            await asyncio.sleep(0.2)
+        self.assertEqual(run_rt(h, scenario), 0)
+        self.assertEqual((h.auth_calls, h.made), ([], []))
+
+    def test_probe_with_public_serving_is_refused_before_anything_is_opened(self):
+        calls = []
+        deps = dict(http_get=lambda *a: calls.append("auth"), transport_factory=lambda: calls.append("ws"), fetch_bytes=lambda *a: calls.append("fetch") or b"[]")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = M.main([], rt_env(LIVE_PUBLIC_SERVE_SNAPSHOT="true", LIVE_PUBLIC_PROBE_SECONDS="60"), **deps)
+        self.assertEqual(code, 2)
+        self.assertIn("LIVE_PUBLIC_PROBE_SECONDS", err.getvalue())
+        self.assertEqual(calls, [])
+
+    def test_probe_off_means_no_download_no_authorization_no_connection(self):
+        h = Harness(LIVE_PUBLIC_SERVE_SNAPSHOT="false", LIVE_PUBLIC_PROBE_SECONDS="0")
+        async def scenario(h):
+            await asyncio.sleep(0.2)
+        self.assertEqual(run_rt(h, scenario), 0)
+        self.assertEqual((h.auth_calls, h.made), ([], []))
+        self.assertNotIn("PROBE", h.stream.getvalue())
+
+    def test_shutting_down_during_the_probe_stops_the_relay_and_still_writes_a_verdict(self):
+        h = Harness(**self.probe_env(LIVE_PUBLIC_PROBE_SECONDS="900"))
+        seen = {}
+        async def scenario(h):
+            seen["t"] = await h.streaming()
+        self.assertEqual(run_rt(h, scenario), 0)
+        self.assertTrue(seen["t"].closed)
+        self.assertIn("PROBE RESULT", h.stream.getvalue())
+
+
 class StartupErrors(unittest.TestCase):
     def run_main(self, env_, **deps):
         err = io.StringIO()
@@ -1284,6 +1472,15 @@ class RenderBlueprint(unittest.TestCase):
         for needle in ("Free instance limits", "15 minutes", "750", "not an always-on feed", "0.5c-512mb", "not for production"):
             self.assertIn(needle, doc)
 
+    def test_the_blueprint_ships_the_probe_off_and_the_doc_explains_it(self):
+        env_ = {e["key"]: e.get("value") for e in render_service()["envVars"]}
+        self.assertEqual(env_["LIVE_PUBLIC_PROBE_SECONDS"], "0")
+        self.assertEqual(env_["LIVE_PUBLIC_SERVE_SNAPSHOT"], "false")
+        with open(os.path.join(ROOT, "live_public", "DEPLOY_RENDER.md"), encoding="utf-8") as f:
+            doc = f.read()
+        for needle in ("Private connection test", "PROBE RESULT: PASS", "PROBE RESULT: PARTIAL", "auth_ok >= 1", "snapshot_disabled"):
+            self.assertIn(needle, doc)
+
     def test_the_service_is_declared_as_requested(self):
         svc = render_service()
         self.assertEqual((svc["type"], svc["runtime"], svc["startCommand"], svc["healthCheckPath"]), ("web", "python", "python -m live_public", "/healthz/live"))
@@ -1309,7 +1506,7 @@ class RenderBlueprint(unittest.TestCase):
 
     def test_every_variable_in_the_blueprint_is_one_the_service_reads(self):
         known = {"UPSTOX_ANALYTICS_TOKEN", "ALLOWED_HOSTS", "ALLOWED_ORIGIN", "HOST", "PORT", "LIVE_PUBLIC_SERVE_SNAPSHOT", "LIVE_PUBLIC_TRUST_PROXY", "LIVE_PUBLIC_RATE_PER_MINUTE",
-                 "LIVE_PUBLIC_BURST", "LIVE_PUBLIC_MAX_CONNECTIONS", "LIVE_PUBLIC_STALE_AFTER_S"}
+                 "LIVE_PUBLIC_BURST", "LIVE_PUBLIC_MAX_CONNECTIONS", "LIVE_PUBLIC_STALE_AFTER_S", "LIVE_PUBLIC_PROBE_SECONDS"}
         src = (ROOT / "live_public" / "config.py").read_text(encoding="utf-8")
         for e in render_service()["envVars"]:
             if e["key"] != "PYTHON_VERSION":                                                # read by Render's build, not by the service

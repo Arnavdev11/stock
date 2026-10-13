@@ -7,6 +7,8 @@ live_public/config.py - the hosted service's configuration. Environment variable
                       When ALLOWED_HOSTS is set it is used alone: list the onrender.com name AND any custom domain.
     ALLOWED_ORIGIN    optional. Exact browser origin(s), default https://arnavdev11.github.io. https only, no port, no path, no wildcard, no "null".
     LIVE_PUBLIC_SERVE_SNAPSHOT    optional. Exactly "true" to serve /v1/live/snapshot.json; anything else (default "false") keeps it switched off.
+    LIVE_PUBLIC_PROBE_SECONDS     optional. 0 / unset = off (default). 30..900 = run a time-limited PRIVATE connection test of the Upstox feed (authorize, WebSocket, subscribe, fresh ticks) and
+                      write the evidence to the LOG only. It never serves anything: it is refused together with LIVE_PUBLIC_SERVE_SNAPSHOT=true, and the snapshot stays "disabled".
     LIVE_PUBLIC_TRUST_PROXY       optional. Exactly "true" only when a trusted proxy sets X-Forwarded-For (default "false").
     HOST (default 0.0.0.0), PORT (default 8080; hosting platforms set it)
     LIVE_PUBLIC_RATE_PER_MINUTE, LIVE_PUBLIC_BURST, LIVE_PUBLIC_MAX_CONNECTIONS, LIVE_PUBLIC_STALE_AFTER_S   optional integers within fixed bounds.
@@ -23,6 +25,7 @@ from live_service.safety import ConfigError
 TOKEN_ENV = "UPSTOX_ANALYTICS_TOKEN"
 DEFAULT_ORIGIN = "https://arnavdev11.github.io"
 DEFAULT_SYMBOLS = ("RELIANCE", "TCS", "INFY", "HDFCBANK", "ITC")        # the relay's tested set; fixed here
+PROBE_MIN_S, PROBE_MAX_S = 30, 900
 MAX_ORIGINS = 3
 MAX_HOSTS = 5
 
@@ -57,6 +60,18 @@ def _int(env, name):
     if not isinstance(raw, str) or not _INT_RE.match(raw) or not lo <= int(raw) <= hi:
         raise ConfigError("%s must be a whole number from %d to %d" % (name, lo, hi))
     return int(raw)
+
+
+def _probe_seconds(env, serve_snapshot):
+    raw = env.get("LIVE_PUBLIC_PROBE_SECONDS")
+    if raw is None or raw == "":
+        return 0
+    if not isinstance(raw, str) or not _INT_RE.match(raw) or not (int(raw) == 0 or PROBE_MIN_S <= int(raw) <= PROBE_MAX_S):
+        raise ConfigError("LIVE_PUBLIC_PROBE_SECONDS must be 0 (off) or a whole number from %d to %d" % (PROBE_MIN_S, PROBE_MAX_S))
+    n = int(raw)
+    if n and serve_snapshot:
+        raise ConfigError("LIVE_PUBLIC_PROBE_SECONDS is a private test and cannot be combined with LIVE_PUBLIC_SERVE_SNAPSHOT=true")
+    return n
 
 
 def _flag(env, name):
@@ -132,7 +147,7 @@ def _token(env):
 class Config:
     """Validated settings. The token is held name-mangled and is reachable only through token(); repr(), str() and describe() never contain it."""
 
-    def __init__(self, *, token, bind_host, port, origins, hosts, serve_snapshot, trust_proxy, rate_per_minute, burst, max_connections, stale_after_s):
+    def __init__(self, *, token, bind_host, port, origins, hosts, serve_snapshot, trust_proxy, rate_per_minute, burst, max_connections, stale_after_s, probe_seconds=0):
         self.__token = token
         self.bind_host, self.port = bind_host, port
         self.origins, self.hosts = origins, hosts
@@ -140,6 +155,7 @@ class Config:
         self.serve_snapshot, self.trust_proxy = serve_snapshot, trust_proxy
         self.rate_per_minute, self.burst = rate_per_minute, burst
         self.max_connections, self.stale_after_s = max_connections, stale_after_s
+        self.probe_seconds = probe_seconds
 
     def token(self):
         return self.__token
@@ -148,7 +164,7 @@ class Config:
         """Everything that may be logged at start-up. No token, no secret-bearing value."""
         return {"bind": "%s:%d" % (self.bind_host, self.port), "origins": list(self.origins), "hosts": list(self.hosts), "symbols": list(self.symbols),
                 "serve_snapshot": self.serve_snapshot, "trust_proxy": self.trust_proxy, "rate_per_minute": self.rate_per_minute, "burst": self.burst,
-                "max_connections": self.max_connections, "stale_after_s": self.stale_after_s}
+                "max_connections": self.max_connections, "stale_after_s": self.stale_after_s, "probe_seconds": self.probe_seconds}
 
     def __repr__(self):
         return "<live_public.Config %s>" % self.describe()
@@ -160,13 +176,15 @@ def load(env=None):
     """Build a Config from `env` (default: the process environment). Fails closed: a missing or malformed required value raises ConfigError."""
     env = os.environ if env is None else env
     origin_raw = env.get("ALLOWED_ORIGIN")
+    serve = _flag(env, "LIVE_PUBLIC_SERVE_SNAPSHOT")
     return Config(
         token=_token(env),
         bind_host=_bind_host(env),
         port=_int(env, "PORT"),
         origins=parse_origins(origin_raw) if origin_raw not in (None, "") else (DEFAULT_ORIGIN,),
         hosts=parse_hosts(env.get("ALLOWED_HOSTS") if env.get("ALLOWED_HOSTS") not in (None, "") else env.get("RENDER_EXTERNAL_HOSTNAME")),
-        serve_snapshot=_flag(env, "LIVE_PUBLIC_SERVE_SNAPSHOT"),
+        serve_snapshot=serve,
+        probe_seconds=_probe_seconds(env, serve),
         trust_proxy=_flag(env, "LIVE_PUBLIC_TRUST_PROXY"),
         rate_per_minute=_int(env, "LIVE_PUBLIC_RATE_PER_MINUTE"),
         burst=_int(env, "LIVE_PUBLIC_BURST"),

@@ -37,6 +37,7 @@ Upgrade path for a reliable feed: change `plan: free` to `plan: 0.5c-512mb` (Sta
 | Variable | Value | Where |
 |---|---|---|
 | `UPSTOX_ANALYTICS_TOKEN` | your Upstox analytics token | **dashboard only** (prompted at Blueprint creation); never in the repository, chat or logs |
+| `LIVE_PUBLIC_PROBE_SECONDS` | `0` (off) | file; set `120` in the dashboard for the private connection test above |
 | `LIVE_PUBLIC_SERVE_SNAPSHOT` | `false` in the file; set `true` in the dashboard for the real-feed test | gate: with anything but exactly `true` the relay is not started and no Upstox connection is made |
 | `ALLOWED_ORIGIN` | `https://arnavdev11.github.io` | file |
 | `ALLOWED_HOSTS` | not set (uses `RENDER_EXTERNAL_HOSTNAME`) | set only for a custom domain; list the `onrender.com` name too |
@@ -45,13 +46,25 @@ Upgrade path for a reliable feed: change `plan: free` to `plan: 0.5c-512mb` (Sta
 | `LIVE_PUBLIC_RATE_PER_MINUTE`, `LIVE_PUBLIC_BURST`, `LIVE_PUBLIC_MAX_CONNECTIONS`, `LIVE_PUBLIC_STALE_AFTER_S` | `600`, `200`, `200`, `30` | file |
 | `PYTHON_VERSION` | `3.13.5` | file |
 
+## Private connection test (the probe) - run this BEFORE turning the gate on
+`LIVE_PUBLIC_SERVE_SNAPSHOT` stays `false`. Set `LIVE_PUBLIC_PROBE_SECONDS` (30..900, default `0` = off) in the Render dashboard to run a time-limited, private test of the Upstox feed. It is refused together with `LIVE_PUBLIC_SERVE_SNAPSHOT=true`.
+- **What runs:** the same unchanged relay: one authorize call, one WebSocket, the subscribe for the six fixed instruments. The relay is stopped when the time is up and the service keeps answering (disabled).
+- **What is exposed:** nothing. `/v1/live/snapshot.json` stays `503 {"error":"snapshot_disabled"}`, `PUBLIC_LIVE.enabled` stays false. The evidence goes to the Render **Logs** only, as counters, states and ages: never the token, the connection address, a raw frame or a price.
+- **Timing:** while the probe runs the relay ignores its 08:55-15:45 window (the probe only), so authorization and the connection can be proven at any hour. Fresh data can only be proven while the NSE market is open.
+- **Steps:** Environment -> add `LIVE_PUBLIC_PROBE_SECONDS` = `120` -> save (Render redeploys) -> Logs. Afterwards set it back to `0`.
+- **Read the result** (last lines, search for `PROBE`): `PROBE evidence {...}` every 10 s, then one line:
+  - `PROBE RESULT: PASS` - Upstox authorized the token (auth_ok >= 1, HTTP 200), the WebSocket connected, frames arrived, and the NIFTY 50 tick and at least one equity tick are fresh (received within `LIVE_PUBLIC_STALE_AFTER_S`, index exchange time within 60 s, traded today).
+  - `PROBE RESULT: PARTIAL` - authorized and connected, but the market is not open, so no fresh data can be expected. Run again between 09:30 and 15:15 IST on a trading day.
+  - `PROBE RESULT: FAIL - ...` - the reason is named: token not authorized (with the HTTP status; 401/403 means the token is wrong or expired), never connected, no frame, or no fresh data while the market is open.
+- The existence of the variable proves nothing: only `auth_ok >= 1` with HTTP 200 and then `PASS` count as evidence.
+
 ## Dashboard steps for the first real-feed test
 Prerequisite (needs your approval, not done): the branch holding these files must be committed and pushed to GitHub, because Render builds from a Git branch.
 1. Render dashboard -> **New** -> **Blueprint** -> connect the `Arnavdev11/stock` repository -> choose the branch that holds `render.yaml` -> Render reads `render.yaml`.
 2. When prompted, paste `UPSTOX_ANALYTICS_TOKEN`. Review the plan shown (`free`, $0; see "Free instance limits") and create the service. Do not change `LIVE_PUBLIC_SERVE_SNAPSHOT` yet.
 3. Wait for the first deploy to pass its health check (`/healthz/live`). Note the service address shown at the top of the service page (`https://<name>.onrender.com`).
 4. Gate-off check (any time): `curl -s https://<host>/healthz/live` -> `{"status":"alive"}`; `curl -s https://<host>/healthz` -> `{"status":"ok","snapshot":"disabled"}` and `curl -s -i https://<host>/v1/live/snapshot.json` -> HTTP 503 `{"error":"snapshot_disabled"}`. The logs say "the relay is not started".
-5. During NSE hours (relay window 08:55-15:45 IST): service -> **Environment** -> set `LIVE_PUBLIC_SERVE_SNAPSHOT` to `true` -> save (Render redeploys).
+5. Only after the probe says `PASS` (and the Upstox terms are confirmed): during NSE hours (relay window 08:55-15:45 IST): service -> **Environment** -> set `LIVE_PUBLIC_SERVE_SNAPSHOT` to `true` -> save (Render redeploys).
 6. Watch **Logs** for "snapshot serving is ON: starting the relay" and, within a minute, no ERROR lines. Watch **Metrics -> Memory** during the start (see Risks).
 7. Check: `curl -s https://<host>/healthz` -> `{"status":"ok","snapshot":"fresh"}`; `curl -s -H "Origin: https://arnavdev11.github.io" -i https://<host>/v1/live/snapshot.json` -> HTTP 200, `Access-Control-Allow-Origin: https://arnavdev11.github.io`, a `Date` header, JSON with `scope.universe` `test_set`, `quality.ok` true, `breadth.counted` 0, `gainers` null, and `NIFTY 50` plus the five equities. A request with another `Origin` must give 403.
 8. To turn the feed off again: set `LIVE_PUBLIC_SERVE_SNAPSHOT` back to `false` (or suspend the service).
