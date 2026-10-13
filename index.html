@@ -2335,6 +2335,83 @@ check();
 window.SLShareholding={model:model,summaryHtml:summaryHtml,sectionHtml:sectionHtml,chartHtml:chartHtml,slotsOf:slotsOf,axisOf:axisOf,check:check,notesOf:notesOf,hostOk:hostOk,fmtPct:fmtPct,KEYS:KEYS,LABEL:LABEL};
 })();
 </script>
+<script type="module" id="stocklens-quarterly">
+/* StockLens - Quarterly Results: a read-only section on Stock Detail, placed after the Shareholding Pattern (or after Financial History when that is not placed).
+   Data: out/by_symbol/quarterly_results/SYMBOL.json, the static file written by quarterly_results_updater.py (Upstox fundamentals, quarterly income statement). Requested once per stock, only when its Stock Detail is open.
+   A stock with no such file shows "No quarterly results are on file for this company yet." Nothing is invented: a value that is missing (null) shows "-", never 0; a quarter that is not in the file is a gap and is
+   listed as one; growth is shown only as stored (computed from two stored quarters by the updater); EBITDA is not shown because it is not provided; the stored operating_profit is not shown because it can equal profit before tax.
+   "Stored" is the date StockLens first stored the quarter - it is NOT the date the company declared it (the source gives none). No rating, score, target or advice. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var SHOW=8;
+var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var COLS=[["revenue","Revenue"],["total_revenue","Total revenue"],["profit_after_tax","Net profit"],["eps_basic","EPS (basic)"]];
+var GROW=[["revenue","Revenue"],["profit_after_tax","Net profit"]];
+function qLabel(d){var m=/^(\d{4})-(\d{2})-\d{2}$/.exec(String(d||""));return m&&+m[2]>=1&&+m[2]<=12?MON[+m[2]-1]+" "+m[1]:"-"}
+function num(v){return isn(v)?v.toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:0}):"-"}
+function pct(v){return isn(v)?(v>0?"+":"")+v.toFixed(2)+"%":"-"}
+function stockOf(sym,doc){
+  if(!doc||doc.kind!=="quarterly_results"||!doc.stocks||typeof doc.stocks!=="object")return null;
+  var s=doc.stocks[sym];
+  return s&&s.symbol===sym&&Array.isArray(s.quarters)&&s.quarters.length?s:null}
+function sectionHtml(sym,doc){
+  var s=stockOf(sym,doc),h='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Quarterly Results</h4>';
+  if(!s)return h+'<p class="note qr-p">No quarterly results are on file for this company yet.</p></div>';
+  var rows=s.quarters.filter(function(r){return r&&r.values&&typeof r.values==="object"}).slice(0,SHOW);
+  if(!rows.length)return h+'<p class="note qr-p">No quarterly results are on file for this company yet.</p></div>';
+  h+='<p class="qr-asof"><b>Latest quarter: '+esc(qLabel(s.latest_quarter_end))+'</b> <span>('+esc(s.basis||"")+'; INR crore, EPS in INR)</span></p>';
+  h+='<div class="scroll"><table data-qr="table"><thead><tr><th>Quarter</th>'+COLS.map(function(c){return'<th class="n">'+esc(c[1])+'</th>'}).join("")
+    +GROW.map(function(g){return'<th class="n">'+esc(g[1])+' YoY</th><th class="n">'+esc(g[1])+' QoQ</th>'}).join("")+'<th>Stored</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    var gy=(r.growth&&r.growth.yoy)||{},gq=(r.growth&&r.growth.qoq)||{};
+    h+='<tr><td>'+esc(qLabel(r.quarter_end))+'</td>'+COLS.map(function(c){return'<td class="n">'+num(r.values[c[0]])+'</td>'}).join("")
+      +GROW.map(function(g){return'<td class="n">'+pct(gy[g[0]])+'</td><td class="n">'+pct(gq[g[0]])+'</td>'}).join("")
+      +'<td>'+esc(r.retrieved_on||"-")+'</td></tr>'});
+  h+='</tbody></table></div>';
+  var gaps=(s.gaps||[]).filter(function(g){return g&&Array.isArray(g.between)&&g.between.length===2});
+  if(gaps.length)h+='<p class="note qr-p" data-qr="gaps">Quarters missing from the data (not zero): between '+gaps.map(function(g){return esc(qLabel(g.between[0]))+' and '+esc(qLabel(g.between[1]))}).join("; ")+'.</p>';
+  h+='<p class="note qr-p" data-qr="note">Source: Upstox fundamentals (quarterly income statement). "-" means unavailable, never zero. Growth is computed from two stored quarters 12 or 3 months apart and is "-" when either is missing or the base is zero or negative. '
+    +'"Stored" is when StockLens first stored the quarter, not the date the company declared it. EBITDA is not provided. Not live market data. No rating, target or advice.</p></div>';
+  return h}
+var STYLE='#detailQuarterly .qr-p{padding:0 0 6px;margin:6px 0 0;overflow-wrap:anywhere}#detailQuarterly .qr-asof{margin:0 0 6px}#detailQuarterly .qr-asof span{color:var(--mute);font-size:.85rem}'
+ +'#detailQuarterly table{min-width:560px}#detailQuarterly th,#detailQuarterly td{padding:8px 8px;font-size:.85rem}#detailQuarterly .scroll{overflow-x:auto}';
+function addStyle(){
+  if(!document.head||!document.createElement||$("quarterlyStyle"))return;
+  var st=document.createElement("style");st.id="quarterlyStyle";st.textContent=STYLE;document.head.appendChild(st)}
+var CACHE={};
+function load(sym){
+  if(CACHE[sym])return CACHE[sym];
+  CACHE[sym]=fetch("out/by_symbol/quarterly_results/"+encodeURIComponent(sym)+".json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return CACHE[sym]}
+function routeSymbol(){
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+var node=null,nodeSym=null;
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box||!box.querySelector)return;
+  if(String(box.innerHTML||"").indexOf('id="detailChart"')<0)return;
+  var sh=$("detailShareholding"),fh=$("detailFinancialHistory"),anchor=sh&&sh.parentNode===box?sh:fh&&fh.parentNode===box?fh:null;
+  if(!anchor)return;
+  if(node&&node.parentNode===box&&nodeSym===s)return;
+  addStyle();
+  var el=document.createElement("section");
+  el.id="detailQuarterly";
+  el.innerHTML='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Quarterly Results</h4><p class="note qr-p">Loading…</p></div>';
+  box.insertBefore(el,anchor.nextSibling);node=el;nodeSym=s;
+  load(s).then(function(doc){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=sectionHtml(s,doc)})}
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true,subtree:true})}
+check();
+window.SLQuarterly={sectionHtml:sectionHtml,stockOf:stockOf,qLabel:qLabel,num:num,pct:pct,check:check};
+})();
+</script>
 <script type="module" id="stocklens-nav">
 /* StockLens Phase 5I - global stock search and direct section navigation (navigation only: no data, no calculation, no request).
    The global bar (#globalBar, in the page itself) holds the ONE company search: the Phase 5F search module mounts into #globalSearchHost, so there is no second search and no second company list. Selecting a result opens the
