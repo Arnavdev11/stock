@@ -2877,7 +2877,7 @@ window.SLMarket={activityOf:activityOf,perfOf:perfOf,cleanCandles:cleanCandles,i
 (function(){
 "use strict";
 var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
-var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765};
+var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,pollTest:5000,noTrade:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765};
 var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
 var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
 var SOURCE="Upstox market data feed V3 (ltpc)",SYM=/^[A-Z0-9&._-]{1,30}$/;
@@ -3006,7 +3006,7 @@ Ui.prototype.mount=function(){
   if(this.css)return;
   var s=this.el("style");s.id="liveCss";s.textContent=CSS;(this.doc.head||this.doc.documentElement).appendChild(s);this.css=s;
   var main=this.doc.getElementById("market");
-  if(main){this.chip=this.el("div","lv-chip","Live (private test): connecting…");this.chip.setAttribute("role","status");main.insertBefore(this.chip,main.firstChild)}};
+  if(main){this.chip=this.el("div","lv-chip",this.privateTest?"LOCAL LIVE TEST: connecting…":"Live (private test): connecting…");this.chip.setAttribute("role","status");main.insertBefore(this.chip,main.firstChild)}};
 Ui.prototype.drop=function(name){var e=this.panels[name];if(e&&e.parentNode)e.parentNode.removeChild(e);this.panels[name]=null};
 Ui.prototype.put=function(name,secId,node){
   this.drop(name);var sec=this.doc.getElementById(secId);if(!sec)return;
@@ -3032,20 +3032,34 @@ Ui.prototype.indices=function(doc,lab){
   c.appendChild(row);n.appendChild(c);
   n.appendChild(this.el("p","lv-note",lab==="STALE"?"This value is no longer current. It is the last one received, shown with its own time. The end-of-day figures below are unchanged."
     :"Last traded price from the live feed, against the previous close. The end-of-day figures below are unchanged."));return n};
+/* age of a trade: the snapshot's own clock minus the exchange's last-trade time. Both come from the snapshot; if either is missing or unreadable there is no age (never a guess). */
+function tradeAge(doc,ltt){
+  if(typeof ltt!=="string"||ltt.length<19)return null;
+  var t=Date.parse(ltt);if(!isFinite(t)||!isNum(doc.server_ts_ms))return null;
+  var a=doc.server_ts_ms-t;if(a<-CFG.skew)return null;
+  return a<0?0:a}
+function lttText(ltt){return typeof ltt==="string"&&ltt.length>=19&&isFinite(Date.parse(ltt))?ltt.slice(11,19):"–"}
+function ageText(ms){
+  var s=Math.floor(ms/1000);
+  return s<60?s+" s":s<3600?Math.floor(s/60)+" m "+("0"+s%60).slice(-2)+" s":Math.floor(s/3600)+" h "+("0"+Math.floor(s%3600/60)).slice(-2)+" m"}
 /* the private test set: one separate panel at the top of the Market Today page. It is never the Market Today NIFTY 50 card, and it never carries breadth, movers or rankings. */
 Ui.prototype.privatePanel=function(doc,lab){
   var n=this.el("div","lv-panel"+(lab==="STALE"?" lv-stale":"")),h=this.el("p","lv-head"),b=this.el("b",null,lab),rows=[];
   n.setAttribute("data-lv","private-test");
   doc.indices.forEach(function(r){rows.push({name:r.name,ltp:r.ltp,pct:r.change_pct,ltt:r.ltt,cp:r.cp})});
   Object.keys(doc.prices).sort().forEach(function(k){var v=doc.prices[k];rows.push({name:k,ltp:v.ltp,pct:v.change_pct,ltt:v.ltt,cp:v.cp})});
-  h.appendChild(b);h.appendChild(this.el("span",null," · PRIVATE TEST SET — not a market dashboard · "+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
+  h.appendChild(b);h.appendChild(this.el("span",null," · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · "+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
   var tb=this.el("table","mk-t"),th=this.el("thead"),hr=this.el("tr"),bd=this.el("tbody");
-  [["Instrument","s"],["Last price","n"],["Change","n"],["Last trade (IST)","n"]].forEach(function(c){hr.appendChild(this.el("th",c[1],c[0]))},this);th.appendChild(hr);tb.appendChild(th);
+  [["Instrument","s"],["Last price","n"],["Prev close","n"],["Change","n"],["Last trade (IST)","n"],["Age","n"]].forEach(function(c){hr.appendChild(this.el("th",c[1],c[0]))},this);th.appendChild(hr);tb.appendChild(th);
   rows.forEach(function(r){
-    var tr=this.el("tr"),c1=this.el("td","s",r.name),c2=this.el("td","n",fmt(r.ltp,2)),c3=this.el("td","n"),c4=this.el("td","n",typeof r.ltt==="string"&&r.ltt.length>=19?r.ltt.slice(11,19):"–");
+    var tr=this.el("tr"),c1=this.el("td","s",r.name),c2=this.el("td","n",fmt(r.ltp,2)),cp=this.el("td","n",r.cp&&isNum(r.cp)?fmt(r.cp,2):"–"),c3=this.el("td","n"),c4=this.el("td","n",lttText(r.ltt)),
+      age=tradeAge(doc,r.ltt),c5=this.el("td","n",age===null?"–":ageText(age)+(age>CFG.noTrade?" · no recent trade":""));
     if(r.cp&&isNum(r.pct))c3.appendChild(this.el("span",tone(r.pct),signed(r.pct,2)+"%"));else c3.textContent="–";
-    tr.appendChild(c1);tr.appendChild(c2);tr.appendChild(c3);tr.appendChild(c4);bd.appendChild(tr)},this);
+    if(age!==null&&age>CFG.noTrade)c5.setAttribute("data-lv-flag","no-recent-trade");
+    [c1,c2,cp,c3,c4,c5].forEach(function(c){tr.appendChild(c)});bd.appendChild(tr)},this);
   tb.appendChild(bd);n.appendChild(tb);
+  var q=doc.quality,w=q.warnings.length?q.warnings.join(", "):"none";
+  n.appendChild(this.el("p","lv-note","Relay quality: "+(q.ok?"ok":"NOT OK — "+q.reasons.join(", "))+" · warnings: "+w+". Age = snapshot time minus the exchange's last-trade time; a dash means that time is missing."));
   n.appendChild(this.el("p","lv-note","Private test of the local feed only. These instruments are not the market: no breadth, movers or rankings are shown, and this is not the Market Today NIFTY 50 card. The end-of-day figures below are unchanged. Not for publication."));
   return n};
 Ui.prototype.putPrivate=function(doc,lab){
@@ -3073,10 +3087,10 @@ Ui.prototype.movers=function(doc){
 Ui.prototype.select=function(name){if(TABS.indexOf(name)<0||name===this.sel)return;this.sel=name;if(this.view)this.render()};
 Ui.prototype.update=function(view){this.mount();this.view=view;this.render()};
 Ui.prototype.render=function(){
-  var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre="Live (private test) · "+lab;
+  var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre=(this.privateTest?"LOCAL LIVE TEST":"Live (private test)")+" · "+lab;
   if(lab==="LIVE"&&this.privateTest&&view.doc.scope.universe==="test_set"){
     this.putPrivate(view.doc,"LIVE");
-    say("Live (PRIVATE TEST SET) · LIVE · updated "+view.doc.generated_at.slice(11,19)+" IST · not a market dashboard · end-of-day figures below are unchanged");return}
+    say("LOCAL LIVE TEST · LIVE · updated "+view.doc.generated_at.slice(11,19)+" IST · PRIVATE TEST SET — not a market dashboard · end-of-day figures below are unchanged");return}
   if(lab==="LIVE"){
     this.drop("private");
     var b=view.blocks,d=view.doc;
@@ -3088,7 +3102,7 @@ Ui.prototype.render=function(){
   ["breadth","movers","private"].forEach(this.drop,this);
   if(lab==="STALE"&&this.privateTest&&view.last&&view.last.scope&&view.last.scope.universe==="test_set"){
     this.drop("indices");this.putPrivate(view.last,"STALE");
-    say("Live (PRIVATE TEST SET) · STALE · "+view.reason+" · showing the last values received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
+    say("LOCAL LIVE TEST · STALE · "+view.reason+" · showing the last values received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
   if(lab==="STALE"&&view.last&&view.last.indices){
     this.put("indices","mk-today",this.indices(view.last,"STALE"));
     say(pre+" · "+view.reason+" · showing the last value received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
@@ -3109,7 +3123,7 @@ function poll(url){
     return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
   var ctl=new Controller({privateTest:g.privateTest===true}),ui=new Ui(env.document,g.privateTest===true),busy=false;
-  function next(){env.setTimeout(tick,CFG.poll)}
+  function next(){env.setTimeout(tick,g.privateTest===true?CFG.pollTest:CFG.poll)}
   /* one request at a time: a call while another is still in flight does nothing */
   function refresh(){
     if(busy)return false;

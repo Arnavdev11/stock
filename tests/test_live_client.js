@@ -172,7 +172,7 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
     ok(/-0\.40%/.test(txt) && /09:59:59/.test(txt), "percentage change and last-trade time shown");
     eq(r.doc.byId["mk-today"].all((n) => n.attrs["data-lv"]).length, 0, "nothing inside the Market Today card"); eq(r.doc.byId["mk-breadth"].all((n) => n.attrs["data-lv"]).length + r.doc.byId["mk-movers"].all((n) => n.attrs["data-lv"]).length, 0, "no breadth or movers");
     ok(!/Advances|Live gainers|Live losers/.test(txt), "no breadth or rankings text"); eq(eod(r.doc), before, "EOD content untouched");
-    ok(/^Live \(PRIVATE TEST SET\) · LIVE/.test(r.doc.byId["market"].firstChild.textContent), "chip says private test set");
+    ok(/^LOCAL LIVE TEST · LIVE/.test(r.doc.byId["market"].firstChild.textContent) && /PRIVATE TEST SET — not a market dashboard/.test(r.doc.byId["market"].firstChild.textContent), "chip says LOCAL LIVE TEST and private test set");
     r.ui.update(pc.ingest({ error: "request failed" }, now + 1000)); eq(r.panels(), ["private-test"], "stale: the private panel stays, dashed"); ok(/STALE/.test(r.doc.byId["market"].textContent) && /not current/.test(r.doc.byId["market"].textContent), "labelled STALE, not current");
     eq(r.doc.byId["mk-today"].all((n) => n.attrs["data-lv"]).length, 0, "stale: still not in the Market Today card");
     r.ui.update(new L.Controller({ privateTest: true }).ingest({ error: "request failed" }, now)); eq(r.panels(), [], "unavailable: panel removed"); ok(/not reachable/.test(r.doc.byId["market"].textContent), "unavailable text");
@@ -183,6 +183,65 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
     ok(r.doc.byId["market"].textContent.includes("<img src=x onerror=alert(1)>") && r.doc.byId["market"].all((n) => n.tag === "img").length === 0, "markup in the private panel stays text"); }
   /* end to end through start(): only the explicit option reaches the private panel */
   { const rr = load(loc("127.0.0.1", "?live=local&live_set=private_test"), () => new Promise(() => {})); eq(rr.fetches.length, 1, "one request"); eq(rr.fetches[0][0], U, "same fixed loopback address"); }
+}
+
+/* ---- LOCAL LIVE TEST panel: labels, Prev close, Age, no recent trade, relay quality, 5 s poll (private option only) ---- */
+{
+  const L = load(loc("example.com", "")).L, base = FIX.cases.find((c) => c.name === "test_set universe"), ts = base.doc, now = base.now;
+  const clone = (d) => JSON.parse(JSON.stringify(d)), res = (d, n) => ({ status: 200, text: JSON.stringify(d), dateMs: n });
+  const isoOf = (ms) => new Date(ms + 19800000).toISOString().slice(0, 23) + "+05:30", T = ts.server_ts_ms;
+  const withLtt = (fn) => { const d = clone(ts); fn(d); return d; };
+  const mk = () => { const doc = makeDoc(), ui = new L.Ui(doc, true); return { doc, ui, text: () => doc.byId["market"].textContent, panel: () => doc.byId["market"].all((n) => n.attrs["data-lv"] === "private-test")[0] }; };
+  const show = (d) => { const r = mk(); r.ui.update(new L.Controller({ privateTest: true }).ingest(res(d, T + 1000), T + 1000)); return r; };
+  const cells = (r, rowName) => { const row = r.panel().all((n) => n.tag === "tr").find((tr) => tr.children[0] && tr.children[0].textContent === rowName); return row ? row.children.map((c) => c.textContent) : null; };
+
+  /* labels */
+  { const r = show(ts), t = r.text();
+    ok(/LOCAL LIVE TEST/.test(r.panel().textContent) && /PRIVATE TEST SET — not a market dashboard/.test(r.panel().textContent), "panel is labelled LOCAL LIVE TEST and private test set");
+    ok(/^LOCAL LIVE TEST · LIVE · updated /.test(r.doc.byId["market"].firstChild.textContent), "chip is labelled LOCAL LIVE TEST");
+    const head = r.panel().all((n) => n.tag === "th").map((n) => n.textContent);
+    eq(head, ["Instrument", "Last price", "Prev close", "Change", "Last trade (IST)", "Age"], "columns");
+    /* Prev close from cp, change from the snapshot's own change_pct */
+    const nifty = cells(r, "NIFTY 50"); ok(nifty && /20,000\.00/.test(nifty[2]), "NIFTY 50 previous close shown: " + JSON.stringify(nifty)); ok(/-0\.40%/.test(nifty[3]), "change % shown");
+    ok(/09:59:59/.test(nifty[4]), "last trade time shown"); }
+  { const doc = makeDoc(), ui = new L.Ui(doc, true); ui.mount(); eq(doc.byId["market"].firstChild.textContent, "LOCAL LIVE TEST: connecting…", "the first chip says LOCAL LIVE TEST");
+    const d2 = makeDoc(), u2 = new L.Ui(d2); u2.mount(); eq(d2.byId["market"].firstChild.textContent, "Live (private test): connecting…", "an ordinary Ui keeps its first chip"); }
+  /* a non-private Ui keeps its old labels */
+  { const doc = makeDoc(), ui = new L.Ui(doc); ui.update(new L.Controller().ingest({ error: "request failed" }, now)); ok(/^Live \(private test\)/.test(doc.byId["market"].firstChild.textContent), "ordinary Ui keeps its label"); }
+  { const r = mk(); r.ui.update(new L.Controller({ privateTest: true }).ingest({ error: "request failed" }, now)); ok(/^LOCAL LIVE TEST · UNAVAILABLE/.test(r.doc.byId["market"].firstChild.textContent) && /not reachable/.test(r.text()), "disconnected state labelled LOCAL LIVE TEST"); }
+
+  /* age and "no recent trade": computed only from the snapshot's own timestamps */
+  const ageFor = (deltaMs) => { const d = withLtt((x) => { x.indices[0].ltt = isoOf(T - deltaMs); x.indices[0].cp = x.indices[0].cp; }); const c = cells(show(d), "NIFTY 50"); return c; };
+  eq(ageFor(0)[5], "0 s", "age 0 s"); eq(ageFor(12000)[5], "12 s", "age 12 s"); eq(ageFor(59000)[5], "59 s", "age 59 s");
+  eq(ageFor(60000)[5], "1 m 00 s", "exactly 60 s is not yet flagged"); eq(ageFor(61000)[5], "1 m 01 s · no recent trade", "61 s is flagged");
+  eq(ageFor(3700000)[5], "1 h 01 m · no recent trade", "an hour-old trade is flagged");
+  { const r = show(withLtt((x) => { x.indices[0].ltt = isoOf(T - 61000); })); const flagged = r.panel().all((n) => n.attrs["data-lv-flag"] === "no-recent-trade"); eq(flagged.length, 1, "exactly the stale row carries the flag"); }
+  { const r = show(withLtt((x) => { x.indices[0].ltt = isoOf(T - 5000); })); eq(r.panel().all((n) => n.attrs["data-lv-flag"]).length, 0, "no flag on a fresh trade"); }
+  /* missing or unreadable timestamps: a dash, never a number */
+  { const c = ageFor(0); const m = cells(show(withLtt((x) => { x.indices[0].ltt = null; })), "NIFTY 50"); eq([m[4], m[5]], ["–", "–"], "missing ltt: dashes"); ok(!/no recent trade/.test(m.join("")), "missing ltt is not called a stale trade");
+    const g = cells(show(withLtt((x) => { x.indices[0].ltt = "not-a-timestamp-at-all"; })), "NIFTY 50"); eq([g[4], g[5]], ["–", "–"], "unreadable ltt: dashes");
+    const f = cells(show(withLtt((x) => { x.indices[0].ltt = isoOf(T + 10000); })), "NIFTY 50"); eq(f[5], "–", "a trade time well in the future gives no age");
+    const f2 = cells(show(withLtt((x) => { x.indices[0].ltt = isoOf(T + 2000); })), "NIFTY 50"); eq(f2[5], "0 s", "a tiny clock skew is shown as 0 s");
+    const nocp = cells(show(withLtt((x) => { x.indices[0].cp = null; x.indices[0].change = null; x.indices[0].change_pct = null; })), "NIFTY 50"); eq([nocp[2], nocp[3]], ["–", "–"], "no previous close: dashes"); }
+  { const sym = Object.keys(ts.prices)[0], r = show(withLtt((x) => { x.prices[sym].ltt = isoOf(T - 90000); x.prices[sym].cp = null; x.prices[sym].change_pct = null; })), c = cells(r, sym);
+    eq(c[2], "–", "equity without a previous close: dash"); ok(/1 m 30 s · no recent trade/.test(c[5]), "equity row is flagged on its own"); }
+
+  /* relay quality line */
+  { const r = show(ts); ok(/Relay quality: ok · warnings: indices_unresolved:4\./.test(r.text()), "quality ok and warnings shown");
+    const r2 = show(withLtt((x) => { x.quality.warnings = []; })); ok(/Relay quality: ok · warnings: none\./.test(r2.text()), "no warnings said in words"); }
+  { const bad = withLtt((x) => { x.quality.ok = false; x.quality.reasons = ["feed_silent", "low_coverage"]; }), ui = new L.Ui(makeDoc(), true);
+    ok(/Relay quality: NOT OK — feed_silent, low_coverage/.test(ui.privatePanel(bad, "STALE").textContent), "reasons shown when quality is not ok");
+    const r = mk(); r.ui.update(new L.Controller({ privateTest: true }).ingest(res(bad, T + 1000), T + 1000)); eq(r.doc.byId["market"].all((n) => n.attrs["data-lv"]).length, 0, "an unhealthy snapshot is never drawn as live"); }
+
+  /* polling: 5 s only with the explicit private option */
+  { const iv = (search) => { const r = load(loc("127.0.0.1", search), () => new Promise(() => {})); const last = r.timers[r.timers.length - 1]; r.timers[0][0](); return [last[1], r.timers[r.timers.length - 1][1]]; };
+    eq(iv("?live=local&live_set=private_test"), [5000, 5000], "private option polls every 5 s and re-arms at 5 s");
+    eq(iv("?live=local"), [60000, 60000], "ordinary local live stays at 60 s");
+    eq(iv("?live=local&live_set=1"), [60000, 60000], "any other live_set value stays at 60 s");
+    eq(iv("?live=local&live_set=PRIVATE_TEST"), [60000, 60000], "a different case stays at 60 s");
+    eq(L.CFG.poll, 60000, "the ordinary interval is unchanged"); eq(L.CFG.pollTest, 5000, "test interval"); }
+  /* still one request at a time, one fixed loopback address */
+  { const r = load(loc("127.0.0.1", "?live=local&live_set=private_test"), () => new Promise(() => {})); eq(r.fetches.length, 1, "one request at start"); r.timers[0][0](); eq(r.fetches.length, 1, "a tick while a request is in flight starts nothing"); }
 }
 
 /* ---- rendering ---- */
