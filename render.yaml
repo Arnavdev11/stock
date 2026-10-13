@@ -5,7 +5,7 @@ services:
     name: stocklens-live
     runtime: python
     region: singapore                  # fixed at creation; the nearest Render region to the NSE feed. Change before first creation if you prefer another.
-    plan: 0.5c-512mb                   # paid, always on. A free instance sleeps after 15 minutes without traffic and may restart at any time: fine for a short test only.
+    plan: free                         # $0. NOT always on: sleeps after 15 min without inbound HTTP traffic (about 1 min cold start), may restart at any time, 750 h/month per workspace, not for production. For an always-on feed change to 0.5c-512mb ($7/month).
     buildCommand: pip install -r requirements.txt
     startCommand: python -m live_public
     healthCheckPath: /healthz/live    # liveness only: 200 while the process answers, whatever the Upstox feed is doing. /healthz reports the feed and may be 503.

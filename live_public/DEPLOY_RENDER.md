@@ -5,7 +5,7 @@ Status: **prepared, not deployed.** Nothing here creates a service by itself: `r
 ## Files
 | File | Purpose |
 |---|---|
-| `render.yaml` | Blueprint: one Python web service, `python -m live_public`, health check `/healthz/live`, all settings except the token |
+| `render.yaml` | Blueprint: one Python web service on the `free` plan, `python -m live_public`, health check `/healthz/live`, all settings except the token |
 | `requirements.txt` | `websockets==15.0.1`, `requests==2.34.2` (the only third-party imports in `live_public/`, `live_service/`, `live/`; a test checks this) |
 | `live_public/` | the service (`config.py`, `server.py`, `__main__.py`) |
 
@@ -17,10 +17,21 @@ Status: **prepared, not deployed.** Nothing here creates a service by itself: `r
 - Web services must bind `0.0.0.0` on `PORT` (default 10000). The service does: `HOST=0.0.0.0`, `PORT=10000`.
 - Health check: HTTP GET to `healthCheckPath`; any 2xx/3xx is healthy, 4xx/5xx unhealthy; 5 s timeout. The `Host` header is the service's `onrender.com` name (or a verified custom domain). A new deploy goes live only if all instances pass; after 15 minutes of failing it is cancelled. A running instance that fails for 60 s is restarted.
 - Web services can make outbound WebSocket connections; there is no maximum connection duration. Connections close when the instance is replaced (deploys, restarts): SIGTERM, then 30 s to stop. The service handles SIGTERM.
-- Paid instances run continuously. A free instance spins down after 15 minutes without inbound traffic and may restart at any time, so it is suitable only for a short test.
+- Paid instances run continuously. A free instance spins down after 15 minutes without inbound traffic and may restart at any time (see "Free instance limits").
 - `PYTHON_VERSION` must be a full version (e.g. `3.13.5`). Render's default for new services is newer than the version this code was tested on, so the Blueprint pins it.
 - `RENDER_EXTERNAL_HOSTNAME` is set to the service's `onrender.com` name. With `ALLOWED_HOSTS` unset the service allows exactly that name, which is also the Host Render's health check sends. The liveness path does not check Host at all, so the deploy cannot fail on a hostname mismatch; `/healthz` and the snapshot do check it.
 - **Not documented:** how Render forwards the visitor's address. A community report says the proxy appends to a client-supplied `X-Forwarded-For`, so no entry can be trusted blindly. Therefore `LIVE_PUBLIC_TRUST_PROXY=false` and all visitors share one rate-limit bucket (see Risks).
+
+## Free instance limits (Render docs, read 13 Oct 2026)
+`render.yaml` uses `plan: free` (0.1 CPU, 512 MB, $0). It runs this service, but it is **not an always-on feed**:
+- **Spins down after 15 minutes without inbound traffic.** Only HTTP requests (and inbound WebSocket messages) count; Render does not document that this service's own outbound Upstox connection keeps it awake. Treat it as asleep when nobody is visiting.
+- **Cold start about one minute**, plus this app's own start on 0.1 CPU. With `LIVE_PUBLIC_SERVE_SNAPSHOT=false` (the shipped default) the app downloads and parses nothing and makes no Upstox call, so it is ready as soon as the process starts. With `true` it also downloads and parses Upstox's public instrument file, authorizes and connects the WebSocket before the first snapshot. The first visitor after idle sees UNAVAILABLE and end-of-day data, which is the safe behaviour; nothing stale is shown as live.
+- **750 free instance hours per workspace per month**; all free services are suspended when they run out.
+- Render may restart a free service at any time, the filesystem is ephemeral, and Render says free instances are not for production applications. It may suspend a service that generates unusually high outbound traffic.
+- One instance only; outbound ports 25, 465 and 587 are blocked; bandwidth and build-minute limits apply.
+- Security settings are identical to a paid plan.
+
+Upgrade path for a reliable feed: change `plan: free` to `plan: 0.5c-512mb` (Starter, $7/month, always on), or `1c-2g` ($25/month) if memory is tight. Use free for the gate-off check and a short real-feed test only.
 
 ## Environment variables
 | Variable | Value | Where |
@@ -37,7 +48,7 @@ Status: **prepared, not deployed.** Nothing here creates a service by itself: `r
 ## Dashboard steps for the first real-feed test
 Prerequisite (needs your approval, not done): the branch holding these files must be committed and pushed to GitHub, because Render builds from a Git branch.
 1. Render dashboard -> **New** -> **Blueprint** -> connect the `Arnavdev11/stock` repository -> choose the branch that holds `render.yaml` -> Render reads `render.yaml`.
-2. When prompted, paste `UPSTOX_ANALYTICS_TOKEN`. Review the plan shown (`0.5c-512mb`, paid) and create the service. Do not change `LIVE_PUBLIC_SERVE_SNAPSHOT` yet.
+2. When prompted, paste `UPSTOX_ANALYTICS_TOKEN`. Review the plan shown (`free`, $0; see "Free instance limits") and create the service. Do not change `LIVE_PUBLIC_SERVE_SNAPSHOT` yet.
 3. Wait for the first deploy to pass its health check (`/healthz/live`). Note the service address shown at the top of the service page (`https://<name>.onrender.com`).
 4. Gate-off check (any time): `curl -s https://<host>/healthz/live` -> `{"status":"alive"}`; `curl -s https://<host>/healthz` -> `{"status":"ok","snapshot":"disabled"}` and `curl -s -i https://<host>/v1/live/snapshot.json` -> HTTP 503 `{"error":"snapshot_disabled"}`. The logs say "the relay is not started".
 5. During NSE hours (relay window 08:55-15:45 IST): service -> **Environment** -> set `LIVE_PUBLIC_SERVE_SNAPSHOT` to `true` -> save (Render redeploys).
@@ -59,7 +70,7 @@ becomes
 using the exact address from step 3. The gate refuses any other shape (http, port, query, IP address, other path) and any page not served from `https://arnavdev11.github.io`. Two guard tests deliberately forbid a web address inside that module and must be updated in the same reviewed change: `tests/test_live_client.js` ("the only web address is the loopback relay") and `test_live_parity.py` (`test_the_block_has_no_token_no_html_sinks_no_outside_address_no_advice`). The site then needs the normal publish ("Update data and publish site") before visitors see it.
 
 ## Risks and open items
-- **Memory:** at start the service downloads Upstox's public instrument file and parses it in memory before keeping six instruments. Not measured here (no network). If Metrics shows the 512 MB instance near its limit or restarting, move to `1c-2g`.
+- **Memory:** with the gate on, at start the service downloads Upstox's public instrument file and parses it in memory before keeping six instruments (with the gate off this does not happen). Not measured here (no network). If Metrics shows the 512 MB instance near its limit or restarting, move to `1c-2g`.
 - **Shared rate limit:** because no visitor address can be trusted, the limits apply to Render's proxy as a whole: about 600 requests a minute, i.e. roughly 100 visitors with the page open (6 requests a minute each). A heavy burst, or one abuser, can make everyone see UNAVAILABLE (the page then shows end-of-day data). Per-visitor limiting needs a verified client-address header.
 - **Connection cap:** when the global connection limit is full the server answers 503 `busy` before reading the request, which includes the liveness path. Render restarts an instance only after 60 s of consecutive failures, so only a sustained flood could do that.
 - **Upstox terms:** the written confirmation that public redistribution is permitted has not been seen by this repository's records. Keep it on file before enabling the page.

@@ -935,6 +935,54 @@ class RuntimeEndToEnd(unittest.TestCase):
         self.assertIn("relay is not started", h.stream.getvalue())
         self.assertEqual(h.secrets_seen(), [])
 
+    def test_gate_off_never_downloads_or_parses_the_instrument_file(self):
+        import unittest.mock as mock
+        fetched = []
+        def fetch(url, timeout):
+            fetched.append(url)
+            return RT_ROWS
+        for env_over in ({"LIVE_PUBLIC_SERVE_SNAPSHOT": "false"}, {"LIVE_PUBLIC_SERVE_SNAPSHOT": None}):         # explicit false and unset
+            h = Harness(**env_over)
+            deps = h.deps()
+            deps["fetch_bytes"] = fetch
+            h.deps = lambda deps=deps: deps
+            seen = {}
+            async def scenario(h):
+                await asyncio.sleep(0.1)
+                seen["health"] = await h.get(HEALTH)
+                seen["snap"] = await h.get()
+            with mock.patch.object(M.upstox, "parse_instrument_bytes", side_effect=AssertionError("parsed")) as parse, \
+                 mock.patch.object(M.upstox, "build_instruments", side_effect=AssertionError("built")) as built:
+                self.assertEqual(run_rt(h, scenario), 0)
+                self.assertEqual((parse.call_count, built.call_count), (0, 0))
+            self.assertEqual(fetched, [])
+            self.assertEqual((h.auth_calls, h.made), ([], []))
+            self.assertEqual((seen["health"].status, seen["health"].json()), (200, {"status": "ok", "snapshot": "disabled"}))
+            self.assertEqual((seen["snap"].status, seen["snap"].json()), (503, {"error": "snapshot_disabled"}))
+            self.assertEqual(len(h.svc.ins.equities) + len(h.svc.ins.indices), 0)                           # the idle relay holds no instruments
+            self.assertEqual(h.secrets_seen(), [])
+
+    def test_gate_on_still_downloads_parses_and_builds_the_six_instruments(self):
+        import unittest.mock as mock
+        fetched = []
+        h = Harness()
+        deps = h.deps()
+        deps["fetch_bytes"] = lambda url, timeout: fetched.append(url) or RT_ROWS
+        h.deps = lambda: deps
+        seen = {}
+        async def scenario(h):
+            seen["n"] = (len(h.svc.ins.indices), len(h.svc.ins.equities))
+            t, pub = await h.go_live()
+            seen["scope"] = pub.doc["scope"]["universe"]
+        with mock.patch.object(M.upstox, "parse_instrument_bytes", wraps=M.upstox.parse_instrument_bytes) as parse:
+            self.assertEqual(run_rt(h, scenario), 0)
+            self.assertEqual(parse.call_count, 1)
+        self.assertEqual(len(fetched), 1)
+        self.assertEqual(seen["n"], (1, 5))
+        self.assertEqual(seen["scope"], "test_set")
+        self.assertEqual(len(h.auth_calls), 1)
+        self.assertEqual(len(h.made), 1)                                                                    # exactly one WebSocket
+
     def test_unset_gate_is_off_too(self):
         h = Harness()
         h.env.pop("LIVE_PUBLIC_SERVE_SNAPSHOT")
@@ -1230,13 +1278,19 @@ def render_env(**extra):
 
 
 class RenderBlueprint(unittest.TestCase):
+    def test_the_doc_states_the_free_instance_limits(self):
+        with open(os.path.join(ROOT, "live_public", "DEPLOY_RENDER.md"), encoding="utf-8") as f:
+            doc = f.read()
+        for needle in ("Free instance limits", "15 minutes", "750", "not an always-on feed", "0.5c-512mb", "not for production"):
+            self.assertIn(needle, doc)
+
     def test_the_service_is_declared_as_requested(self):
         svc = render_service()
         self.assertEqual((svc["type"], svc["runtime"], svc["startCommand"], svc["healthCheckPath"]), ("web", "python", "python -m live_public", "/healthz/live"))
         self.assertEqual(svc["buildCommand"], "pip install -r requirements.txt")
         self.assertIsInstance(svc["autoDeployTrigger"], str)                                 # the string "off" - an unquoted off would be read by YAML as false
         self.assertEqual(svc["autoDeployTrigger"], "off")                                    # nothing deploys by itself
-        self.assertNotEqual(svc.get("plan"), "free")                                         # a always-on feed is not a free-instance job
+        self.assertEqual(svc.get("plan"), "free")                                            # chosen to avoid hosting cost; the doc states it is intermittent, not always on
         self.assertTrue(svc["name"] and svc["region"])
 
     def test_no_secret_and_no_guessed_address_is_in_any_deployment_file(self):

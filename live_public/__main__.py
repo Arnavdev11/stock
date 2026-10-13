@@ -40,13 +40,16 @@ def _read_text(path):
 
 
 def build(cfg, *, http_get=None, transport_factory=None, fetch_bytes=None, clock_ms=None, sleep=None, stream=None, holidays_file=HOLIDAYS_FILE, liquid_file=LIQUID_FILE):
-    """-> (RelayService, Log, Scrubber). The only network access here is the public instrument file (no token); the token goes to the relay and nowhere else."""
+    """-> (RelayService, Log, Scrubber). With the gate on, the only network access here is the public instrument file (no token); with the gate off there is none. The token goes to the relay and nowhere else."""
     scrub = Scrubber()
     scrub.add(cfg.token())
     log = Log(scrub, stream=stream, clock_ms=clock_ms)
-    rows = upstox.load_instrument_rows(None, fetch_bytes or upstox.requests_fetch_bytes)
-    ins = upstox.build_instruments(rows, list(cfg.symbols))
-    del rows
+    if cfg.serve_snapshot:
+        rows = upstox.load_instrument_rows(None, fetch_bytes or upstox.requests_fetch_bytes)
+        ins = upstox.build_instruments(rows, list(cfg.symbols))
+        del rows
+    else:                                                         # gate off: the relay never runs and nothing is served, so the (large) instrument file is neither downloaded nor parsed.
+        ins = ins_mod.Instruments({}, {}, {})                     # An empty universe only lets the idle RelayService and /healthz be constructed; it is never subscribed.
     htext = _read_text(holidays_file)
     holidays = market_hours.parse_holidays(htext) if htext is not None else None
     liquid = ins_mod.load_liquid(liquid_file) if os.path.exists(liquid_file) else set()
