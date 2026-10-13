@@ -1,0 +1,37 @@
+# Render Blueprint for the StockLens hosted live backend. Creating a service from this file is a deliberate manual step (see live_public/DEPLOY_RENDER.md);
+# nothing here deploys by itself (autoDeployTrigger: off). No secret is stored in this file: the Upstox token is entered in the Render dashboard only.
+services:
+  - type: web
+    name: stocklens-live
+    runtime: python
+    region: singapore                  # fixed at creation; the nearest Render region to the NSE feed. Change before first creation if you prefer another.
+    plan: 0.5c-512mb                   # paid, always on. A free instance sleeps after 15 minutes without traffic and may restart at any time: fine for a short test only.
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m live_public
+    healthCheckPath: /healthz/live    # liveness only: 200 while the process answers, whatever the Upstox feed is doing. /healthz reports the feed and may be 503.
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PYTHON_VERSION            # the version this code was tested on; Render's default for new services is newer
+        value: 3.13.5
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "10000"
+      - key: UPSTOX_ANALYTICS_TOKEN    # entered in the dashboard when the Blueprint is created; never written here
+        sync: false
+      - key: LIVE_PUBLIC_SERVE_SNAPSHOT
+        value: "false"                 # the gate: set it to "true" in the dashboard only for the first real-feed test (a later Blueprint sync puts it back to "false")
+      - key: ALLOWED_ORIGIN
+        value: https://arnavdev11.github.io
+      # ALLOWED_HOSTS is deliberately not set: the service then allows exactly RENDER_EXTERNAL_HOSTNAME, which Render provides (it is also the Host header of Render's health check).
+      # Add ALLOWED_HOSTS only to put a custom domain in front; then list the onrender.com name as well.
+      - key: LIVE_PUBLIC_TRUST_PROXY
+        value: "false"                 # Render's forwarded-address behaviour is not officially documented, so no forwarded header is trusted
+      - key: LIVE_PUBLIC_RATE_PER_MINUTE
+        value: "600"                   # with no trusted client address every visitor shares the proxy's bucket, so the limits are set at their maximum
+      - key: LIVE_PUBLIC_BURST
+        value: "200"
+      - key: LIVE_PUBLIC_MAX_CONNECTIONS
+        value: "200"
+      - key: LIVE_PUBLIC_STALE_AFTER_S
+        value: "30"

@@ -15,7 +15,7 @@ const code = html.split(TAG)[1].split("</script>")[0];
 ok(!/innerHTML|outerHTML|insertAdjacent|\beval\s*\(|new Function|document\.write|javascript:/.test(code), "no HTML-injection or code-evaluation sinks");
 ok((code.match(/\bfetch\(/g) || []).length === 1, "exactly one fetch call");
 ok(!/XMLHttpRequest|WebSocket|sendBeacon|EventSource|importScripts|localStorage|sessionStorage|document\.cookie/.test(code), "no other network or storage API");
-ok([...code.matchAll(/https?:\/\/[^\s"'<)]+/g)].every((m) => m[0] === "http://127.0.0.1:"), "the only web address is the loopback relay");
+ok([...code.matchAll(/https?:\/\/[^\s"'<)]+/g)].every((m) => m[0] === "http://127.0.0.1:"), "the only web address is the loopback relay (the hosted service address is configuration, shipped empty; the page host is a bare host name)");
 ok(!/token|secret|apikey|api_key|bearer|authorization|password|credential/i.test(code.replace(/\/\*[\s\S]*?\*\//g, "").replace("Upstox market data feed V3 (ltpc)", "").replace('credentials:"omit"', "")), "no token, key or credential words");
 ok(!/\b(buy|sell|target price|rating|recommend)/i.test(code), "no advice language");
 ok(!/credentials:"omit"/.test("") && /credentials:"omit"/.test(code) && /redirect:"error"/.test(code) && /cache:"no-store"/.test(code), "fetch options pinned");
@@ -343,6 +343,104 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
     ok(/SENSEX has no live value/.test(doc.byId["mk-today"].all((x) => x.attrs["data-lv"] === "indices").map((x) => x.textContent).join("")), "panel shows SENSEX unavailable");
     listeners.click({ target: { closest: () => null } }); eq(out.ui.sel, "SENSEX", "a click elsewhere changes nothing");
     const other = { getAttribute: (k) => (k === "data-tab" ? "NIFTY 50" : null), parentNode: { getAttribute: () => "other" } }; listeners.click({ target: { closest: () => other } }); eq(out.ui.sel, "SENSEX", "another tab group is ignored");
+
+    /* ============ Stage 4: the hosted (public) live gate. Shipped OFF; every case below injects its own configuration. ============ */
+    {
+      const L = load(loc("example.com", "")).L, base = FIX.cases.find((c) => c.name === "test_set universe"), clone = (d) => JSON.parse(JSON.stringify(d));
+      const isoOf = (ms) => new Date(ms + 19800000).toISOString().slice(0, 23) + "+05:30";
+      const SVC = "https://live.stocklens-example.com/v1/live/snapshot.json", ON = { enabled: true, url: SVC };
+      const page = (over) => Object.assign({ protocol: "https:", hostname: "arnavdev11.github.io", port: "", search: "" }, over || {});
+      const pubDoc = (d) => { const x = clone(d); x.breadth = { advances: 0, declines: 0, unchanged: 0, counted: 0 }; x.gainers = null; x.losers = null; return x; };
+      const T0 = base.doc.server_ts_ms, now = T0 + 1000, res = (d, date, n) => ({ status: 200, text: JSON.stringify(d), dateMs: date });
+      const pubCtl = () => new L.Controller({ privateTest: true, pub: true });
+      eq(L.validate(pubDoc(base.doc)).length, 0, "the public view shape (zero breadth, null movers) validates");
+
+      /* shipped configuration: off, and the page does nothing */
+      eq(JSON.parse(JSON.stringify(L.PUBLIC_LIVE)), { enabled: false, url: "" }, "shipped with the public feed disabled and no address");
+      for (const l of [page(), page({ search: "?live=local" }), page({ search: "?live_set=private_test&live=public" })]) {
+        const r = load(l); eq(r.L.gate(l), null, "no gate on the real page by default"); eq(r.fetches.length, 0, "no request"); eq(r.doc.calls.create, 0, "no DOM node"); eq(r.timers.length, 0, "no timer"); }
+      /* the gate */
+      eq(JSON.parse(JSON.stringify(L.gate(page(), ON))), { url: SVC, pub: true, privateTest: true, port: null }, "enabled + exact origin + https address -> public gate");
+      eq(L.gate(page({ search: "?live=local" }), ON) !== null, true, "the query string neither enables nor disables the public gate");
+      const offs = [undefined, null, {}, { enabled: false, url: SVC }, { enabled: "true", url: SVC }, { enabled: 1, url: SVC }, { enabled: true }, { enabled: true, url: "" }, { enabled: true, url: 5 },
+        { enabled: true, url: "http://live.stocklens-example.com/v1/live/snapshot.json" }, { enabled: true, url: "https://live.stocklens-example.com:8443/v1/live/snapshot.json" },
+        { enabled: true, url: SVC + "?x=1" }, { enabled: true, url: SVC + "#x" }, { enabled: true, url: "https://live.stocklens-example.com/v1/live/other.json" }, { enabled: true, url: "https://live.stocklens-example.com/" },
+        { enabled: true, url: "https://live.stocklens-example.com/v1/live/snapshot.json/" }, { enabled: true, url: "https://user@live.stocklens-example.com/v1/live/snapshot.json" },
+        { enabled: true, url: "https://1.2.3.4/v1/live/snapshot.json" }, { enabled: true, url: "https://localhost/v1/live/snapshot.json" }, { enabled: true, url: "https://LIVE.example.com/v1/live/snapshot.json" },
+        { enabled: true, url: "https://arnavdev11.github.io/v1/live/snapshot.json" }, { enabled: true, url: "//live.example.com/v1/live/snapshot.json" }, { enabled: true, url: " " + SVC },
+        { enabled: true, url: "https://live.example.com/v1/live/snapshot.json\n" }];
+      for (const c of offs) eq(L.gate(page(), c), null, "no public gate for config " + JSON.stringify(c));
+      for (const l of [page({ protocol: "http:" }), page({ hostname: "evil.github.io" }), page({ hostname: "arnavdev11.github.io.evil.com" }), page({ hostname: "evil-arnavdev11.github.io" }), page({ port: "8443" }), page({ hostname: "example.com" }),
+        page({ hostname: "" }), { hostname: 5, search: "" }, null, undefined])
+        eq(L.gate(l, ON), null, "no public gate from page " + JSON.stringify(l));
+      eq(L.gate(loc("127.0.0.1", ""), ON), null, "a loopback page never takes the public gate");
+      eq(L.gate(loc("127.0.0.1", "?live=local"), ON).port, 8765, "the local gate is unchanged");
+
+      /* the controller in public mode */
+      { const d = pubDoc(base.doc), ok1 = pubCtl().ingest(res(d, now), now);
+        eq([ok1.state, ok1.kind, !!ok1.blocks.indices[0], !!ok1.blocks.prices[0], ok1.blocks.breadth[0], ok1.blocks.movers[0]], ["live", "live", true, true, false, false], "a fresh limited snapshot is LIVE for indices and prices only");
+        eq(L.labelOf(ok1), "LIVE", "label LIVE"); }
+      for (const [name, r, rx, shift] of [["no Date", { status: 200, text: JSON.stringify(pubDoc(base.doc)) }, /no usable time/], ["null Date", res(pubDoc(base.doc), null), /no usable time/], ["NaN Date", res(pubDoc(base.doc), NaN), /no usable time/],
+        ["string Date", res(pubDoc(base.doc), "x"), /no usable time/], ["Date 61 s behind this device", res(pubDoc(base.doc), now), /disagree/, 61000], ["Date 61 s ahead of this device", res(pubDoc(base.doc), now), /disagree/, -61000],
+        ["a replayed old response", res(pubDoc(base.doc), now), /disagree/, 600000]]) {
+        const v = pubCtl().ingest(r, now + (shift || 0)); eq([v.state, v.blocks, L.labelOf(v)], ["hidden", null, "UNAVAILABLE"], name + ": never LIVE"); ok(rx.test(v.reason), name + ": reason " + v.reason); }
+      eq(pubCtl().ingest(res(pubDoc(base.doc), now), now + 59000).state, "live", "this device 59 s ahead of the service is within the tolerance"); eq(pubCtl().ingest(res(pubDoc(base.doc), now), now - 59000).state, "live", "this device 59 s behind is within the tolerance");
+      { const f = clone(pubDoc(base.doc)); f.server_ts_ms = T0 - 24000; f.generated_at = isoOf(f.server_ts_ms);
+        const v = pubCtl().ingest(res(f, now), now); eq([v.state, v.kind, L.labelOf(v)], ["hidden", "stale", "STALE"], "a 25 s old snapshot is STALE, not LIVE"); }
+      for (const [name, mut] of [["full universe", (d) => { d.scope.universe = "nse_eq_all"; }], ["nifty500", (d) => { d.scope.universe = "nifty500"; }],
+        ["breadth counted", (d) => { d.breadth = { advances: 1, declines: 0, unchanged: 0, counted: 1 }; }], ["gainers present", (d) => { d.gainers = []; d.losers = []; }]]) {
+        const d = pubDoc(base.doc); mut(d); const v = pubCtl().ingest(res(d, now), now); eq([v.state, v.blocks, L.labelOf(v)], ["hidden", null, "UNAVAILABLE"], name + ": the public feed carries only the limited set"); }
+      for (const [name, mut] of [["quality not ok", (d) => { d.quality = { ok: false, reasons: ["feed_silent"], warnings: [] }; }], ["market closed", (d) => { d.market.status = "closed"; }], ["bad schema", (d) => { d.schema = 2; }],
+        ["missing key", (d) => { delete d.indices; }]]) {
+        const d = pubDoc(base.doc); mut(d); const v = pubCtl().ingest(res(d, now), now); eq(v.state === "live", false, name + ": not live"); eq(v.blocks, null, name + ": no blocks"); }
+      { const c = pubCtl(); c.ingest(res(pubDoc(base.doc), now), now);
+        const f = c.ingest({ status: 503, error: "HTTP 503" }, now + 5000); eq([f.state, f.kind, L.labelOf(f)], ["unavailable", "stale", "STALE"], "a refused poll after a good one is STALE");
+        const gone = c.ingest({ status: 503, error: "HTTP 503" }, now + 1000000); eq([gone.kind, L.labelOf(gone)], ["unavailable", "UNAVAILABLE"], "after 15 minutes it is UNAVAILABLE");
+        eq(c.ingest({ status: 200, text: "{}", dateMs: now + 6000 }, now + 6000).state, "hidden", "garbage is hidden");
+        eq(pubCtl().ingest({ status: 200, text: "x".repeat(70000), dateMs: now }, now).state, "hidden", "an oversize body is refused"); }
+      { const c = pubCtl(); c.ingest(res(pubDoc(base.doc), now), now); const older = pubDoc(base.doc); older.server_ts_ms -= 1000; older.generated_at = isoOf(older.server_ts_ms);
+        eq(c.ingest(res(older, now), now).state, "hidden", "a snapshot older than one already seen is refused"); }
+      eq(new L.Controller({ privateTest: true }).ingest(res(pubDoc(base.doc), undefined), now).state, "live", "the local private-test behaviour is unchanged (no Date requirement)");
+
+      /* rendering */
+      { const doc = makeDoc(), ui = new L.Ui(doc, true, true), text = () => doc.byId["market"].textContent, panels = () => doc.byId["market"].all((n) => n.attrs["data-lv"]).map((n) => n.attrs["data-lv"]);
+        const eod = () => ["mk-today", "mk-breadth", "mk-movers"].map((id) => doc.byId[id].querySelector("[data-mk]").textContent), before = eod(), c = pubCtl();
+        ui.mount(); ok(/^LIVE TEST: connecting/.test(doc.byId["market"].firstChild.textContent), "initial chip");
+        ui.update(c.ingest(res(pubDoc(base.doc), now), now));
+        eq(panels(), ["public-test"], "one separate limited panel");
+        ok(/^LIVE TEST · LIVE · updated/.test(doc.byId["market"].firstChild.textContent), "chip: LIVE TEST · LIVE");
+        ok(/A FEW INSTRUMENTS ONLY — not a market dashboard/.test(text()) && /not the market/.test(text()), "labelled as a few instruments, not the market");
+        ok(!/LOCAL|PRIVATE|Advances|Live gainers|Live losers/.test(text()), "no local wording, no breadth, no rankings");
+        eq(doc.byId["mk-today"].all((n) => n.attrs["data-lv"]).length + doc.byId["mk-breadth"].all((n) => n.attrs["data-lv"]).length + doc.byId["mk-movers"].all((n) => n.attrs["data-lv"]).length, 0, "nothing inside the Market Today cards");
+        eq(eod(), before, "end-of-day content untouched");
+        ui.update(c.ingest({ status: 503, error: "HTTP 503" }, now + 3000)); ok(/STALE/.test(text()) && /not current/.test(text()) && !/· LIVE ·/.test(doc.byId["market"].firstChild.textContent), "stale: labelled STALE, never LIVE");
+        ui.update(pubCtl().ingest({ error: "request failed" }, now)); eq(panels(), [], "unavailable: panel removed"); ok(/UNAVAILABLE/.test(text()) && /live service is not reachable/.test(text()) && !/local relay/.test(text()), "unavailable text");
+        ui.update(pubCtl().ingest({ status: 200, text: JSON.stringify(pubDoc(base.doc)) }, now)); eq(panels(), [], "no Date: panel removed"); ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent) && !/ LIVE ·/.test(doc.byId["market"].firstChild.textContent.replace("LIVE TEST", "")), "no Date: chip says UNAVAILABLE");
+        eq(eod(), before, "end-of-day content still untouched"); }
+      { const evil = pubDoc(base.doc); evil.indices[0].name = "<img src=x onerror=alert(1)>"; const doc = makeDoc(), ui = new L.Ui(doc, true, true);
+        ui.update(pubCtl().ingest(res(evil, now), now)); ok(doc.byId["market"].textContent.includes("<img src=x") && doc.byId["market"].all((n) => n.tag === "img").length === 0, "markup from the feed stays text"); }
+      eq(JSON.parse(JSON.stringify(new L.Ui(makeDoc(), true).pub)), false, "a local Ui is not public");
+
+      /* start(): the request, the interval, hidden tabs, and a real Date header against the real clock */
+      { const doc = makeDoc(), calls = [], timers = [], listeners = {}; doc.addEventListener = (t, f) => { listeners[t] = f; };
+        const live = pubDoc(base.doc), t = Date.now() - 1000; live.server_ts_ms = t; live.generated_at = isoOf(t);
+        const fetchImpl = (u, o) => { calls.push([u, o]); return Promise.resolve({ ok: true, status: 200, headers: { get: (k) => (k.toLowerCase() === "date" ? new Date().toUTCString() : null) }, text: () => Promise.resolve(JSON.stringify(live)) }); };
+        const r = load(page(), fetchImpl), out = r.L.start({ url: SVC, pub: true, privateTest: true, port: null }, { document: doc, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; } });
+        const flush = () => new Promise((rs) => setImmediate(rs)); for (let i = 0; i < 4; i++) await flush();
+        eq(r.fetches.length, 1, "one request"); eq(r.fetches[0][0], SVC, "the configured address, nothing else");
+        eq([r.fetches[0][1].credentials, r.fetches[0][1].mode, r.fetches[0][1].redirect, r.fetches[0][1].cache, r.fetches[0][1].referrerPolicy], ["omit", "cors", "error", "no-store", "no-referrer"], "request options pinned");
+        eq(timers[0][1], 10000, "polls every 10 s");
+        ok(/^LIVE TEST · LIVE/.test(doc.byId["market"].firstChild.textContent), "a snapshot from this moment, with a matching Date header, is shown as LIVE");
+        doc.visibilityState = "hidden"; timers[0][0](); await flush(); eq(r.fetches.length, 1, "a hidden tab makes no request"); eq(timers[timers.length - 1][1], 10000, "and re-arms"); }
+      { const doc = makeDoc(), live = pubDoc(base.doc);                                    /* the 2026-10-08 fixture against today's real clock: a Date header from the past cannot make it live */
+        const r = load(page(), () => Promise.resolve({ ok: true, status: 200, headers: { get: (k) => (k.toLowerCase() === "date" ? new Date(T0).toUTCString() : null) }, text: () => Promise.resolve(JSON.stringify(live)) }));
+        r.L.start({ url: SVC, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 4; i++) await new Promise((rs) => setImmediate(rs));
+        ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent) && !/· LIVE ·/.test(doc.byId["market"].firstChild.textContent), "an old Date header against this device's clock is UNAVAILABLE"); }
+      { const doc = makeDoc(), live = pubDoc(base.doc), t = Date.now() - 1000; live.server_ts_ms = t; live.generated_at = isoOf(t);
+        const r = load(page(), () => Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve(JSON.stringify(live)) }));
+        r.L.start({ url: SVC, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 4; i++) await new Promise((rs) => setImmediate(rs));
+        ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent), "a response with no readable Date header is UNAVAILABLE even if the snapshot looks fresh"); }
+    }
     console.log("Live client tests passed (" + checks + " checks)");
   })();
 }

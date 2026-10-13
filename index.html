@@ -2873,17 +2873,30 @@ window.SLMarket={activityOf:activityOf,perfOf:perfOf,cleanCandles:cleanCandles,i
    It never replaces the end-of-day content: live panels are added NEXT to it, each in its own box, and a panel that is refused simply is not drawn, so the page is then exactly
    the end-of-day page. A snapshot is used only if it passes the same checks as the relay's own validator (validate) and the same acceptance rules (accepts): valid, relay healthy,
    market open, fresh (age measured against the relay's Date header), enough coverage, and never a test_set or unknown universe. Everything is drawn with textContent, never as HTML.
+   A SECOND, separate gate (PUBLIC_LIVE) lets the deployed site read a hosted live service. It is OFF in this file (enabled:false, no address) and does nothing until someone
+   turns it on in a reviewed change. When on, it also requires that the page is served from the exact StockLens origin and that the address is an https address of the
+   fixed path, and it shows only the limited LIVE TEST panel (indices and prices of a few instruments), never breadth, movers or a market dashboard. A snapshot counts as live only if
+   the service's Date header is present and agrees with this device's clock within a minute; otherwise the page says UNAVAILABLE and keeps the end-of-day content.
    Pure functions are exposed as window.SLLive for the tests. */
 (function(){
 "use strict";
 var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
-var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,pollTest:5000,noTrade:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765};
+var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,pollTest:5000,noTrade:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765,pollPublic:10000,clockTol:60000};
+var PAGE_HOST="arnavdev11.github.io",PATH_LIVE="/v1/live/snapshot.json";
+var PUBLIC_LIVE={enabled:false,url:""};      /* the production switch: shipped OFF. Turning it on is a separate, reviewed change that names the deployed service address. */
 var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
 var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
 var SOURCE="Upstox market data feed V3 (ltpc)",SYM=/^[A-Z0-9&._-]{1,30}$/;
 
 /* ---------- the two gates ---------- */
-function gate(loc){
+function publicGate(loc,pub){
+  if(!pub||pub.enabled!==true||typeof pub.url!=="string"||!loc||typeof loc.hostname!=="string")return null;
+  var m=/^https:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+)(\/v1\/live\/snapshot\.json)$/.exec(pub.url);
+  if(!m||m[2]!==PATH_LIVE||/^[0-9.]+$/.test(m[1])||m[1]===PAGE_HOST)return null;       /* an https DNS name with the fixed path: no port, query, user or IP address, and never the page's own host */
+  if(loc.protocol!=="https:"||loc.hostname.toLowerCase()!==PAGE_HOST||(loc.port!==undefined&&loc.port!==""))return null;
+  return{url:pub.url,pub:true,privateTest:true,port:null}}
+function gate(loc,pub){
+  if(loc&&typeof loc.hostname==="string"&&LOOPBACK[loc.hostname.toLowerCase()]!==1)return publicGate(loc,pub===undefined?PUBLIC_LIVE:pub);
   if(!loc||typeof loc.hostname!=="string"||LOOPBACK[loc.hostname.toLowerCase()]!==1)return null;
   var q;try{q=new URLSearchParams(loc.search||"")}catch(e){return null}
   if(q.get("live")!=="local")return null;
@@ -2967,7 +2980,7 @@ function accepts(d,serverNow,opts){
   return out}
 
 /* ---------- one poll's answer -> what may be shown ---------- */
-function Controller(opts){this.privateTest=!!(opts&&opts.privateTest===true);this.lastTs=null;this.lastAdvance=null;this.lastSeq=null;this.good=null}
+function Controller(opts){this.privateTest=!!(opts&&opts.privateTest===true);this.pub=!!(opts&&opts.pub===true);this.lastTs=null;this.lastAdvance=null;this.lastSeq=null;this.good=null}
 /* kind says what the page may say: live | stale (a valid snapshot that is no longer current, shown only as STALE with its own time) | closed | unavailable.
    state keeps the older three-way answer (live | hidden | unavailable). Only "live" ever carries blocks; only "stale" carries a snapshot in .last. */
 Controller.prototype.ingest=function(res,localNow){
@@ -2976,6 +2989,11 @@ Controller.prototype.ingest=function(res,localNow){
   if(!res||res.error||res.status!==200||typeof res.text!=="string")return failed(res&&res.error?String(res.error):"no answer");
   if(res.text.length>CFG.maxBytes)return none("hidden","response too large");
   var d;try{d=JSON.parse(res.text)}catch(e){return none("hidden","not valid JSON")}
+  if(this.pub){
+    /* the public feed must be judged on the service's own clock, cross-checked against this device's clock: no usable Date, or clocks more than a minute apart, means no live claim at all */
+    if(!isNum(res.dateMs))return none("hidden","the live service sent no usable time");
+    if(Math.abs(localNow-res.dateMs)>CFG.clockTol)return none("hidden","this device's clock and the live service's clock disagree");
+    if(validate(d).length===0&&(d.scope.universe!=="test_set"||d.breadth.counted!==0||d.gainers!==null||d.losers!==null))return none("hidden","the public feed may carry only the limited test set")}
   var serverNow=isNum(res.dateMs)?res.dateMs:localNow,v=accepts(d,serverNow,{privateTest:this.privateTest}),any=v.indices[0]||v.breadth[0]||v.movers[0]||v.prices[0],stalled=false;
   if(validate(d).length===0){
     if(this.lastTs!==null&&d.server_ts_ms<this.lastTs)return none("hidden","snapshot is older than one already seen");
@@ -3000,13 +3018,13 @@ var CSS=".lv-chip{margin:0 0 10px;padding:7px 12px;border:1px solid var(--line);
   +".lv-panel.lv-stale{border-style:dashed;border-color:var(--mute)}.lv-panel.lv-stale .lv-head b{color:var(--mute)}"
   +".lv-chg{display:flex;gap:10px;margin-top:6px;font-variant-numeric:tabular-nums;font-size:.9rem}";
 var TABS=["NIFTY 50","SENSEX"];
-function Ui(doc,privateTest){this.privateTest=privateTest===true;this.doc=doc;this.panels={};this.chip=null;this.css=null;this.sel=TABS[0];this.view=null}
+function Ui(doc,privateTest,pub){this.privateTest=privateTest===true;this.pub=pub===true;this.doc=doc;this.panels={};this.chip=null;this.css=null;this.sel=TABS[0];this.view=null}
 Ui.prototype.el=function(tag,cls,text){var e=this.doc.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=String(text);return e};
 Ui.prototype.mount=function(){
   if(this.css)return;
   var s=this.el("style");s.id="liveCss";s.textContent=CSS;(this.doc.head||this.doc.documentElement).appendChild(s);this.css=s;
   var main=this.doc.getElementById("market");
-  if(main){this.chip=this.el("div","lv-chip",this.privateTest?"LOCAL LIVE TEST: connecting…":"Live (private test): connecting…");this.chip.setAttribute("role","status");main.insertBefore(this.chip,main.firstChild)}};
+  if(main){this.chip=this.el("div","lv-chip",this.pub?"LIVE TEST: connecting…":this.privateTest?"LOCAL LIVE TEST: connecting…":"Live (private test): connecting…");this.chip.setAttribute("role","status");main.insertBefore(this.chip,main.firstChild)}};
 Ui.prototype.drop=function(name){var e=this.panels[name];if(e&&e.parentNode)e.parentNode.removeChild(e);this.panels[name]=null};
 Ui.prototype.put=function(name,secId,node){
   this.drop(name);var sec=this.doc.getElementById(secId);if(!sec)return;
@@ -3045,10 +3063,10 @@ function ageText(ms){
 /* the private test set: one separate panel at the top of the Market Today page. It is never the Market Today NIFTY 50 card, and it never carries breadth, movers or rankings. */
 Ui.prototype.privatePanel=function(doc,lab){
   var n=this.el("div","lv-panel"+(lab==="STALE"?" lv-stale":"")),h=this.el("p","lv-head"),b=this.el("b",null,lab),rows=[];
-  n.setAttribute("data-lv","private-test");
+  n.setAttribute("data-lv",this.pub?"public-test":"private-test");
   doc.indices.forEach(function(r){rows.push({name:r.name,ltp:r.ltp,pct:r.change_pct,ltt:r.ltt,cp:r.cp})});
   Object.keys(doc.prices).sort().forEach(function(k){var v=doc.prices[k];rows.push({name:k,ltp:v.ltp,pct:v.change_pct,ltt:v.ltt,cp:v.cp})});
-  h.appendChild(b);h.appendChild(this.el("span",null," · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · "+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
+  h.appendChild(b);h.appendChild(this.el("span",null,(this.pub?" · LIVE TEST · A FEW INSTRUMENTS ONLY — not a market dashboard · ":" · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · ")+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
   var tb=this.el("table","mk-t"),th=this.el("thead"),hr=this.el("tr"),bd=this.el("tbody");
   [["Instrument","s"],["Last price","n"],["Prev close","n"],["Change","n"],["Last trade (IST)","n"],["Age","n"]].forEach(function(c){hr.appendChild(this.el("th",c[1],c[0]))},this);th.appendChild(hr);tb.appendChild(th);
   rows.forEach(function(r){
@@ -3060,6 +3078,7 @@ Ui.prototype.privatePanel=function(doc,lab){
   tb.appendChild(bd);n.appendChild(tb);
   var q=doc.quality,w=q.warnings.length?q.warnings.join(", "):"none";
   n.appendChild(this.el("p","lv-note","Relay quality: "+(q.ok?"ok":"NOT OK — "+q.reasons.join(", "))+" · warnings: "+w+". Age = snapshot time minus the exchange's last-trade time; a dash means that time is missing."));
+  if(this.pub){n.appendChild(this.el("p","lv-note","Limited live test of a few instruments, with prices from the exchange feed. These instruments are not the market: no breadth, movers or rankings are shown, and this is not the Market Today NIFTY 50 card. If this panel says STALE or UNAVAILABLE, the prices are not current. The end-of-day figures below are unchanged."));return n}
   n.appendChild(this.el("p","lv-note","Private test of the local feed only. These instruments are not the market: no breadth, movers or rankings are shown, and this is not the Market Today NIFTY 50 card. The end-of-day figures below are unchanged. Not for publication."));
   return n};
 Ui.prototype.putPrivate=function(doc,lab){
@@ -3087,10 +3106,11 @@ Ui.prototype.movers=function(doc){
 Ui.prototype.select=function(name){if(TABS.indexOf(name)<0||name===this.sel)return;this.sel=name;if(this.view)this.render()};
 Ui.prototype.update=function(view){this.mount();this.view=view;this.render()};
 Ui.prototype.render=function(){
-  var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre=(this.privateTest?"LOCAL LIVE TEST":"Live (private test)")+" · "+lab;
+  var view=this.view,lab=labelOf(view),say=function(t){if(this.chip)this.chip.textContent=t}.bind(this),pre=(this.pub?"LIVE TEST":this.privateTest?"LOCAL LIVE TEST":"Live (private test)")+" · "+lab;
   if(lab==="LIVE"&&this.privateTest&&view.doc.scope.universe==="test_set"){
     this.putPrivate(view.doc,"LIVE");
-    say("LOCAL LIVE TEST · LIVE · updated "+view.doc.generated_at.slice(11,19)+" IST · PRIVATE TEST SET — not a market dashboard · end-of-day figures below are unchanged");return}
+    say(this.pub?"LIVE TEST · LIVE · updated "+view.doc.generated_at.slice(11,19)+" IST · a few instruments only — not a market dashboard · end-of-day figures below are unchanged"
+      :"LOCAL LIVE TEST · LIVE · updated "+view.doc.generated_at.slice(11,19)+" IST · PRIVATE TEST SET — not a market dashboard · end-of-day figures below are unchanged");return}
   if(lab==="LIVE"){
     this.drop("private");
     var b=view.blocks,d=view.doc;
@@ -3102,14 +3122,14 @@ Ui.prototype.render=function(){
   ["breadth","movers","private"].forEach(this.drop,this);
   if(lab==="STALE"&&this.privateTest&&view.last&&view.last.scope&&view.last.scope.universe==="test_set"){
     this.drop("indices");this.putPrivate(view.last,"STALE");
-    say("LOCAL LIVE TEST · STALE · "+view.reason+" · showing the last values received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
+    say((this.pub?"LIVE TEST":"LOCAL LIVE TEST")+" · STALE · "+view.reason+" · showing the last values received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
   if(lab==="STALE"&&view.last&&view.last.indices){
     this.put("indices","mk-today",this.indices(view.last,"STALE"));
     say(pre+" · "+view.reason+" · showing the last value received at "+view.last.generated_at.slice(11,19)+" IST, not current. End-of-day figures below are unchanged.");return}
   this.drop("indices");
   say(lab==="CLOSED"?pre+" · "+view.reason+". Showing end-of-day data, which is not live."
     :lab==="STALE"?pre+" · "+view.reason+". Showing end-of-day data."
-    :view.state==="unavailable"?pre+" · the local relay is not reachable. Showing end-of-day data."
+    :view.state==="unavailable"?pre+(this.pub?" · the live service is not reachable. Showing end-of-day data.":" · the local relay is not reachable. Showing end-of-day data.")
     :pre+" · not shown ("+view.reason+"). Showing end-of-day data.")};
 
 /* ---------- the loop ---------- */
@@ -3122,8 +3142,8 @@ function poll(url){
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
     return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
-  var ctl=new Controller({privateTest:g.privateTest===true}),ui=new Ui(env.document,g.privateTest===true),busy=false;
-  function next(){env.setTimeout(tick,g.privateTest===true?CFG.pollTest:CFG.poll)}
+  var ctl=new Controller({privateTest:g.privateTest===true,pub:g.pub===true}),ui=new Ui(env.document,g.privateTest===true,g.pub===true),busy=false;
+  function next(){env.setTimeout(tick,g.pub===true?CFG.pollPublic:g.privateTest===true?CFG.pollTest:CFG.poll)}
   /* one request at a time: a call while another is still in flight does nothing */
   function refresh(){
     if(busy)return false;
@@ -3137,7 +3157,7 @@ function start(g,env){
     var t=e&&e.target,b=t&&typeof t.closest==="function"?t.closest("[data-mk-tabs] [data-tab]"):null;
     if(b&&typeof b.getAttribute==="function"&&b.parentNode&&b.parentNode.getAttribute("data-mk-tabs")==="index")ui.select(b.getAttribute("data-tab"))});
   ui.mount();refresh();next();return{ui:ui,controller:ctl,refresh:refresh}}
-window.SLLive={gate:gate,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
+window.SLLive={gate:gate,publicGate:publicGate,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
 })();
