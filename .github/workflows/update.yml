@@ -3,6 +3,9 @@ name: Update data and publish site
 "on":
   schedule:
     - cron: "15 15 * * 1-5"
+    # Tuesday to Saturday at 10:00 IST (04:30 UTC): publishes the previous session's candles that "Update historical price data" fetched at 08:00 IST
+    # (Upstox serves a day's candle only from about 07:00 IST the next day), so the site is never a session behind during the day.
+    - cron: "30 4 * * 2-6"
   workflow_dispatch:
     inputs:
       fundamentals_calls:
