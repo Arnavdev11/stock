@@ -1,4 +1,4 @@
-"""Tests for the directory-based coverage universe (universe.py --mode directory) and the universe workflow's confirmation gate.  Run: python3 -m unittest test_directory_universe"""
+"""Tests for the directory-based coverage universe (directory_universe.py) and the universe workflow's confirmation gate.  Run: python3 -m unittest test_directory_universe"""
 import contextlib
 import copy
 import io
@@ -13,6 +13,7 @@ from unittest import mock
 import quarterly_results_updater as q
 import stock_directory
 import test_stock_directory as T
+import directory_universe as DU
 import universe
 
 HERE = Path(__file__).resolve().parent
@@ -26,14 +27,14 @@ def directory_doc():
 def cli(*argv):
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        rc = universe.main(list(argv))
+        rc = DU.main(list(argv))
     return rc, out.getvalue()
 
 
 class BuildTests(unittest.TestCase):
     def test_every_directory_stock_becomes_a_universe_entry_with_the_directory_identity(self):
         d = directory_doc()
-        u = universe.build_from_directory(d, "2026-10-14", "src")
+        u = DU.build_from_directory(d, "2026-10-14", "src")
         self.assertEqual(universe.check_doc(u), [])
         self.assertEqual((u["stage"], u["kind"], u["count"]), ("directory", "universe", len(d["symbols"])))
         self.assertEqual([x["symbol"] for x in u["symbols"]], sorted(x["symbol"] for x in d["symbols"]))
@@ -44,7 +45,7 @@ class BuildTests(unittest.TestCase):
 
     def test_the_universe_has_the_same_file_shape_as_the_other_stages(self):
         d = directory_doc()
-        self.assertEqual(set(universe.build_from_directory(d, "d", "s")), set(universe.build_doc([], {}, "d", "s", "nifty500")[0]))
+        self.assertEqual(set(DU.build_from_directory(d, "d", "s")), set(universe.build_doc([], {}, "d", "s", "nifty500")[0]))
 
     def test_a_damaged_directory_never_becomes_a_universe(self):
         d = directory_doc()
@@ -56,18 +57,18 @@ class BuildTests(unittest.TestCase):
             except Exception:
                 pass
             with self.assertRaises(universe.UniverseError):
-                universe.build_from_directory(bad, "d", "s")
+                DU.build_from_directory(bad, "d", "s")
         with self.assertRaises(universe.UniverseError):
-            universe.build_from_directory("not a directory", "d", "s")
+            DU.build_from_directory("not a directory", "d", "s")
 
     def test_the_same_identity_is_seen_by_the_universe_updaters_and_quarterly_results(self):
         d = directory_doc()
         with tempfile.TemporaryDirectory() as t:
             dp, up = Path(t) / "stock_directory.json", Path(t) / "universe.json"
             dp.write_text(stock_directory.dumps(d), encoding="utf-8")
-            self.assertEqual(cli("build", "--mode", "directory", "--directory", str(dp), "--out", str(up), "--as-of", "2026-10-14")[0], 1)     # fixture is below the minimum size
-            with mock.patch.object(universe, "MIN_DIRECTORY", 1):
-                rc, out = cli("build", "--mode", "directory", "--directory", str(dp), "--out", str(up), "--as-of", "2026-10-14")
+            self.assertEqual(cli("build", "--directory", str(dp), "--out", str(up), "--as-of", "2026-10-14")[0], 1)     # fixture is below the minimum size
+            with mock.patch.object(DU, "MIN_DIRECTORY", 1):
+                rc, out = cli("build", "--directory", str(dp), "--out", str(up), "--as-of", "2026-10-14")
             self.assertEqual(rc, 0, out)
             env = {"STOCKLENS_UNIVERSE_FILE": str(up)}
             entries = universe.load_entries(env)
@@ -82,18 +83,19 @@ class CliTests(unittest.TestCase):
         self.addCleanup(self.t.cleanup)
         self.dir, self.out = Path(self.t.name) / "stock_directory.json", Path(self.t.name) / "universe.json"
         self.dir.write_text(stock_directory.dumps(directory_doc()), encoding="utf-8")
-        p = mock.patch.object(universe, "MIN_DIRECTORY", 1)
+        p = mock.patch.object(DU, "MIN_DIRECTORY", 1)
         p.start()
         self.addCleanup(p.stop)
 
     def build(self):
-        return cli("build", "--mode", "directory", "--directory", str(self.dir), "--out", str(self.out), "--as-of", "2026-10-14")
+        return cli("build", "--directory", str(self.dir), "--out", str(self.out), "--as-of", "2026-10-14")
 
     def test_writes_a_valid_file_and_check_accepts_it(self):
         rc, out = self.build()
         self.assertEqual(rc, 0, out)
         self.assertIn("(directory)", out)
-        self.assertEqual(cli("check", str(self.out))[0], 0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(universe.main(["check", str(self.out)]), 0)           # the file passes universe.py's own check (what the updaters' workflows run)
         self.assertEqual(sorted(x.name for x in Path(self.t.name).iterdir()), ["stock_directory.json", "universe.json"])         # no temp file left behind
 
     def test_it_needs_no_download_and_no_instrument_file(self):
@@ -106,11 +108,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("::error::", out)
         self.assertFalse(self.out.exists())
-        self.assertEqual(cli("build", "--mode", "directory", "--out", str(self.out))[0], 1)       # --directory is required
+        self.assertEqual(cli("build", "--out", str(self.out))[0], 1)       # --directory is required
         self.assertFalse(self.out.exists())
 
     def test_a_directory_below_the_minimum_size_is_refused(self):
-        with mock.patch.object(universe, "MIN_DIRECTORY", 10 ** 6):
+        with mock.patch.object(DU, "MIN_DIRECTORY", 10 ** 6):
             rc, out = self.build()
         self.assertEqual(rc, 1)
         self.assertIn("only", out)
@@ -129,9 +131,16 @@ class CliTests(unittest.TestCase):
         self.assertIn("vanished", out)
         self.assertEqual(json.loads(self.out.read_text(encoding="utf-8"))["count"], big["count"])
 
-    def test_the_other_modes_still_work_and_all_eq_still_needs_its_inputs(self):
-        self.assertEqual(cli("build", "--mode", "bogus", "--instruments", "x", "--out", str(self.out))[0], 1)
-        self.assertEqual(cli("build", "--mode", "all_eq", "--out", str(self.out))[0], 1)
+    def test_usage_errors_write_nothing(self):
+        for argv in (["bogus"], ["build", "--out", str(self.out)], ["build", "--directory", str(self.dir)], ["build", "--directory"]):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertNotEqual(DU.main(argv), 0)
+        self.assertFalse(self.out.exists())
+
+    def test_universe_py_and_the_research_updaters_do_not_import_the_directory(self):
+        for name in ("universe.py", "fundamentals_updater.py", "financials_updater.py", "financial_history_updater.py", "shareholding_updater.py", "historical_updater.py", "upstox_common.py"):
+            self.assertNotIn("directory_universe", (HERE / name).read_text(encoding="utf-8"), name)
+            self.assertNotIn("stock_directory", (HERE / name).read_text(encoding="utf-8"), name)
 
 
 class WorkflowGateTests(unittest.TestCase):
@@ -141,15 +150,15 @@ class WorkflowGateTests(unittest.TestCase):
         self.assertIn('[ "$MODE" = "nifty500" ]', gate)
         self.assertIn('[ "$MODE" = "directory" ] && [ "$CONFIRM" = "yes" ]', gate)
         self.assertIn("exit 1", gate)
-        self.assertNotIn("all_eq\" ]", gate)
-        self.assertNotIn("all_eq' ]", gate)
+        self.assertNotIn("all_eq", gate.split("echo")[0])            # all_eq is named only in the refusal message
 
     def test_the_workflow_is_still_manual_secret_free_and_commits_exactly_one_file(self):
         for banned in ("schedule", "push:", "pull_request", "deploy-pages", "UPSTOX_ANALYTICS_TOKEN", "secrets.", "upload-pages-artifact", "actions/cache"):
             self.assertNotIn(banned, WF, banned)
         self.assertIn('!= "universe.json"', WF)
         self.assertNotRegex(WF, r"git push (-f|--force)")
-        self.assertIn("--directory ledger-branch/stock_directory.json", WF)
+        lines = [l.strip() for l in WF.splitlines() if "stock_directory" in l]
+        self.assertEqual(lines, ["python directory_universe.py build --directory ledger-branch/stock_directory.json --out universe-new.json"])
 
     def test_inputs_reach_the_shell_only_through_environment_variables(self):
         for m in re.finditer(r"\$\{\{\s*inputs\.[^}]*\}\}", WF):

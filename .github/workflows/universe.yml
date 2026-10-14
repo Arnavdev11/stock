@@ -82,7 +82,7 @@ jobs:
         run: |
           cp -f ledger-branch/universe.json universe-new.json 2>/dev/null || true
           if [ "$MODE" = "directory" ]; then
-            python universe.py build --mode directory --directory ledger-branch/stock_directory.json --out universe-new.json
+            python directory_universe.py build --directory ledger-branch/stock_directory.json --out universe-new.json
           else
             python universe.py build --mode nifty500 --fetch --out universe-new.json
           fi

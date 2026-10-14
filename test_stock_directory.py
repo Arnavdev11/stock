@@ -547,12 +547,13 @@ class Wiring(unittest.TestCase):
             p = ROOT / name
             if p.exists():
                 self.assertNotIn("stock_directory", p.read_text(), name)
-        u = (self.WF / "universe.yml").read_text()
-        self.assertNotIn("stock_directory", u)
+        # universe.yml may name the directory in exactly one command: the confirmed directory-based universe build (directory_universe.py, never universe.py)
+        u = [l.strip() for l in (self.WF / "universe.yml").read_text().splitlines() if "stock_directory" in l]
+        self.assertEqual(u, ["python directory_universe.py build --directory ledger-branch/stock_directory.json --out universe-new.json"])
 
     def test_no_other_workflow_mentions_the_directory_and_no_builder_workflow_exists(self):
         for p in self.WF.glob("*.yml"):
-            if p.name not in ("update.yml", "historical.yml", "quarterly_probe.yml"):
+            if p.name not in ("update.yml", "historical.yml", "quarterly_probe.yml", "universe.yml", "coverage_probe.yml"):
                 self.assertNotIn("stock_directory", p.read_text(), p.name)
         # quarterly_probe.yml (manual, read-only test batch) copies the published directory in exactly one command and nowhere else
         probe = [l.strip() for l in (self.WF / "quarterly_probe.yml").read_text().splitlines() if "stock_directory" in l]
@@ -560,6 +561,9 @@ class Wiring(unittest.TestCase):
         # historical.yml READS the directory (read-only checkout of the data branch) to choose the next batch of stocks, in exactly one command and nowhere else
         lines = [l.strip() for l in (self.WF / "historical.yml").read_text().splitlines() if "stock_directory" in l]
         self.assertEqual(lines, ["run: python historical_batch.py choose --directory ledger-branch/stock_directory.json --saved ledger-branch/historical --out batch"])
+        # coverage_probe.yml (manual, read-only coverage probe) copies the published directory in exactly one command and nowhere else
+        cov = [l.strip() for l in (self.WF / "coverage_probe.yml").read_text().splitlines() if "stock_directory" in l]
+        self.assertEqual(cov, ["run: mkdir -p out && cp ledger-branch/stock_directory.json out/stock_directory.json"])
         self.assertFalse((self.WF / "stock_directory.yml").exists())
 
     def test_the_document_the_builder_writes_is_what_the_search_accepts(self):
