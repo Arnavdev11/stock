@@ -5,6 +5,8 @@ ONE mechanism for every stage. The universe is DATA (a JSON file), never code:
     Stage 0 (default, nothing configured)  -> the 10 development stocks below (exactly the old behaviour)
     Stage 1                                -> NIFTY 500 constituents      (file built from NSE's official index list)
     Stage 2                                -> all NSE EQ operating stocks (the same file shape, built with --mode all_eq)
+    Directory                              -> every stock in the published stock directory (stock_directory.json; --mode directory). The directory is already the
+                                              classified, Upstox-served list of eligible stocks, and its entries already have the universe's symbol/isin/name shape.
 Moving between stages = pointing STOCKLENS_UNIVERSE_FILE at another file. No updater, page or workflow code changes.
 
 File shape:
@@ -18,6 +20,7 @@ Environment:  STOCKLENS_UNIVERSE_FILE   path to the universe file; unset = the 1
 CLI:  python universe.py build --mode nifty500 --csv FILE --instruments FILE --as-of YYYY-MM-DD --out FILE
       python universe.py build --mode nifty500 --fetch --out FILE        (downloads NSE's list and the Upstox instrument file)
       python universe.py build --mode all_eq --instruments FILE --exclude FILE --out FILE   (Stage 2; not used in Stage 1)
+      python universe.py build --mode directory --directory stock_directory.json --out FILE   (the whole published directory; nothing is downloaded)
       python universe.py check FILE
 """
 import csv
@@ -212,6 +215,22 @@ def build_all_eq(instruments, exclude, as_of, source):
             "count": len(syms), "symbols": syms}
 
 
+MIN_DIRECTORY = 1000        # a directory-based universe with fewer symbols than this is a broken directory, not the eligible list
+
+
+def build_from_directory(directory_doc, as_of, source):
+    """Directory form: every symbol of the published stock directory, with its ISIN and name, exactly as the directory has them (no sector, price or rating).
+    The directory must pass its own checks (schema, counts, hash); anything else raises UniverseError, so a damaged directory can never become the universe."""
+    import stock_directory                      # imported here: the classifier it depends on is not needed by any other universe use
+    bad = stock_directory.check_directory_doc(directory_doc)
+    if bad:
+        raise UniverseError("the stock directory failed its own checks: " + str(bad[0])[:120])
+    syms = [{"symbol": x["symbol"], "isin": x["isin"], "name": x["name"]} for x in directory_doc["symbols"]]
+    syms.sort(key=lambda x: x["symbol"])
+    return {"schema_version": SCHEMA_VERSION, "kind": KIND, "stage": "directory", "source": source, "as_of": as_of,
+            "count": len(syms), "symbols": syms}
+
+
 def build_problems(doc, previous=None, minimum=0):
     p = check_doc(doc)
     if not p and doc["count"] < minimum:
@@ -285,13 +304,6 @@ def main(argv):
         import datetime as dt
         as_of = opt.get("--as-of") or dt.date.today().isoformat()
         mode = opt.get("--mode", "nifty500")
-        inst_path = opt.get("--instruments")
-        if opt.get("--fetch"):
-            inst_path = inst_path or "instruments.json.gz"
-            _fetch_instruments(inst_path)
-        if not inst_path:
-            raise UniverseError("--instruments FILE (or --fetch) is required")
-        instruments = load_instruments_file(inst_path)
         prev = None
         out = Path(opt["--out"])
         if out.exists():
@@ -299,16 +311,30 @@ def main(argv):
                 prev = load_doc(out)
             except UniverseError:
                 prev = None
-        if mode == "nifty500":
-            text = _fetch_csv() if opt.get("--fetch") else Path(opt["--csv"]).read_text(encoding="utf-8-sig")
-            doc, dropped = build_doc(parse_index_csv(text), instruments, as_of, "NSE NIFTY 500 constituent list, matched to Upstox NSE EQ instruments", "nifty500")
-            minimum = MIN_NIFTY500
-        elif mode == "all_eq":
-            ex = json.loads(Path(opt["--exclude"]).read_text(encoding="utf-8"))
-            ex = ex.get("symbols") if isinstance(ex, dict) else ex
-            doc, dropped, minimum = build_all_eq(instruments, ex or [], as_of, "Upstox NSE EQ instruments minus the excluded list"), [], 1000
+        if mode == "directory":
+            try:
+                ddoc = json.loads(Path(opt["--directory"]).read_text(encoding="utf-8"))
+            except KeyError:
+                raise UniverseError("--directory FILE is required for --mode directory")
+            doc, dropped, minimum = build_from_directory(ddoc, as_of, "Published stock directory (stock_directory.json): eligible NSE EQ and BE stocks served by Upstox"), [], MIN_DIRECTORY
         else:
-            raise UniverseError("unknown mode " + mode)
+            inst_path = opt.get("--instruments")
+            if opt.get("--fetch"):
+                inst_path = inst_path or "instruments.json.gz"
+                _fetch_instruments(inst_path)
+            if not inst_path:
+                raise UniverseError("--instruments FILE (or --fetch) is required")
+            instruments = load_instruments_file(inst_path)
+            if mode == "nifty500":
+                text = _fetch_csv() if opt.get("--fetch") else Path(opt["--csv"]).read_text(encoding="utf-8-sig")
+                doc, dropped = build_doc(parse_index_csv(text), instruments, as_of, "NSE NIFTY 500 constituent list, matched to Upstox NSE EQ instruments", "nifty500")
+                minimum = MIN_NIFTY500
+            elif mode == "all_eq":
+                ex = json.loads(Path(opt["--exclude"]).read_text(encoding="utf-8"))
+                ex = ex.get("symbols") if isinstance(ex, dict) else ex
+                doc, dropped, minimum = build_all_eq(instruments, ex or [], as_of, "Upstox NSE EQ instruments minus the excluded list"), [], 1000
+            else:
+                raise UniverseError("unknown mode " + mode)
         bad = build_problems(doc, prev, minimum)
         if bad:
             raise UniverseError("universe not written: " + bad[0])

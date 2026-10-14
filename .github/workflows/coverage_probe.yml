@@ -1,0 +1,80 @@
+name: Coverage probe (read-only)
+
+# MANUAL, READ-ONLY probe of the Upstox endpoints the research updaters use, for a small fixed set of stocks from the published stock directory. Run it by hand:
+# Actions > "Coverage probe (read-only)" > Run workflow. It makes about 85 to 130 real GET requests (12 stocks x 7 endpoints; a standalone retry adds one request per statement
+# with no consolidated data), at 2 s pacing, so it takes roughly 3 to 5 minutes. Caps: no new fundamentals request starts at 130 requests (a request already started may finish its 2 retries) and candle requests stop at 16, retries included.
+# It uploads ONE artifact (probe_output: report.json plus the raw responses, public company figures, no token) kept for 7 days. It pushes nothing, writes to no branch,
+# does not touch GitHub Pages, the saved-data cache, any ledger or any published file, and no other workflow calls it.
+# The only thing it takes from the data branch is the published stock directory (read-only checkout, no credentials kept). Shareholding (NSE filings) is not probed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Optional comma list of 1 to 12 stock symbols from the stock directory. Empty = the fixed default set of 12 (see coverage_probe.py)."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-coverage-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check the symbol list (empty, or one to twelve different plain symbols)
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          raw = os.environ.get("SYMBOLS", "").strip()
+          if raw:
+              parts = [p.strip() for p in raw.split(",")]
+              if not 1 <= len(parts) <= 12 or any(not re.fullmatch(r"[A-Z0-9&_.-]{1,20}", p) for p in parts) or len(set(parts)) != len(parts):
+                  sys.exit("::error::Give one to twelve different upper-case stock symbols, comma separated (no spaces), or leave the field empty.")
+              print("Symbols:", ",".join(parts))
+          else:
+              print("Using the default set of 12 symbols.")
+          PY
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check out the data branch (read-only)
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Use the published directory
+        run: mkdir -p out && cp ledger-branch/stock_directory.json out/stock_directory.json
+
+      - name: Run the coverage probe
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          PROBE_SYMBOLS: ${{ inputs.symbols }}
+        run: python coverage_probe.py
+
+      - name: Save the report and the raw responses
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-probe
+          path: probe_output
+          if-no-files-found: ignore
+          retention-days: 7
