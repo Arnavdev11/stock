@@ -3076,7 +3076,7 @@ Ui.prototype.privatePanel=function(doc,lab){
   n.setAttribute("data-lv",this.pub?"public-test":"private-test");
   doc.indices.forEach(function(r){rows.push({name:r.name,ltp:r.ltp,pct:r.change_pct,ltt:r.ltt,cp:r.cp})});
   Object.keys(doc.prices).sort().forEach(function(k){var v=doc.prices[k];rows.push({name:k,ltp:v.ltp,pct:v.change_pct,ltt:v.ltt,cp:v.cp})});
-  h.appendChild(b);h.appendChild(this.el("span",null,(this.pub?" · LIVE TEST · A FEW INSTRUMENTS ONLY — not a market dashboard · ":" · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · ")+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
+  h.appendChild(b);h.appendChild(this.el("span",null,(this.pub?" · LIVE TEST — A FEW INSTRUMENTS ONLY — not a market dashboard · ":" · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · ")+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
   var tb=this.el("table","mk-t"),th=this.el("thead"),hr=this.el("tr"),bd=this.el("tbody");
   [["Instrument","s"],["Last price","n"],["Prev close","n"],["Change","n"],["Last trade (IST)","n"],["Age","n"]].forEach(function(c){hr.appendChild(this.el("th",c[1],c[0]))},this);th.appendChild(hr);tb.appendChild(th);
   rows.forEach(function(r){

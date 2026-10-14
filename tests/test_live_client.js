@@ -411,10 +411,13 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
         eq(panels(), ["public-test"], "one separate limited panel");
         ok(/^LIVE TEST · LIVE · updated/.test(doc.byId["market"].firstChild.textContent), "chip: LIVE TEST · LIVE");
         ok(/A FEW INSTRUMENTS ONLY — not a market dashboard/.test(text()) && /not the market/.test(text()), "labelled as a few instruments, not the market");
+        const HEADING = "LIVE TEST — A FEW INSTRUMENTS ONLY — not a market dashboard", heads = () => doc.byId["market"].all((n) => n.className === "lv-head").map((n) => n.textContent);
+        eq(heads().length, 1, "one panel heading (LIVE)"); ok(heads()[0].includes(HEADING), "LIVE heading carries the exact required wording: " + heads()[0]);
         ok(!/LOCAL|PRIVATE|Advances|Live gainers|Live losers/.test(text()), "no local wording, no breadth, no rankings");
         eq(doc.byId["mk-today"].all((n) => n.attrs["data-lv"]).length + doc.byId["mk-breadth"].all((n) => n.attrs["data-lv"]).length + doc.byId["mk-movers"].all((n) => n.attrs["data-lv"]).length, 0, "nothing inside the Market Today cards");
         eq(eod(), before, "end-of-day content untouched");
         ui.update(c.ingest({ status: 503, error: "HTTP 503" }, now + 3000)); ok(/STALE/.test(text()) && /not current/.test(text()) && !/· LIVE ·/.test(doc.byId["market"].firstChild.textContent), "stale: labelled STALE, never LIVE");
+        eq(heads().length, 1, "one panel heading (STALE)"); ok(heads()[0].includes(HEADING) && /^STALE/.test(heads()[0]), "STALE heading carries the exact required wording: " + heads()[0]);
         ui.update(pubCtl().ingest({ error: "request failed" }, now)); eq(panels(), [], "unavailable: panel removed"); ok(/UNAVAILABLE/.test(text()) && /live service is not reachable/.test(text()) && !/local relay/.test(text()), "unavailable text");
         ui.update(pubCtl().ingest({ status: 200, text: JSON.stringify(pubDoc(base.doc)) }, now)); eq(panels(), [], "no Date: panel removed"); ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent) && !/ LIVE ·/.test(doc.byId["market"].firstChild.textContent.replace("LIVE TEST", "")), "no Date: chip says UNAVAILABLE");
         eq(eod(), before, "end-of-day content still untouched"); }
