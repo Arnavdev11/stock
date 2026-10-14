@@ -2339,7 +2339,7 @@ window.SLShareholding={model:model,summaryHtml:summaryHtml,sectionHtml:sectionHt
 /* StockLens - Quarterly Results: a read-only section on Stock Detail, placed near the top directly below the Stock Detail heading. Data and rendering rules are unchanged.
    Data: out/by_symbol/quarterly_results/SYMBOL.json, the static file written by quarterly_results_updater.py (Upstox fundamentals, quarterly income statement). Requested once per stock, only when its Stock Detail is open.
    A stock with no such file shows "No quarterly results are on file for this company yet." Nothing is invented: a value that is missing (null) shows "-", never 0; a quarter that is not in the file is a gap and is
-   listed as one; growth (YoY) is computed here from two stored quarters matched by date (latest vs the quarter four quarters earlier) and is shown only when that quarter and both values exist; operating profit is the source's own figure, never called EBITDA (EBITDA is not provided).
+   listed as one; QoQ growth is computed here from the latest stored quarter and the immediately preceding quarter (matched by date) and is shown only when both values exist and the previous one is positive; operating profit is the source's own figure, never called EBITDA (EBITDA is not provided).
    "Stored" is the date StockLens first stored the quarter - it is NOT the date the company declared it (the source gives none). No rating, score, target or advice. */
 (function(){
 "use strict";
@@ -2348,54 +2348,54 @@ var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&
 var isn=function(v){return typeof v==="number"&&isFinite(v)};
 var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
 var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-var DASH="—";
-var ROWS=[["revenue","Revenue"],["total_revenue","Total revenue"],["operating_profit","Operating profit"],["profit_after_tax","Net profit"],["eps_basic","EPS (₹)"]];   /* Total revenue only when a shown quarter has it (banks/financials) */
+var DASH="—",MINUS="−";
+var ROWS=[["revenue","Revenue"],["operating_profit","Operating Profit"],["profit_after_tax","Net Profit"]];   /* exactly these three; operating profit is the source's own figure, never called EBITDA */
 var DATE=/^(\d{4})-(\d{2})-\d{2}$/;
+var SHOW=4;
 function qLabel(d){var m=DATE.exec(String(d||""));return m&&+m[2]>=1&&+m[2]<=12?MON[+m[2]-1]+" "+m[1]:"-"}
 function num(v){return isn(v)?v.toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:0}):"-"}
 function pct(v){return isn(v)?(v>0?"+":"")+v.toFixed(2)+"%":"-"}
 function shift(d,n){var m=DATE.exec(String(d||""));if(!m||+m[2]<1||+m[2]>12)return null;return new Date(Date.UTC(+m[1],+m[2]-1+n+1,0)).toISOString().slice(0,10)}   /* month-end n months from a month-end */
-/* YoY from two stored values: {pct, why}. pct is null (never 0) unless the quarter four quarters earlier is in the data and both values are real numbers with a positive base. */
-function growth(cur,prev,haveYearAgo){
-  if(!haveYearAgo)return{pct:null,why:"year-ago quarter not in the data"};
+/* QoQ growth % = (latest - previous) / previous x 100, from the stored values of two consecutive quarters: {pct, why}. pct is null (never 0) unless the immediately preceding quarter is in the data,
+   both values are real numbers and the previous value is positive (a zero base cannot be divided by, and a loss base would flip the sign of the result). */
+function qoq(cur,prev,havePrev){
+  if(!havePrev)return{pct:null,why:"previous quarter not in the data"};
   if(!isn(cur)||!isn(prev))return{pct:null,why:"a value is unavailable"};
-  if(prev<=0)return{pct:null,why:"year-ago base is zero or negative"};
+  if(prev===0)return{pct:null,why:"previous quarter is zero"};
+  if(prev<0)return{pct:null,why:"previous quarter is negative"};
   return{pct:Math.round((cur-prev)/prev*10000)/100,why:null}}
 function stockOf(sym,doc){
   if(!doc||doc.kind!=="quarterly_results"||!doc.stocks||typeof doc.stocks!=="object")return null;
   var s=doc.stocks[sym];
   return s&&s.symbol===sym&&Array.isArray(s.quarters)&&s.quarters.length?s:null}
-function val(f,v){return !isn(v)?DASH:(f==="eps_basic"?v.toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}):num(v))}
 function sectionHtml(sym,doc){
   var s=stockOf(sym,doc),h='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Quarterly Results</h4>',EMPTY='<p class="note qr-p">No quarterly results are on file for this company yet.</p></div>';
   if(!s)return h+EMPTY;
   var qs={};s.quarters.forEach(function(r){if(r&&r.values&&typeof r.values==="object"&&DATE.test(String(r.quarter_end||"")))qs[r.quarter_end]=r});
-  var ends=Object.keys(qs).sort();
+  var ends=Object.keys(qs).sort().reverse();   /* newest first */
   if(!ends.length)return h+EMPTY;
-  var latest=ends[ends.length-1],prevEnd=shift(latest,-3),yearEnd=shift(latest,-12);   /* matched by date, never by position */
-  var L=qs[latest],P=qs[prevEnd],Y=qs[yearEnd],cols=[L,P,Y];
-  var rows=ROWS.filter(function(r){return r[0]!=="total_revenue"||cols.some(function(c){return c&&isn(c.values.total_revenue)})});
-  h+='<p class="qr-asof"><b>Latest quarter: '+esc(qLabel(latest))+'</b> <span>('+esc(s.basis||"")+'; INR crore; EPS in INR)</span></p>';
-  h+='<div class="scroll"><table data-qr="table"><thead><tr><th></th><th class="n">YoY</th><th class="n">'+esc(qLabel(latest))+'</th><th class="n">'+esc(qLabel(prevEnd))+'</th><th class="n">'+esc(qLabel(yearEnd))+'</th></tr></thead><tbody>';
+  var latest=ends[0],prevEnd=shift(latest,-3),L=qs[latest],P=qs[prevEnd],cols=ends.slice(0,SHOW);   /* the previous quarter is matched by date, never by position */
+  h+='<p class="qr-asof"><b>Latest quarter: '+esc(qLabel(latest))+'</b> <span>('+esc(s.basis||"")+'; ₹ crore)</span></p>';
+  h+='<div class="scroll"><table data-qr="table"><thead><tr><th></th>'+cols.map(function(e){return'<th class="n">'+esc(qLabel(e))+'</th>'}).join("")+'<th class="n">QoQ Growth</th></tr></thead><tbody>';
   var why={};
-  rows.forEach(function(r){
-    var f=r[0],g=growth(L.values[f],Y&&Y.values[f],!!Y),cell;
+  ROWS.forEach(function(r){
+    var f=r[0],g=qoq(L.values[f],P&&P.values[f],!!P),cell;
     if(g.pct===null){why[g.why]=1;cell='<td class="n qr-na" title="'+esc(g.why)+'">'+DASH+'</td>'}
-    else cell='<td class="n '+(g.pct>0?"qr-up":g.pct<0?"qr-dn":"qr-na")+'">'+(g.pct>0?"▲ ":g.pct<0?"▼ ":"")+pct(g.pct)+'</td>';
-    h+='<tr data-qr-row="'+esc(f)+'"><td>'+esc(r[1])+'</td>'+cell+cols.map(function(c){return'<td class="n'+(c?"":" qr-na")+'"'+(c?"":' title="Quarter not in the data"')+'>'+(c?val(f,c.values[f]):DASH)+'</td>'}).join("")+'</tr>'});
+    else cell='<td class="n '+(g.pct>0?"qr-up":g.pct<0?"qr-dn":"qr-na")+'">'+(g.pct>0?"+":g.pct<0?MINUS:"")+Math.abs(g.pct).toFixed(2)+'%</td>';
+    h+='<tr data-qr-row="'+esc(f)+'"><td>'+esc(r[1])+'</td>'+cols.map(function(e){var v=qs[e].values[f];return'<td class="n'+(isn(v)?"":" qr-na")+'">'+(isn(v)?num(v):DASH)+'</td>'}).join("")+cell+'</tr>'});
   h+='</tbody></table></div>';
   var reasons=Object.keys(why);
   if(reasons.length){
-    var m=reasons.map(function(x){return x==="year-ago quarter not in the data"?"the year-ago quarter ("+qLabel(yearEnd)+") is not in the data - the source returned only "+ends.length+" quarter"+(ends.length===1?"":"s")+" ("+qLabel(ends[0])+" to "+qLabel(latest)+")":x}).join("; ");
-    h+='<p class="note qr-p" data-qr="why">'+DASH+' in the YoY column means growth is unavailable: '+esc(m)+'. YoY compares the latest quarter with the quarter four quarters earlier and is never estimated.</p>'}
+    var m=reasons.map(function(x){return x==="previous quarter not in the data"?"the previous quarter ("+qLabel(prevEnd)+") is not in the data":x}).join("; ");
+    h+='<p class="note qr-p" data-qr="why">'+DASH+' in the QoQ Growth column means growth is unavailable: '+esc(m)+'. It is never estimated.</p>'}
   if(L.checks&&L.checks.operating_profit_equals_pbt===true)h+='<p class="note qr-p" data-qr="op">For this company the source\'s operating profit equals its profit before tax, so it is not a separate operating figure.</p>';
   var gaps=(s.gaps||[]).filter(function(g){return g&&Array.isArray(g.between)&&g.between.length===2});
   if(gaps.length)h+='<p class="note qr-p" data-qr="gaps">Quarters missing from the data (not zero): between '+gaps.map(function(g){return esc(qLabel(g.between[0]))+' and '+esc(qLabel(g.between[1]))}).join("; ")+'.</p>';
-  h+='<p class="note qr-p" data-qr="note">Source: Upstox fundamentals (quarterly income statement). '+DASH+' means unavailable, never zero. Operating profit is the source\'s own figure; EBITDA is not provided. EPS is shown only when the source gives it. '
-    +'Quarters are matched by date. Growth is calculated here from two stored quarters and needs a positive year-ago base. Not live market data. No rating, target or advice.</p></div>';
+  h+='<p class="note qr-p" data-qr="note">Source: Upstox fundamentals (quarterly income statement). '+DASH+' means unavailable, never zero. QoQ Growth compares the latest quarter with the immediately preceding quarter: (latest − previous) ÷ previous × 100, calculated here from the stored values and shown only when the previous value is positive. '
+    +'Operating profit is the source\'s own figure; EBITDA is not provided. Not live market data. No rating, target or advice.</p></div>';
   return h}
 var STYLE='#detailQuarterly .qr-p{padding:0 0 6px;margin:6px 0 0;overflow-wrap:anywhere}#detailQuarterly .qr-asof{margin:0 0 6px}#detailQuarterly .qr-asof span{color:var(--mute);font-size:.85rem}'
- +'#detailQuarterly table{min-width:420px}#detailQuarterly th,#detailQuarterly td{padding:8px 8px;font-size:.85rem}#detailQuarterly td:first-child{white-space:nowrap;font-weight:600}#detailQuarterly .scroll{overflow-x:auto}'
+ +'#detailQuarterly table{min-width:520px}#detailQuarterly th,#detailQuarterly td{padding:8px 8px;font-size:.85rem}#detailQuarterly td:first-child{white-space:nowrap;font-weight:600}#detailQuarterly .scroll{overflow-x:auto}'
  +'#detailQuarterly .qr-up{color:var(--up);font-weight:600}#detailQuarterly .qr-dn{color:var(--dn);font-weight:600}#detailQuarterly .qr-na{color:var(--mute)}';
 function addStyle(){
   if(!document.head||!document.createElement||$("quarterlyStyle"))return;
@@ -2427,7 +2427,7 @@ function check(){
     el.innerHTML=sectionHtml(s,doc)})}
 if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true,subtree:true})}
 check();
-window.SLQuarterly={sectionHtml:sectionHtml,stockOf:stockOf,qLabel:qLabel,num:num,pct:pct,shift:shift,growth:growth,check:check};
+window.SLQuarterly={sectionHtml:sectionHtml,stockOf:stockOf,qLabel:qLabel,num:num,pct:pct,shift:shift,qoq:qoq,check:check};
 })();
 </script>
 <script type="module" id="stocklens-nav">
