@@ -2336,7 +2336,7 @@ window.SLShareholding={model:model,summaryHtml:summaryHtml,sectionHtml:sectionHt
 })();
 </script>
 <script type="module" id="stocklens-quarterly">
-/* StockLens - Quarterly Results: a read-only section on Stock Detail, placed after the Shareholding Pattern (or after Financial History when that is not placed).
+/* StockLens - Quarterly Results: a read-only section on Stock Detail, placed near the top directly below the Stock Detail heading. Data and rendering rules are unchanged.
    Data: out/by_symbol/quarterly_results/SYMBOL.json, the static file written by quarterly_results_updater.py (Upstox fundamentals, quarterly income statement). Requested once per stock, only when its Stock Detail is open.
    A stock with no such file shows "No quarterly results are on file for this company yet." Nothing is invented: a value that is missing (null) shows "-", never 0; a quarter that is not in the file is a gap and is
    listed as one; growth is shown only as stored (computed from two stored quarters by the updater); EBITDA is not shown because it is not provided; the stored operating_profit is not shown because it can equal profit before tax.
@@ -2397,14 +2397,14 @@ function check(){
   var s=routeSymbol(),box=$("detail");
   if(!s||!box||!box.querySelector)return;
   if(String(box.innerHTML||"").indexOf('id="detailChart"')<0)return;
-  var sh=$("detailShareholding"),fh=$("detailFinancialHistory"),anchor=sh&&sh.parentNode===box?sh:fh&&fh.parentNode===box?fh:null;
+  var anchor=box.querySelector("h2");  /* Stock Detail heading: keep Quarterly Results near the top of the second page */
   if(!anchor)return;
   if(node&&node.parentNode===box&&nodeSym===s)return;
   addStyle();
   var el=document.createElement("section");
   el.id="detailQuarterly";
   el.innerHTML='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Quarterly Results</h4><p class="note qr-p">Loading…</p></div>';
-  box.insertBefore(el,anchor.nextSibling);node=el;nodeSym=s;
+  anchor.parentNode.insertBefore(el,anchor.nextSibling);node=el;nodeSym=s;
   load(s).then(function(doc){
     if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
     el.innerHTML=sectionHtml(s,doc)})}
