@@ -1,5 +1,7 @@
 """Tests for quarterly_results_updater.py. Offline: every Upstox response is a hand-made fixture in the DOCUMENTED shape (a real quarterly response has not been observed yet)."""
+import contextlib
 import datetime as dt
+import io
 import json
 import tempfile
 import unittest
@@ -218,6 +220,84 @@ class RunTests(unittest.TestCase):
             log.append((isin, basis))
             return table.get((isin, basis), (None, "HTTP 404"))
         return f
+
+    def test_priority_stocks_are_fetched_first_so_a_capped_run_reaches_them(self):
+        # Regression: a 2,548-stock directory with a 100-call cap, alphabetical among never-checked stocks, never reached TCS (position ~2,250), so its shard was never published.
+        entries = {"AAA": ENTRIES["AAA"], "BBB": ENTRIES["BBB"], "CCC": ENTRIES["CCC"]}
+        log = []
+        q.run_batch(entries, {}, self.fetcher({}, log), D(2026, 8, 1), 1, priority=["CCC"])
+        self.assertEqual([c[0] for c in log], [ENTRIES["CCC"]["isin"]])
+        log2 = []
+        q.run_batch(entries, {}, self.fetcher({}, log2), D(2026, 8, 1), 1)                    # no priority: unchanged alphabetical order
+        self.assertEqual([c[0] for c in log2], [ENTRIES["AAA"]["isin"]])
+        # a priority stock that is not due is not fetched again; the rest keep stalest-first order
+        cache = {"CCC": {**q.empty_record(), "last_checked": "2026-08-01"}}
+        log3 = []
+        q.run_batch(entries, cache, self.fetcher({}, log3), D(2026, 8, 1), 1, priority=["CCC", "BBB"])
+        self.assertEqual([c[0] for c in log3], [ENTRIES["BBB"]["isin"]])
+
+    def test_non_priority_keep_stalest_first_order(self):
+        entries = {"AAA": ENTRIES["AAA"], "BBB": ENTRIES["BBB"], "CCC": ENTRIES["CCC"]}
+        cache = {"AAA": {**q.empty_record(), "last_checked": "2026-01-02"}, "BBB": {**q.empty_record(), "last_checked": "2026-01-01"}}
+        log = []
+        q.run_batch(entries, cache, self.fetcher({}, log), D(2026, 8, 1), 3, priority=["CCC"])
+        self.assertEqual([c[0] for c in log], [ENTRIES[s]["isin"] for s in ("CCC", "BBB", "AAA")])    # priority first, then oldest check first
+
+    def test_priority_loaded_found_and_missing_are_reported(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            got = q.resolve_priority(ENTRIES, loader=lambda: {"AAA": {}, "ZZZ": {}})
+        self.assertEqual(got, ["AAA"])
+        self.assertIn("loaded 2, in the stock directory 1, missing 1", out.getvalue())
+        self.assertIn("::warning::1 priority symbol(s) are not in the stock directory", out.getvalue())
+        self.assertIn("ZZZ", out.getvalue())
+
+    def test_many_missing_names_are_truncated(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            q.resolve_priority(ENTRIES, loader=lambda: ["AAA"] + ["M%d" % i for i in range(9)])
+        self.assertIn("9 priority symbol(s)", out.getvalue())
+        self.assertIn("M4 ...", out.getvalue())
+        self.assertNotIn("M5", out.getvalue())
+
+    def test_universe_load_failure_fails_loudly_without_leaking_detail(self):
+        def boom():
+            raise RuntimeError("secret-token-123 in message")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as cm:
+            q.resolve_priority(ENTRIES, loader=boom)
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("RuntimeError", out.getvalue())
+        self.assertNotIn("secret-token-123", out.getvalue())
+        self.assertIn("refusing to fall back", out.getvalue())
+
+    def test_no_priority_symbol_in_directory_fails(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            q.resolve_priority(ENTRIES, loader=lambda: ["ZZZ", "YYY"])
+        self.assertIn("none of the 2 priority symbols", out.getvalue())
+
+    def test_main_fetches_priority_first_and_fails_before_fetching_when_universe_is_broken(self):
+        import os, unittest.mock as m
+        from pathlib import Path
+        entries = {"AAA": ENTRIES["AAA"], "BBB": ENTRIES["BBB"], "CCC": ENTRIES["CCC"]}
+        calls = []
+
+        class FakeApi:
+            max_calls = 1
+            def __init__(self, token, n): pass
+            def get(self, path, params=None):
+                calls.append(path)
+                return None, "HTTP 404"
+        with tempfile.TemporaryDirectory() as d, m.patch.object(q, "get_token", lambda: "t"), m.patch.object(q, "load_entries", lambda: entries), \
+                m.patch.object(q, "Upstox", FakeApi), m.patch.object(q, "CACHE_FILE", Path(d) / "c.json"), m.patch.object(q, "write_outputs", lambda *a: None), \
+                m.patch.object(q.universe, "load_entries", lambda: {"CCC": {}}), m.patch.dict(os.environ, {"QUARTERLY_SYMBOLS": ""}), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(q.main([]), 0)
+            self.assertEqual(calls, [ENTRIES["CCC"]["isin"] + "/income-statement"])        # the priority stock was requested first under a 1-call cap
+            calls.clear()
+            with m.patch.object(q.universe, "load_entries", side_effect=OSError("x")), self.assertRaises(SystemExit):
+                q.main([])
+            self.assertEqual(calls, [])                                                    # failed before any request
 
     def test_stalest_first_call_cap_and_errors_leave_data_untouched(self):
         cache = {"AAA": {**q.empty_record(), "last_checked": "2026-01-01", "quarters": {"2026-03-31": {"quarter": "Mar 2026", "retrieved_on": "2026-04-01", "values": {"revenue": 1.0}, "checks": {}, "revisions": []}}}}

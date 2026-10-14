@@ -352,12 +352,15 @@ def check_stock_doc(doc, entry=None):
 
 
 # ---------------------------------------------------------------- one run
-def run_batch(entries, cache, fetch, day, max_calls):
+def run_batch(entries, cache, fetch, day, max_calls, priority=()):
     """entries: {symbol: {symbol, isin, name}}. cache: {symbol: record} (changed in place). fetch(isin, basis) -> (body, error_text).
     Returns a summary dict. Never raises for a bad response; a failed fetch leaves the stock's data untouched."""
     due = [s for s, e in entries.items() if needs_refresh(cache.get(s), day)]
     last = {s: ((cache.get(s) or {}).get("last_checked")) for s in due}
     order = universe.order_stalest(due, last)
+    if priority:                                              # the coverage universe (stocks the site has detail pages for) goes first; the rest of the directory follows (stable: keeps the stalest-first order)
+        first = set(priority)
+        order = [x for x in order if x in first] + [x for x in order if x not in first]
     calls = 0
     summary = {"due": len(due), "checked": 0, "stored": 0, "no_data": 0, "rejected": {}, "errors": 0, "skipped_by_call_cap": 0, "quarters_added_or_changed": 0}
     for sym in order:
@@ -458,6 +461,26 @@ def load_entries(path=DIRECTORY_FILE):
     return out
 
 
+def resolve_priority(entries, loader=None):
+    """The coverage-universe symbols that are in the stock directory, fetched first. Never silent:
+    - the universe cannot be loaded -> the run FAILS (exception type only, no detail) rather than quietly falling back to alphabetical order, which is what left TCS without a shard;
+    - some priority symbols are not in the directory -> a warning with the count and at most 5 names;
+    - priority symbols were loaded but NONE is in the directory -> the run FAILS (the coverage guarantee would be empty)."""
+    loader = loader or universe.load_entries
+    try:
+        wanted = list(loader())
+    except Exception as err:
+        fail("the coverage universe could not be loaded (%s); refusing to fall back to alphabetical order. Nothing was fetched or published." % type(err).__name__)
+    found = [x for x in wanted if x in entries]
+    missing = [x for x in wanted if x not in entries]
+    log("priority coverage: loaded %d, in the stock directory %d, missing %d" % (len(wanted), len(found), len(missing)))
+    if missing:
+        log("::warning::%d priority symbol(s) are not in the stock directory and will not be fetched: %s%s" % (len(missing), ", ".join(missing[:5]), " ..." if len(missing) > 5 else ""))
+    if wanted and not found:
+        fail("none of the %d priority symbols is in the stock directory; refusing to run without the coverage guarantee." % len(wanted))
+    return found
+
+
 def main(argv=None):
     token = get_token()
     entries = load_entries()
@@ -486,7 +509,8 @@ def main(argv=None):
         return body, err
 
     day = dt.date.fromisoformat(today())
-    summary = run_batch(entries, cache, fetch, day, api.max_calls)
+    priority = resolve_priority(entries)
+    summary = run_batch(entries, cache, fetch, day, api.max_calls, priority)
     docs, meta, problems = build_outputs(entries, cache, day.isoformat())
     for sym, bad in problems:
         log("not published", sym, "; ".join(bad))
