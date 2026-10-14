@@ -1340,6 +1340,24 @@ class ProbeRuntime(unittest.TestCase):
         self.assertEqual(run_rt(h, scenario), 0)
         self.assertEqual((h.auth_calls, h.made), ([], []))
 
+    def test_off_hours_with_serving_on_reports_none_and_no_snapshot_yet_and_then_a_session_publishes(self):
+        """The exact state seen on Render after 15:45 IST: /healthz = {"status":"ok","snapshot":"none"} and the snapshot endpoint = 503 no_snapshot_yet. Serving is ON, the relay is simply outside its window."""
+        night, seen = Harness(LIVE_PUBLIC_SERVE_SNAPSHOT="true"), {}
+        night.ft = TLS.FakeTime(TLS.T_NIGHT)
+        async def at_night(h):
+            await asyncio.sleep(0.2)
+            seen["health"], seen["snap"] = await h.get(HEALTH), await h.get()
+        self.assertEqual(run_rt(night, at_night), 0)
+        self.assertEqual((seen["health"].status, seen["health"].json()), (200, {"status": "ok", "snapshot": "none"}))
+        self.assertEqual((seen["snap"].status, seen["snap"].json()), (503, {"error": "no_snapshot_yet"}))
+        self.assertEqual((night.auth_calls, night.made), ([], []))                          # no authorize call, no WebSocket, so nothing could be published
+        day = Harness(LIVE_PUBLIC_SERVE_SNAPSHOT="true")                                    # same configuration, inside the window, with SCRIPTED ticks (a test double, not Upstox)
+        async def in_window(h):
+            await h.go_live()
+            seen["fresh"] = (await h.get(HEALTH)).json()
+        self.assertEqual(run_rt(day, in_window), 0)
+        self.assertEqual(seen["fresh"], {"status": "ok", "snapshot": "fresh"})
+
     def test_probe_with_public_serving_is_refused_before_anything_is_opened(self):
         calls = []
         deps = dict(http_get=lambda *a: calls.append("auth"), transport_factory=lambda: calls.append("ws"), fetch_bytes=lambda *a: calls.append("fetch") or b"[]")
@@ -1501,8 +1519,11 @@ class RenderBlueprint(unittest.TestCase):
         self.assertNotIn("generateValue", env_entries["UPSTOX_ANALYTICS_TOKEN"])
         for name in ("render.yaml", "index.html"):
             text = (ROOT / name).read_text(encoding="utf-8")
-            self.assertNotRegex(text.replace("onrender.com name", "").replace("onrender.com", "") if name == "render.yaml" else text, r"https://[a-z0-9-]+\.onrender\.com")
-        self.assertNotRegex((ROOT / "index.html").read_text(encoding="utf-8"), r"onrender\.com")        # no Render address was invented in the website
+            FIXED = "https://stocklens-live.onrender.com"                                          # the ONE service address the owner named for the opt-in public test
+            self.assertNotRegex(text.replace("onrender.com name", "").replace("onrender.com", "") if name == "render.yaml" else text.replace(FIXED, ""), r"https://[a-z0-9-]+\.onrender\.com")
+        page = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(page.count("onrender.com"), 1)                                           # the website names that one address, once, and no other Render address
+        self.assertEqual(page.count("https://stocklens-live.onrender.com"), 1)
 
     def test_every_variable_in_the_blueprint_is_one_the_service_reads(self):
         known = {"UPSTOX_ANALYTICS_TOKEN", "ALLOWED_HOSTS", "ALLOWED_ORIGIN", "HOST", "PORT", "LIVE_PUBLIC_SERVE_SNAPSHOT", "LIVE_PUBLIC_TRUST_PROXY", "LIVE_PUBLIC_RATE_PER_MINUTE",
@@ -1624,6 +1645,18 @@ class DependenciesAndPackaging(unittest.TestCase):
         self.assertEqual(html.count("var PUBLIC_LIVE="), 1)
         self.assertIn('q.get("live")!=="local"', html)                                        # the local private-test gate
         self.assertIn('q.get("live_set")==="private_test"', html)
+
+    def test_the_opt_in_public_test_is_fixed_and_leaves_the_production_switch_off(self):
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(html.count('var PUBLIC_LIVE={enabled:false,url:""};'), 1)                      # the production switch is still off for every ordinary visitor
+        self.assertEqual(html.count('PUBLIC_TEST_ORIGIN="https://stocklens-live.onrender.com"'), 1)     # one fixed origin, defined once
+        self.assertEqual(html.count("PUBLIC_TEST_ORIGIN+PATH_LIVE"), 1)                                # and used in one place only
+        self.assertIn('v[0]!=="public_test"', html)                                                    # opt-in by the exact query value only
+        self.assertIn('loc.hostname!==PAGE_HOST', html)                                                # exact page host
+        self.assertNotIn("LIVE_PUBLIC_SERVE_SNAPSHOT", html)                                           # the page cannot flip the backend's switch
+        self.assertNotRegex(html, r"onrender\.com[^\n]{0,40}(token|Bearer|Authorization)")             # no credential next to the service address
+        render = (ROOT / "render.yaml").read_text(encoding="utf-8")
+        self.assertRegex(render, r"LIVE_PUBLIC_SERVE_SNAPSHOT[^\n]*\n\s*value:\s*\"?false")           # this change does not enable the backend
 
     def test_this_stage_touches_only_deployment_files(self):
         import subprocess

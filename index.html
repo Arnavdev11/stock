@@ -2882,7 +2882,7 @@ window.SLMarket={activityOf:activityOf,perfOf:perfOf,cleanCandles:cleanCandles,i
 "use strict";
 var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
 var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,pollTest:5000,noTrade:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765,pollPublic:10000,clockTol:60000};
-var PAGE_HOST="arnavdev11.github.io",PATH_LIVE="/v1/live/snapshot.json";
+var PAGE_HOST="arnavdev11.github.io",PATH_LIVE="/v1/live/snapshot.json",PUBLIC_TEST_ORIGIN="https://stocklens-live.onrender.com";
 var PUBLIC_LIVE={enabled:false,url:""};      /* the production switch: shipped OFF. Turning it on is a separate, reviewed change that names the deployed service address. */
 var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
 var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
@@ -2895,8 +2895,17 @@ function publicGate(loc,pub){
   if(!m||m[2]!==PATH_LIVE||/^[0-9.]+$/.test(m[1])||m[1]===PAGE_HOST)return null;       /* an https DNS name with the fixed path: no port, query, user or IP address, and never the page's own host */
   if(loc.protocol!=="https:"||loc.hostname.toLowerCase()!==PAGE_HOST||(loc.port!==undefined&&loc.port!==""))return null;
   return{url:pub.url,pub:true,privateTest:true,port:null}}
+/* The opt-in PUBLIC TEST (?live=public_test): a person opens that exact address on the StockLens page and nothing else switches it on. It reads ONE fixed address - the hosted service's
+   snapshot path - and no address, origin or option can come from the URL, a snapshot or a script. It shares every check of the hosted gate (service clock, limited test set only, separate panel,
+   fetch with no credentials / no redirects / no cache) and never touches PUBLIC_LIVE, which stays OFF for every other visitor. */
+function publicTestGate(loc){
+  if(!loc||typeof loc.hostname!=="string"||loc.protocol!=="https:"||loc.hostname!==PAGE_HOST||(loc.port!==undefined&&loc.port!==""))return null;
+  if(loc.pathname!=="/stock/"&&loc.pathname!=="/stock"&&loc.pathname!=="/stock/index.html")return null;      /* this repository's page only, not another page of the same github.io site */
+  var q;try{q=new URLSearchParams(loc.search||"")}catch(e){return null}
+  var v=q.getAll("live");if(v.length!==1||v[0]!=="public_test")return null;
+  return{url:PUBLIC_TEST_ORIGIN+PATH_LIVE,pub:true,privateTest:true,port:null,optIn:true}}
 function gate(loc,pub){
-  if(loc&&typeof loc.hostname==="string"&&LOOPBACK[loc.hostname.toLowerCase()]!==1)return publicGate(loc,pub===undefined?PUBLIC_LIVE:pub);
+  if(loc&&typeof loc.hostname==="string"&&LOOPBACK[loc.hostname.toLowerCase()]!==1)return publicGate(loc,pub===undefined?PUBLIC_LIVE:pub)||publicTestGate(loc);
   if(!loc||typeof loc.hostname!=="string"||LOOPBACK[loc.hostname.toLowerCase()]!==1)return null;
   var q;try{q=new URLSearchParams(loc.search||"")}catch(e){return null}
   if(q.get("live")!=="local")return null;
@@ -2986,7 +2995,7 @@ function Controller(opts){this.privateTest=!!(opts&&opts.privateTest===true);thi
 Controller.prototype.ingest=function(res,localNow){
   var self=this,none=function(state,why,kind,last){return{state:state,reason:why,kind:kind||"unavailable",blocks:null,doc:null,last:last||null}};
   var failed=function(why){var g=self.good;return g&&localNow>=g.at&&localNow-g.at<=CFG.staleKeep?none("unavailable",why,"stale",g.doc):none("unavailable",why)};
-  if(!res||res.error||res.status!==200||typeof res.text!=="string")return failed(res&&res.error?String(res.error):"no answer");
+  if(!res||res.error||res.status!==200||typeof res.text!=="string")return failed(this.pub&&res&&typeof res.code==="string"&&Object.prototype.hasOwnProperty.call(CODE_WHY,res.code)?CODE_WHY[res.code]:res&&res.error?String(res.error):"no answer");
   if(res.text.length>CFG.maxBytes)return none("hidden","response too large");
   var d;try{d=JSON.parse(res.text)}catch(e){return none("hidden","not valid JSON")}
   if(this.pub){
@@ -3006,6 +3015,7 @@ Controller.prototype.ingest=function(res,localNow){
   if(!any)return none("hidden",v.indices[1]);
   this.good={doc:d,at:localNow};
   return{state:"live",reason:"",kind:"live",blocks:v,doc:d,last:null}};
+function knownWhy(t){for(var k in CODE_WHY)if(Object.prototype.hasOwnProperty.call(CODE_WHY,k)&&CODE_WHY[k]===t)return true;return false}
 function labelOf(v){return!v?"UNAVAILABLE":v.state==="live"?"LIVE":v.kind==="stale"?"STALE":v.kind==="closed"?"CLOSED":"UNAVAILABLE"}
 
 /* ---------- drawing (textContent only) ---------- */
@@ -3066,7 +3076,7 @@ Ui.prototype.privatePanel=function(doc,lab){
   n.setAttribute("data-lv",this.pub?"public-test":"private-test");
   doc.indices.forEach(function(r){rows.push({name:r.name,ltp:r.ltp,pct:r.change_pct,ltt:r.ltt,cp:r.cp})});
   Object.keys(doc.prices).sort().forEach(function(k){var v=doc.prices[k];rows.push({name:k,ltp:v.ltp,pct:v.change_pct,ltt:v.ltt,cp:v.cp})});
-  h.appendChild(b);h.appendChild(this.el("span",null,(this.pub?" · LIVE TEST · A FEW INSTRUMENTS ONLY — not a market dashboard · ":" · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · ")+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
+  h.appendChild(b);h.appendChild(this.el("span",null,(this.pub?" · LIVE TEST — A FEW INSTRUMENTS ONLY — not a market dashboard · ":" · LOCAL LIVE TEST · PRIVATE TEST SET — not a market dashboard · ")+rows.length+" instruments · "+(lab==="STALE"?"last update ":"updated ")+doc.generated_at.slice(11,19)+" IST"));n.appendChild(h);
   var tb=this.el("table","mk-t"),th=this.el("thead"),hr=this.el("tr"),bd=this.el("tbody");
   [["Instrument","s"],["Last price","n"],["Prev close","n"],["Change","n"],["Last trade (IST)","n"],["Age","n"]].forEach(function(c){hr.appendChild(this.el("th",c[1],c[0]))},this);th.appendChild(hr);tb.appendChild(th);
   rows.forEach(function(r){
@@ -3129,18 +3139,36 @@ Ui.prototype.render=function(){
   this.drop("indices");
   say(lab==="CLOSED"?pre+" · "+view.reason+". Showing end-of-day data, which is not live."
     :lab==="STALE"?pre+" · "+view.reason+". Showing end-of-day data."
-    :view.state==="unavailable"?pre+(this.pub?" · the live service is not reachable. Showing end-of-day data.":" · the local relay is not reachable. Showing end-of-day data.")
+    :view.state==="unavailable"?pre+(this.pub?(knownWhy(view.reason)?" · "+view.reason+". Showing end-of-day data.":" · the live service is not reachable. Showing end-of-day data."):" · the local relay is not reachable. Showing end-of-day data.")
     :pre+" · not shown ("+view.reason+"). Showing end-of-day data.")};
 
 /* ---------- the loop ---------- */
+/* the service's own error codes, in plain words (public test only; anything else stays a generic failure) */
+var CODE_WHY={snapshot_disabled:"the live service is switched off for public use",no_snapshot_yet:"the live service is running but has not produced a snapshot yet (it only connects to the exchange feed during market hours)",invalid_snapshot:"the live service's snapshot failed its own checks",feed_unavailable:"the live service has no working exchange feed right now",stale_feed:"the live service's exchange feed has stopped updating"};
+/* read a body but never hold more than maxBytes: a streamed body is cut off as soon as it passes the cap (null = too large); without a stream the whole text is read and then measured */
+function readCapped(r){
+  var cap=CFG.maxBytes;
+  if(r.body&&typeof r.body.getReader==="function"&&typeof TextDecoder==="function"){
+    var rd=r.body.getReader(),dec=new TextDecoder("utf-8"),got=0,out="";
+    var step=function(){return rd.read().then(function(c){
+      if(c.done)return out+dec.decode();
+      got+=c.value.length;if(got>cap){try{rd.cancel()}catch(e){}return null}
+      out+=dec.decode(c.value,{stream:true});return step()})};
+    return step()}
+  return r.text().then(function(t){return t.length>cap?null:t})}
 function poll(url){
   var ac=typeof AbortController==="function"?new AbortController():null,timer=setTimeout(function(){if(ac)ac.abort()},CFG.timeout);
   var done=function(x){clearTimeout(timer);return x};
   return fetch(url,{cache:"no-store",credentials:"omit",mode:"cors",redirect:"error",referrerPolicy:"no-referrer",signal:ac?ac.signal:undefined}).then(function(r){
-    if(!r.ok)return{status:r.status,error:"HTTP "+r.status};
+    if(!r.ok){
+      /* a refusal may carry the service's own short error code; read at most maxBytes of it and keep it only if it is one of the known codes */
+      var cl0=r.headers.get("Content-Length"),base={status:r.status,error:"HTTP "+r.status};
+      if(cl0&&+cl0>CFG.maxBytes)return base;
+      return readCapped(r).then(function(t){var c=null;try{if(t!==null){var o=JSON.parse(t);if(o&&typeof o==="object"&&typeof o.error==="string"&&Object.prototype.hasOwnProperty.call(CODE_WHY,o.error))c=o.error}}catch(e){}
+        if(c)base.code=c;return base},function(){return base})}
     var cl=r.headers.get("Content-Length");if(cl&&+cl>CFG.maxBytes)return{status:200,text:"x".repeat(CFG.maxBytes+1)};
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
-    return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
+    return readCapped(r).then(function(t){return t===null?{status:200,text:"x".repeat(CFG.maxBytes+1)}:{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
   var ctl=new Controller({privateTest:g.privateTest===true,pub:g.pub===true}),ui=new Ui(env.document,g.privateTest===true,g.pub===true),busy=false;
   function next(){env.setTimeout(tick,g.pub===true?CFG.pollPublic:g.privateTest===true?CFG.pollTest:CFG.poll)}
@@ -3157,7 +3185,7 @@ function start(g,env){
     var t=e&&e.target,b=t&&typeof t.closest==="function"?t.closest("[data-mk-tabs] [data-tab]"):null;
     if(b&&typeof b.getAttribute==="function"&&b.parentNode&&b.parentNode.getAttribute("data-mk-tabs")==="index")ui.select(b.getAttribute("data-tab"))});
   ui.mount();refresh();next();return{ui:ui,controller:ctl,refresh:refresh}}
-window.SLLive={gate:gate,publicGate:publicGate,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
+window.SLLive={gate:gate,publicGate:publicGate,publicTestGate:publicTestGate,PUBLIC_TEST_ORIGIN:PUBLIC_TEST_ORIGIN,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
 })();
