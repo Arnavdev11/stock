@@ -1,0 +1,5 @@
+# Runtime dependencies of the hosted live backend (python -m live_public). Nothing else is imported by live_public/, live_service/ or live/.
+# websockets: the single outbound feed connection (live_service/upstox.py). requests: the Upstox authorize call and the public instrument file.
+# Pinned to releases checked on PyPI (websockets 15.0.1, 5 Mar 2025, Python >=3.9; requests 2.34.2, 14 May 2026, Python >=3.10). requests' own dependencies float within its ranges.
+websockets==15.0.1
+requests==2.34.2

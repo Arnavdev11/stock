@@ -17,11 +17,12 @@ on:
   push:
     branches:
       - phase1
-  # Every weekday at 19:00 IST (13:30 UTC): after the 16:00 IST cut-off the updater uses for a completed trading day, and before the 20:45 IST site build copies the saved files.
-  # A scheduled run does what the default manual run does (TCS, which also refreshes the NIFTY 50 benchmark; no batch) and saves through the same checked hand-over.
-  # On a non-trading day nothing new arrives and nothing is committed.
+  # Tuesday to Saturday at 08:00 IST (02:30 UTC). Upstox serves a trading day's daily candle only from about 07:00 IST the NEXT day (never the same evening), so a morning run
+  # is the first one that can fetch the previous session (Tuesday gets Monday ... Saturday gets Friday). The "Update data and publish site" run at 10:00 IST then publishes it.
+  # A scheduled run refreshes the NIFTY 50 benchmark, TCS and every stock that already has saved history (one request each, no first fill, no batch) and saves through the
+  # same checked hand-over. On a non-trading day nothing new arrives and nothing is committed.
   schedule:
-    - cron: "30 13 * * 1-5"
+    - cron: "30 2 * * 2-6"
   workflow_dispatch:
     inputs:
       symbols:
@@ -117,6 +118,7 @@ jobs:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           HISTORICAL_SYMBOLS: "${{ env.CHOSEN_SYMBOLS || (github.event_name == 'push' && 'TCS' || inputs.symbols || 'TCS') }}"
           HISTORICAL_MAX_CALLS: ${{ inputs.max_calls }}
+          HISTORICAL_REFRESH_SAVED: ${{ github.event_name == 'schedule' && 'true' || '' }}
         run: python historical_updater.py
 
       - name: Record which stocks gained candles

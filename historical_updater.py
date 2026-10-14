@@ -43,6 +43,8 @@ DELAY_SECONDS = 1.0        # pause after every call (conservative)
 RETRIES = 3
 MAX_CALLS_PER_RUN = universe.budget("HISTORICAL_MAX_CALLS", 150)   # a NIFTY 500 fill is set by the workflow
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
+PUBLISHED_AFTER = dt.time(7, 30)      # Upstox serves a trading day's candle from about 07:00 IST the NEXT day (its staff: "by the next day by around 7am"); never the same evening
+STALE_ERROR_WEEKDAYS = 3              # a benchmark this many weekdays behind what Upstox should already serve is a red ::error:: annotation, not just a warning
 
 
 def symbols():
@@ -167,7 +169,7 @@ def windows(frm, to):
 
 def last_complete_day():
     """Today's candle is partial until the market has closed, so before 16:00 IST stop at yesterday."""
-    now = dt.datetime.now(IST)
+    now = now_ist()
     return now.date() if now.hour >= 16 else now.date() - dt.timedelta(days=1)
 
 
@@ -189,6 +191,42 @@ def freshness_warning(candles, end):
         return None
     return ("%s freshness: the newest candle is %s but the newest weekday expected is %s. The series has no candle for it, so none is shown; "
             "no price was invented. A later run asks again." % (BENCHMARK_SYMBOL, newest or "none", expected))
+
+
+def now_ist():
+    return dt.datetime.now(IST)
+
+
+def published_through(end, now):
+    """The newest day whose candle Upstox should already be serving at `now`, given `end` (the newest day a run asks for). The candle of day D appears from
+    PUBLISHED_AFTER on D+1, so an evening run on D can only expect D-1; a morning run on D+1 after that time can expect D."""
+    ready = dt.datetime.combine(end + dt.timedelta(days=1), PUBLISHED_AFTER, IST)
+    return end if now >= ready else end - dt.timedelta(days=1)
+
+
+def weekdays_behind(candles, end):
+    """How many weekdays after the newest stored candle are already due (0 when current or newer, or when nothing is stored: that case has its own sentence)."""
+    if not candles:
+        return 0
+    d, due, n = dt.date.fromisoformat(candles[-1]["date"]), expected_latest_day(end), 0
+    while d < due:
+        d += dt.timedelta(days=1)
+        n += d.weekday() < 5
+    return n
+
+
+def saved_symbols():
+    """Symbols that already have saved candles (their own file or the single file). A scheduled run keeps all of them current, one request each, and fills none."""
+    found = set()
+    sdir = shards.shard_dir(OUT_FILE.parent.parent, "historical")
+    if sdir.is_dir():
+        found |= {f.stem for f in sdir.glob("*.json") if shards.SYMBOL_RE.match(f.stem)}
+    try:
+        doc = json.loads(OUT_FILE.read_text(encoding="utf-8"))
+        found |= {k for k in (doc.get("stocks") or {}) if shards.SYMBOL_RE.match(str(k))}
+    except (OSError, ValueError, AttributeError):
+        pass
+    return found
 
 
 def merge(old, new):
@@ -278,6 +316,8 @@ def main():
     client = Client(token)
     end = last_complete_day()
     wanted = symbols()
+    if os.environ.get("HISTORICAL_REFRESH_SAVED") == "true":      # scheduled runs: every stock that already has history, not only the listed ones
+        wanted = sorted(set(wanted) | saved_symbols())
     prior_all = {sym: prior_candles(old_stocks, sym) for sym in wanted}
     # stalest first (last candle date; never-fetched first) so that a run that stops at its call budget carries on with the rest next time
     wanted = universe.order_stalest(wanted, {s: (prior_all[s][-1]["date"] if prior_all[s] else "") for s in wanted})
@@ -300,7 +340,9 @@ def main():
         else:
             errors.append({"symbol": BENCHMARK_SYMBOL, "request": bench_key, "error": "Upstox returned no valid candles"})
 
-    bench_stale = freshness_warning(bench["candles"], end) if bench else None      # a warning only: not an entry in `errors`
+    due = published_through(end, now_ist())                                          # not `end` itself: today's candle does not exist yet in the evening
+    bench_stale = freshness_warning(bench["candles"], due) if bench else None        # a warning only: not an entry in `errors`
+    bench_late = bool(bench) and weekdays_behind(bench["candles"], due) >= STALE_ERROR_WEEKDAYS
 
     meta_doc = {"updated": dt.date.today().isoformat(), "source": "Upstox", "interval": "1day",
                 "notes": {"candles": "Daily OHLCV, prices in INR, ascending dates, exactly as provided by Upstox. "
@@ -362,14 +404,15 @@ def main():
     except OSError as e:
         log("warning: index of per-stock files not written:", type(e).__name__)
 
-    lines = ["### Historical data: %s" % ("OK" if not errors else "PARTIAL - %d problem(s); the other stocks were saved" % len(errors)), "",
+    head = "PARTIAL - %d problem(s); the other stocks were saved" % len(errors) if errors else ("STALE - the NIFTY 50 benchmark is %d or more weekdays behind" % STALE_ERROR_WEEKDAYS if bench_late else "OK")
+    lines = ["### Historical data: %s" % head, "",
              "| Series | Instrument key | Candles | Range |", "|---|---|---|---|"] + rows
     for e in errors:
         msg = "%s: %s (request: %s)" % (e["symbol"], e["error"], e["request"])
         print("::warning::" + msg)
         lines.append("- " + msg)
     if bench_stale:
-        print("::warning::" + bench_stale)
+        print(("::error::" if bench_late else "::warning::") + bench_stale)
         lines.append("- " + bench_stale)
     if pending:
         lines.append("- %d stock(s) not reached in this run (call budget %d); they go first next time" % (pending, MAX_CALLS_PER_RUN))

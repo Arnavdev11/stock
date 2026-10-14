@@ -234,8 +234,9 @@ class PageIntegrityTests(unittest.TestCase):
         no_label = code.replace('"Upstox market data feed V3 (ltpc)"', "")                       # the one allowed mention: the data-source label the snapshot must carry
         self.assertNotRegex(no_label, r"(?i)authorization|bearer|upstox|access_token|api[_-]?key|secret|password")
         self.assertEqual(code.count('"Upstox market data feed V3 (ltpc)"'), 1)
-        self.assertNotRegex(code, r"https?://(?!127\.0\.0\.1:)")                                   # the only address in the module is the local relay
-        self.assertEqual(len(re.findall(r"https?://", code)), 1)
+        self.assertNotRegex(code, r"https?://(?!127\.0\.0\.1:|stocklens-live\.onrender\.com\")")       # the only addresses in the module: the local relay and the ONE fixed hosted test origin
+        self.assertEqual(len(re.findall(r"https?://", code)), 2)
+        self.assertEqual(code.count('"https://stocklens-live.onrender.com"'), 1)
         self.assertNotRegex(code, r"\b(Buy|Sell|Target|Rating|Recommend)\b")
         self.assertEqual(len(re.findall(r"\bfetch\(", code)), 1)
 
