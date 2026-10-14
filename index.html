@@ -2349,7 +2349,7 @@ var isn=function(v){return typeof v==="number"&&isFinite(v)};
 var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
 var SHOW=8;
 var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-var COLS=[["revenue","Revenue"],["total_revenue","Total revenue"],["profit_after_tax","Net profit"],["eps_basic","EPS (basic)"]];
+var COLS=[["revenue","Revenue"],["total_revenue","Total revenue"],["profit_after_tax","Net profit"]];   /* EPS is stored but not shown in this first version */
 var GROW=[["revenue","Revenue"],["profit_after_tax","Net profit"]];
 function qLabel(d){var m=/^(\d{4})-(\d{2})-\d{2}$/.exec(String(d||""));return m&&+m[2]>=1&&+m[2]<=12?MON[+m[2]-1]+" "+m[1]:"-"}
 function num(v){return isn(v)?v.toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:0}):"-"}
@@ -2363,12 +2363,13 @@ function sectionHtml(sym,doc){
   if(!s)return h+'<p class="note qr-p">No quarterly results are on file for this company yet.</p></div>';
   var rows=s.quarters.filter(function(r){return r&&r.values&&typeof r.values==="object"}).slice(0,SHOW);
   if(!rows.length)return h+'<p class="note qr-p">No quarterly results are on file for this company yet.</p></div>';
-  h+='<p class="qr-asof"><b>Latest quarter: '+esc(qLabel(s.latest_quarter_end))+'</b> <span>('+esc(s.basis||"")+'; INR crore, EPS in INR)</span></p>';
-  h+='<div class="scroll"><table data-qr="table"><thead><tr><th>Quarter</th>'+COLS.map(function(c){return'<th class="n">'+esc(c[1])+'</th>'}).join("")
+  var cols=COLS.filter(function(c){return c[0]!=="total_revenue"||rows.some(function(r){return isn(r.values[c[0]])})});   /* Total revenue (banks and financials) only when some quarter has it */
+  h+='<p class="qr-asof"><b>Latest quarter: '+esc(qLabel(s.latest_quarter_end))+'</b> <span>('+esc(s.basis||"")+'; INR crore)</span></p>';
+  h+='<div class="scroll"><table data-qr="table"><thead><tr><th>Quarter</th>'+cols.map(function(c){return'<th class="n">'+esc(c[1])+'</th>'}).join("")
     +GROW.map(function(g){return'<th class="n">'+esc(g[1])+' YoY</th><th class="n">'+esc(g[1])+' QoQ</th>'}).join("")+'<th>Stored</th></tr></thead><tbody>';
   rows.forEach(function(r){
     var gy=(r.growth&&r.growth.yoy)||{},gq=(r.growth&&r.growth.qoq)||{};
-    h+='<tr><td>'+esc(qLabel(r.quarter_end))+'</td>'+COLS.map(function(c){return'<td class="n">'+num(r.values[c[0]])+'</td>'}).join("")
+    h+='<tr><td>'+esc(qLabel(r.quarter_end))+'</td>'+cols.map(function(c){return'<td class="n">'+num(r.values[c[0]])+'</td>'}).join("")
       +GROW.map(function(g){return'<td class="n">'+pct(gy[g[0]])+'</td><td class="n">'+pct(gq[g[0]])+'</td>'}).join("")
       +'<td>'+esc(r.retrieved_on||"-")+'</td></tr>'});
   h+='</tbody></table></div>';

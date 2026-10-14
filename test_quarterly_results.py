@@ -165,12 +165,12 @@ class GrowthTests(unittest.TestCase):
     def test_zero_or_negative_base_gives_null_not_a_number(self):
         for base in (0, -5):
             rec = q.empty_record()
-            q.merge_quarters(rec, q.parse_quarterly(body(["Jun 2025", "Jun 2026"], [10, 20], [base, 4])), "consolidated", "2026-08-01")
+            q.merge_quarters(rec, q.parse_quarterly(body(P5, [10, 1, 1, 1, 20], [base, 1, 1, 1, 4])), "consolidated", "2026-08-01")      # a full quarterly run: two periods in the same month alone would look annual
             self.assertIsNone(q.growth_for(rec["quarters"], "2026-06-30")["yoy"]["profit_after_tax"])
 
     def test_growth_ignores_the_percentage_upstox_attaches(self):
-        b = body(["Jun 2025", "Jun 2026"], [100, 120], [1, 1])
-        b["data"]["full_statement"][0]["history"][1]["change"] = "+99.00%"
+        b = body(P5, [100, 1, 1, 1, 120], [1] * 5)
+        b["data"]["full_statement"][0]["history"][4]["change"] = "+99.00%"
         rec = q.empty_record()
         q.merge_quarters(rec, q.parse_quarterly(b), "consolidated", "2026-08-01")
         self.assertEqual(q.growth_for(rec["quarters"], "2026-06-30")["yoy"]["revenue"], 20.0)
@@ -382,6 +382,196 @@ class SeparationTests(unittest.TestCase):
 
     def test_the_directory_checker_and_the_page_identity_use_the_same_fields(self):
         self.assertEqual(stock_directory.ENTRY_KEYS, ("symbol", "isin", "name"))
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# The REAL quarterly response shape (verified from an actual Upstox answer): data.time_period = "quarterly", data.full_statement = null, and data.income_statement holding
+# the summary categories revenue, operating_profit and net_profit, each with history entries {period, value, change}. The NUMBERS below are made-up test values (SYNTHETIC,
+# not company data); only the structure is real. The `change` values are deliberately NOT the real growth, to prove they are never used.
+def real_shape(periods, revenue, operating, net, change=999.0):
+    def cat(name, vals):
+        return {"category": name, "history": [{"period": p, "value": v, "change": change} for p, v in zip(periods, vals)]}
+    return {"status": "success", "data": {"type": "consolidated", "time_period": "quarterly", "units_in": "crore",
+                                           "income_statement": [cat("revenue", revenue), cat("operating_profit", operating), cat("net_profit", net)], "full_statement": None}}
+
+
+R5 = ["Jun 2025", "Sep 2025", "Dec 2025", "Mar 2026", "Jun 2026"]
+REAL = real_shape(R5, [1000, 1100, 1200, 1300, 1500], [200, 210, 230, 240, 300], [100, 110, 120, 130, 150])
+
+
+class RealShapeTests(unittest.TestCase):
+    def test_revenue_net_profit_and_operating_profit_come_from_the_summary_when_full_statement_is_null(self):
+        r = q.parse_quarterly(REAL)
+        self.assertIsNone(r["problem"])
+        self.assertEqual(sorted(r["quarters"]), ["2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"])
+        j = r["quarters"]["2026-06-30"]
+        self.assertEqual(j["quarter"], "Jun 2026")
+        self.assertEqual((j["values"]["revenue"], j["values"]["profit_after_tax"], j["values"]["operating_profit"]), (1500.0, 150.0, 300.0))
+        for f in ("total_revenue", "profit_before_tax", "eps_basic", "eps_diluted"):
+            self.assertIsNone(j["values"][f], f)                  # nothing is filled in from another line, and EPS is not invented
+        self.assertEqual((j["checks"]["revenue_source"], j["checks"]["profit_after_tax_source"]), ("summary", "summary"))
+        self.assertIsNone(j["checks"]["summary_net_profit_equals_pat"])        # there is no detailed PAT to compare with
+        self.assertIsNone(j["checks"]["operating_profit_equals_pbt"])          # no PBT, so nothing is claimed about operating profit
+
+    def test_operating_profit_stays_its_own_field_and_is_never_called_ebitda(self):
+        j = q.parse_quarterly(REAL)["quarters"]["2026-06-30"]
+        self.assertEqual(set(j["values"]), set(q.FIELDS))
+        self.assertNotIn("ebitda", json.dumps(j).lower())
+        self.assertEqual(j["values"]["operating_profit"], 300.0)
+        self.assertNotEqual(j["values"]["operating_profit"], j["values"]["profit_after_tax"])
+        self.assertIn("EBITDA is not provided", q.NOTES["ebitda"])
+
+    def test_detailed_full_statement_wins_over_the_summary_without_a_duplicate_period_error(self):
+        b = real_shape(R5, [1000, 1100, 1200, 1300, 1500], [200, 210, 230, 240, 300], [100, 110, 120, 130, 150])
+        b["data"]["full_statement"] = [line("Revenue", [("Mar 2026", 1310), ("Jun 2026", 1510)]), line("Profit After Tax", [("Jun 2026", 151)])]
+        qs = q.parse_quarterly(b)["quarters"]
+        self.assertEqual(qs["2026-06-30"]["values"]["revenue"], 1510.0)          # detailed, although the summary also has Jun 2026
+        self.assertEqual(qs["2026-03-31"]["values"]["revenue"], 1310.0)
+        self.assertEqual(qs["2025-12-31"]["values"]["revenue"], 1200.0)          # no detailed value for this quarter: the summary fills it
+        self.assertEqual(qs["2026-06-30"]["values"]["profit_after_tax"], 151.0)
+        self.assertEqual(qs["2026-03-31"]["values"]["profit_after_tax"], 130.0)  # no detailed PAT for Mar 2026: summary
+        self.assertEqual((qs["2026-06-30"]["checks"]["revenue_source"], qs["2026-06-30"]["checks"]["profit_after_tax_source"]), ("full_statement", "full_statement"))
+        self.assertEqual((qs["2025-12-31"]["checks"]["revenue_source"], qs["2026-03-31"]["checks"]["profit_after_tax_source"]), ("summary", "summary"))
+        self.assertFalse(qs["2026-06-30"]["checks"]["summary_net_profit_equals_pat"])      # detailed 151 vs summary 150: reported as a difference, not hidden
+
+    def test_a_null_detailed_value_falls_back_but_an_ambiguous_one_does_not(self):
+        b = real_shape(["Jun 2026", "Mar 2026"], [1500, 1300], [300, 240], [150, 130])
+        b["data"]["full_statement"] = [line("Revenue", [("Jun 2026", None), ("Mar 2026", None)]), line("Profit After Tax", [("Mar 2026", 1), ("Mar 2026", 2), ("Jun 2026", 3)])]
+        qs = q.parse_quarterly(b)["quarters"]
+        self.assertEqual(qs["2026-06-30"]["values"]["revenue"], 1500.0)          # the detailed value is null -> no detailed value -> summary
+        self.assertEqual(qs["2026-06-30"]["values"]["profit_after_tax"], 3.0)    # a usable detailed PAT beats the summary 150
+        self.assertIsNone(qs["2026-03-31"]["values"]["profit_after_tax"])        # listed twice: unknown, not replaced by the summary
+        self.assertEqual(qs["2026-03-31"]["values"]["revenue"], 1300.0)
+
+    def test_a_summary_category_listed_twice_is_ambiguous(self):
+        b = real_shape(["Jun 2026", "Mar 2026"], [1500, 1300], [300, 240], [150, 130])
+        b["data"]["income_statement"].append({"category": "revenue", "history": [{"period": "Jun 2026", "value": 7, "change": 1}]})
+        qs = q.parse_quarterly(b)["quarters"]
+        self.assertIsNone(qs["2026-06-30"]["values"]["revenue"])
+        self.assertEqual(qs["2026-03-31"]["values"]["revenue"], 1300.0)
+
+    def test_the_mapping_form_of_income_statement_is_read_the_same_way(self):
+        b = real_shape(["Jun 2026", "Mar 2026"], [1500, 1300], [300, 240], [150, 130])
+        b["data"]["income_statement"] = {c["category"]: {"history": c["history"]} for c in b["data"]["income_statement"]}
+        self.assertEqual(q.parse_quarterly(b), q.parse_quarterly(real_shape(["Jun 2026", "Mar 2026"], [1500, 1300], [300, 240], [150, 130])))
+        for bad in ("x", 5, [None, "x", {"category": 5}], {"revenue": "x"}):
+            b["data"]["income_statement"] = bad
+            self.assertEqual(q.parse_quarterly(b), {"quarters": {}, "problem": "no_data"})
+
+    def test_a_summary_without_a_quarterly_time_period_is_still_rejected(self):
+        for tp in ("yearly", None):
+            b = real_shape(R5, [1] * 5, [1] * 5, [1] * 5)
+            b["data"]["time_period"] = tp
+            self.assertEqual(q.parse_quarterly(b)["problem"], "not_quarterly")
+
+
+class RealShapeGrowthTests(unittest.TestCase):
+    def doc(self, body_, drop=()):
+        rec = q.empty_record()
+        q.merge_quarters(rec, q.parse_quarterly(body_), "consolidated", "2026-08-01")
+        for pe in drop:
+            del rec["quarters"][pe]
+        rec["last_checked"] = rec["last_success"] = "2026-08-01"
+        docs, _, problems = q.build_outputs({"AAA": ENTRIES["AAA"]}, {"AAA": rec}, "2026-08-01")
+        self.assertEqual(problems, [])
+        return docs["AAA"]["stocks"]["AAA"]
+
+    def row(self, s, pe):
+        return next(r for r in s["quarters"] if r["quarter_end"] == pe)
+
+    def test_qoq_and_yoy_are_computed_from_the_stored_quarterly_values_not_from_change(self):
+        s = self.doc(REAL)
+        top = self.row(s, "2026-06-30")
+        self.assertEqual(top["growth"]["yoy"]["revenue"], 50.0)                  # 1500 vs 1000 (Jun 2025), not the attached 999
+        self.assertEqual(top["growth"]["qoq"]["revenue"], 15.38)                 # 1500 vs 1300 (Mar 2026)
+        self.assertEqual((top["growth"]["yoy"]["profit_after_tax"], top["growth"]["qoq"]["profit_after_tax"]), (50.0, 15.38))
+        self.assertEqual((top["growth"]["yoy"]["operating_profit"], top["growth"]["qoq"]["operating_profit"]), (50.0, 25.0))
+        self.assertNotIn("999", json.dumps(s))                                   # the source's change figure is not stored or published anywhere
+        self.assertEqual(top["values"]["revenue"], 1500.0)
+
+    def test_missing_comparison_quarters_give_null_growth(self):
+        s = self.doc(REAL)
+        first = self.row(s, "2025-06-30")
+        self.assertTrue(all(v is None for v in first["growth"]["yoy"].values()) and all(v is None for v in first["growth"]["qoq"].values()))
+        second = self.row(s, "2025-09-30")
+        self.assertIsNone(second["growth"]["yoy"]["revenue"])                    # no Sep 2024 stored
+        self.assertEqual(second["growth"]["qoq"]["revenue"], 10.0)
+        s2 = self.doc(REAL, drop=("2025-12-31",))                                # a gap: Mar 2026 has no stored Dec 2025 to compare with
+        self.assertIsNone(self.row(s2, "2026-03-31")["growth"]["qoq"]["revenue"])
+        self.assertEqual(s2["gaps"], [{"between": ["2025-09-30", "2026-03-31"]}])
+
+    def test_the_published_shard_is_valid_json_with_null_not_zero_where_data_is_missing(self):
+        s = self.doc(REAL)
+        text = json.dumps(s, allow_nan=False)
+        top = self.row(json.loads(text), "2026-06-30")
+        self.assertIsNone(top["values"]["eps_basic"])
+        self.assertIsNone(top["values"]["total_revenue"])
+        doc = q.document(s, "2026-08-01")
+        self.assertEqual(q.check_stock_doc(doc, ENTRIES["AAA"]), [])
+
+    def test_a_run_with_a_real_shaped_response_stores_and_publishes_it(self):
+        cache, log = {}, []
+        def fetch(isin, basis):
+            log.append((isin, basis))
+            return REAL, None
+        q.run_batch({"AAA": ENTRIES["AAA"]}, cache, fetch, D(2026, 8, 1), 10)
+        self.assertEqual(log, [(ENTRIES["AAA"]["isin"], "consolidated")])
+        self.assertEqual(cache["AAA"]["quarters"]["2026-06-30"]["values"]["revenue"], 1500.0)
+        self.assertEqual(cache["AAA"]["problem"], None)
+
+
+class AnnualIsNotQuarterlyTests(unittest.TestCase):
+    """The real response labelled time_period=quarterly carried ANNUAL periods in full_statement (populated) beside quarterly summary categories. Annual values must never become quarters.
+    The annual numbers below are SYNTHETIC; only the structure is real."""
+    ANNUAL = [line("Revenue", [("Mar 2023", 90000), ("Mar 2024", 95000), ("Mar 2025", 100000)]),
+              line("Profit After Tax", [("Mar 2023", 9000), ("Mar 2024", 9500), ("Mar 2025", 10000)]),
+              line("Total Revenue", [("Mar 2023", 91000), ("Mar 2024", 96000), ("Mar 2025", 101000)]),
+              line("EPS Basic", [("Mar 2023", 90.0), ("Mar 2024", 95.0), ("Mar 2025", 100.0)])]
+
+    def real(self, full):
+        b = real_shape(R5, [1000, 1100, 1200, 1300, 1500], [200, 210, 230, 240, 300], [100, 110, 120, 130, 150])
+        b["data"]["full_statement"] = full
+        return b
+
+    def test_an_annual_full_statement_is_ignored_and_the_quarters_come_from_the_summary(self):
+        r = q.parse_quarterly(self.real(self.ANNUAL))
+        self.assertIsNone(r["problem"])
+        self.assertEqual(sorted(r["quarters"]), ["2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"])      # no quarter is created from an annual period
+        m = r["quarters"]["2026-03-31"]
+        self.assertEqual((m["values"]["revenue"], m["values"]["profit_after_tax"]), (1300.0, 130.0))                         # the summary quarter, not the annual figure
+        for pe, quarter in r["quarters"].items():
+            for f in ("total_revenue", "eps_basic", "profit_before_tax"):
+                self.assertIsNone(quarter["values"][f], (pe, f))                                                              # annual EPS, total revenue etc. are not shown as quarterly
+            self.assertEqual((quarter["checks"]["revenue_source"], quarter["checks"]["profit_after_tax_source"]), ("summary", "summary"))
+        self.assertNotIn("100000", json.dumps(r))
+
+    def test_one_annual_line_among_quarterly_lines_discards_the_full_statement(self):
+        full = [line("Revenue", list(zip(R5, [1, 2, 3, 4, 5]))), line("Profit After Tax", [("Mar 2024", 9500), ("Mar 2025", 10000)])]
+        r = q.parse_quarterly(self.real(full))
+        self.assertEqual(r["quarters"]["2026-06-30"]["values"]["revenue"], 1500.0)           # not the detailed 5: the response mixes annual and quarterly lines, so none of it is trusted
+        self.assertEqual(r["quarters"]["2026-06-30"]["values"]["profit_after_tax"], 150.0)
+
+    def test_an_unverifiable_single_period_detailed_line_does_not_override_a_quarterly_summary(self):
+        r = q.parse_quarterly(self.real([line("Revenue", [("Mar 2026", 777)]), line("Profit After Tax", [("Mar 2026", 77)])]))
+        self.assertEqual(r["quarters"]["2026-03-31"]["values"]["revenue"], 1300.0)
+        self.assertEqual(r["quarters"]["2026-03-31"]["values"]["profit_after_tax"], 130.0)
+
+    def test_genuine_quarterly_detailed_lines_still_take_precedence(self):
+        full = [line("Revenue", list(zip(R5, [1001, 1101, 1201, 1301, 1501]))), line("Total Revenue", list(zip(R5, [2001, 2101, 2201, 2301, 2501])))]
+        r = q.parse_quarterly(self.real(full))
+        top = r["quarters"]["2026-06-30"]
+        self.assertEqual((top["values"]["revenue"], top["values"]["total_revenue"]), (1501.0, 2501.0))
+        self.assertEqual((top["checks"]["revenue_source"], top["values"]["profit_after_tax"], top["checks"]["profit_after_tax_source"]), ("full_statement", 150.0, "summary"))
+
+    def test_two_periods_in_the_same_month_with_nothing_else_are_treated_as_annual(self):
+        r = q.parse_quarterly(body(["Mar 2024", "Mar 2025"], [1, 2], [1, 2]))
+        self.assertEqual((r["quarters"], r["problem"]), ({}, "no_data"))                      # annual-looking and no quarterly summary: nothing is published
+
+    def test_annual_data_never_produces_growth_figures_for_the_quarters(self):
+        rec = q.empty_record()
+        q.merge_quarters(rec, q.parse_quarterly(self.real(self.ANNUAL)), "consolidated", "2026-08-01")
+        g = q.growth_for(rec["quarters"], "2026-06-30")
+        self.assertEqual((g["yoy"]["revenue"], g["qoq"]["revenue"]), (50.0, 15.38))          # from the summary quarters, exactly as without the annual lines
 
 
 if __name__ == "__main__":

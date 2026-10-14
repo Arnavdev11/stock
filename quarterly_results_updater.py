@@ -12,6 +12,10 @@ Identity: the symbol (as in the stock directory and in "#stock=SYMBOL" on the pa
 No separate stock-name mapping is created.
 
 What is shown, and what is deliberately NOT invented
+  * The real quarterly response (verified) has data.full_statement = null and only the summary income_statement categories revenue, operating_profit and net_profit, each with
+    history entries {period, value, change}. Revenue and Net profit therefore come from those summary categories WHEN the detailed full_statement has no value for the quarter; a
+    detailed value always wins, but only from a full_statement line that is itself a quarterly series (the real response carried ANNUAL periods there, which are ignored).
+    checks.revenue_source / profit_after_tax_source say which was used. Operating profit stays its own field. The `change` figure is never used.
   * Revenue (Upstox 'Revenue' line) and Total revenue (its 'Total Revenue' line) are kept apart. Total revenue is never renamed Revenue; banks and financial companies may have only the second.
   * Net profit = Upstox 'Profit After Tax' line. EPS = 'EPS Basic' (and 'EPS Diluted' when given).
   * EBITDA is NOT calculated and never will be from this source: Upstox returns no depreciation line that could be relied on. What Upstox calls 'operating_profit' is stored as
@@ -108,6 +112,52 @@ def _rejected(problem):
     return {"quarters": {}, "problem": problem}
 
 
+SUMMARY_CATEGORIES = ("revenue", "operating_profit", "net_profit")
+
+
+def summary_categories(inc):
+    """data.income_statement -> {category: [history, ...]}. Accepts the list form [{"category", "history"}] and a mapping {category: {"history"}}; anything else gives nothing.
+    The `change` figure attached to each history entry is not read anywhere: growth is computed from stored quarterly values only."""
+    out = {}
+    if isinstance(inc, list):
+        for c in inc:
+            if isinstance(c, dict) and isinstance(c.get("category"), str):
+                out.setdefault(c["category"].strip().lower(), []).append(c.get("history"))
+    elif isinstance(inc, dict):
+        for k, c in inc.items():
+            if isinstance(k, str) and isinstance(c, dict):
+                out.setdefault(k.strip().lower(), []).append(c.get("history"))
+    return out
+
+
+def _period_infos(history):
+    return [x for x in (period_info(h.get("period")) for h in history or [] if isinstance(h, dict)) if x]
+
+
+def _looks_annual(history):
+    """Two or more different periods that all fall in the SAME month of the year (Mar 2024, Mar 2025, ...): a yearly series."""
+    infos = _period_infos(history)
+    return len({i["period_end"] for i in infos}) >= 2 and len({i["month"] for i in infos}) == 1
+
+
+def _shows_quarters(history):
+    """Two or more different periods on at least two different months of the year: the cadence of a quarterly series."""
+    infos = _period_infos(history)
+    return len({i["period_end"] for i in infos}) >= 2 and len({i["month"] for i in infos}) >= 2
+
+
+def full_statement_is_usable(lines, summaries):
+    """Whether the detailed full_statement lines may be read as QUARTERLY values. The real response labelled time_period=quarterly carried ANNUAL periods in full_statement (one period per
+    year, all the same month) beside quarterly summary categories, and an annual 'Mar 2025' value must never become the Mar 2025 quarter. So the whole full_statement is ignored when
+    any line looks annual, or when the summary is clearly quarterly and no detailed line shows a quarterly cadence of its own. Without a quarterly summary to contradict it, a full_statement
+    with no annual sign is read as before. Nothing is guessed: an ignored full_statement leaves the quarter to the summary or unavailable."""
+    if any(_looks_annual(h) for h in lines):
+        return False
+    if any(_shows_quarters(h) for h in summaries) and not any(_shows_quarters(h) for h in lines):
+        return False
+    return True
+
+
 def parse_quarterly(body):
     """-> {"quarters": {period_end: {"quarter", "values", "checks"}}, "problem": None | short text}. Refuses anything that is not a clean quarterly statement."""
     d = body.get("data") if isinstance(body, dict) else None
@@ -132,12 +182,15 @@ def parse_quarterly(body):
             vals[pe] = num(h.get("value"))
             infos[pe] = info
 
-    for label, field in INCOME_MAP.items():
-        if label in found:
-            collect(found[label][1], field)
-    for c in d.get("income_statement") or []:
-        if isinstance(c, dict) and str(c.get("category", "")).lower() in ("operating_profit", "net_profit"):
-            collect(c.get("history"), "summary_" + str(c["category"]).lower())
+    cats = summary_categories(d.get("income_statement"))
+    summaries = [h for c in SUMMARY_CATEGORIES for h in cats.get(c, [])]
+    if full_statement_is_usable([found[l][1] for l in INCOME_MAP if l in found], summaries):
+        for label, field in INCOME_MAP.items():
+            if label in found:
+                collect(found[label][1], field)                 # an annual or unverifiable full_statement is skipped entirely (see full_statement_is_usable)
+    for cat in SUMMARY_CATEGORIES:                              # the summary lines are kept under their own names, so they can never collide with a full_statement line
+        for history in cats.get(cat, []):
+            collect(history, "summary_" + cat)                  # a category listed twice repeats its periods and is therefore ambiguous
     if not infos:
         return _rejected("no_data")
     if len({i["month"] % 3 for i in infos.values()}) > 1:
@@ -146,14 +199,28 @@ def parse_quarterly(body):
     for pe, info in infos.items():
         def get(f):
             return None if (f, pe) in dups else (per.get(f) or {}).get(pe)
-        vals = {"revenue": get("revenue"), "total_revenue": get("total_revenue"), "operating_profit": get("summary_operating_profit"),
-                "profit_before_tax": get("profit_before_tax"), "profit_after_tax": get("profit_after_tax"),
+
+        def pick(detailed, summary):
+            """(value, source). A detailed full_statement value wins. The summary line is used only when there is no detailed value for that quarter; a detailed value that is
+            ambiguous (the period listed twice) is not replaced by the summary, it stays unavailable."""
+            if (detailed, pe) in dups:
+                return None, None
+            v = get(detailed)
+            if v is not None:
+                return v, "full_statement"
+            v = get(summary)
+            return (v, "summary") if v is not None else (None, None)
+        revenue, revenue_src = pick("revenue", "summary_revenue")
+        pat, pat_src = pick("profit_after_tax", "summary_net_profit")
+        vals = {"revenue": revenue, "total_revenue": get("total_revenue"), "operating_profit": get("summary_operating_profit"),
+                "profit_before_tax": get("profit_before_tax"), "profit_after_tax": pat,
                 "eps_basic": get("eps_basic"), "eps_diluted": get("eps_diluted")}
         if all(v is None for v in vals.values()):
             continue
         quarters[pe] = {"quarter": "%s %d" % (calendar.month_abbr[info["month"]], info["fy"]), "values": vals,
                         "checks": {"operating_profit_equals_pbt": same(vals["operating_profit"], vals["profit_before_tax"]),
-                                   "summary_net_profit_equals_pat": same(get("summary_net_profit"), vals["profit_after_tax"])}}
+                                   "summary_net_profit_equals_pat": same(get("summary_net_profit"), get("profit_after_tax")),     # only when both exist
+                                   "revenue_source": revenue_src, "profit_after_tax_source": pat_src}}
     if not quarters:
         return _rejected("no_data")
     return {"quarters": quarters, "problem": None}

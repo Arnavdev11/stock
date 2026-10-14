@@ -45,6 +45,21 @@ no(t, /EBITDA is calculated|operating profit/i, "no operating profit or EBITDA f
 no(h, /Operating/i, "no operating-profit column");
 no(t.replace(/No rating, target or advice\./, ""), /\b(buy|sell|hold|bullish|bearish|target|rating|recommend\w*|outperform\w*)\b/i, "no advice wording");
 
+// EPS is stored by the updater but is not part of the first displayed version
+no(h, /EPS/i, "no EPS column or wording");
+// the REAL response shape (full_statement null, summary categories only): Revenue and Net profit shown, growth from stored quarters, no empty Total revenue column
+const py2 = "import sys,json; sys.path.insert(0,'.'); import test_quarterly_results as t, quarterly_results_updater as q\n" +
+  "r=q.empty_record(); q.merge_quarters(r,q.parse_quarterly(t.REAL),'consolidated','2026-08-01'); r['last_checked']=r['last_success']='2026-08-01'\n" +
+  "d,m,p=q.build_outputs({'AAA':t.ENTRIES['AAA']},{'AAA':r},'2026-08-01'); print(json.dumps(d['AAA']))";
+const REALDOC = JSON.parse(cp.execFileSync("python3", ["-c", py2], { cwd: ROOT, encoding: "utf8" }));
+const hr = Q.sectionHtml("AAA", REALDOC), tr = un(hr);
+re(tr, /Latest quarter: Jun 2026/, "real-shape: latest quarter"); re(hr, /1,500/, "real-shape: revenue shown"); re(hr, /<td class="n">150<\/td>/, "real-shape: net profit shown");
+re(hr, /\+50\.00%/, "real-shape: YoY from stored quarters"); re(hr, /\+15\.38%/, "real-shape: QoQ from stored quarters");
+no(hr, /Total revenue/, "no all-dash Total revenue column when no quarter has it"); no(hr.match(/<table[\s\S]*<\/table>/)[0], /EPS|EBITDA|Operating/i, "no EPS, EBITDA or operating-profit column in the table");
+const lastRow = hr.match(/<tbody>[\s\S]*?<\/tbody>/)[0].match(/<tr>[\s\S]*?<\/tr>/g).pop();
+eq((lastRow.match(/<td class="n">-<\/td>/g) || []).length, 4, "the oldest quarter has no comparison quarters: all four growth cells are dashes");
+no(lastRow, /<td class="n">0(\.00%)?<\/td>/, "and none of them is 0");
+
 // a null value is "-", never 0; a gap is named; nothing is carried forward
 const doc2 = JSON.parse(JSON.stringify(DOCS.AAA)); const s2 = doc2.stocks.AAA;
 s2.quarters[0].values.revenue = null; s2.quarters[0].growth.yoy.revenue = null; s2.quarters[1].values.profit_after_tax = null;
