@@ -70,6 +70,23 @@ jobs:
           PROBE_SYMBOLS: ${{ inputs.symbols }}
         run: python coverage_probe.py
 
+      - name: Show the report as run annotations (no secrets, report.json only)
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("probe_output/report.json")
+          if not p.exists():
+              print("::warning::probe_output/report.json was not written")
+              raise SystemExit(0)
+          r = json.loads(p.read_text(encoding="utf-8"))
+          def one(d):
+              return json.dumps(d, separators=(",", ":"), sort_keys=True)
+          print("::notice title=probe totals::" + one({"calls": r.get("calls"), "caps": r.get("caps"), "within_caps": r.get("within_caps"), "identity": r.get("identity"), "summary": r.get("summary")}))
+          for sym, res in r.get("results", {}).items():
+              print("::notice title=probe %s::%s" % (sym, one(res)[:20000]))
+          PY
+
       - name: Save the report and the raw responses
         if: always()
         uses: actions/upload-artifact@v4
