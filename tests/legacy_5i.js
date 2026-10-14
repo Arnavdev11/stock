@@ -11,6 +11,8 @@ function legacy(h) {
   /* Stage 1 coverage: the per-stock-file layer (a classic script with its own id) is an addition; the older pins see the page without it */
   s = s.replace(/<script type="module" id="stocklens-live">[\s\S]*?<\/script>\n/, "");
   s = s.replace(/<script id="stocklens-shards">[\s\S]*?<\/script>\n/, "");
+  /* Quarterly Results: a read-only section module (its own id) is an addition; the older pins see the page without it */
+  s = s.replace(/<script type="module" id="stocklens-quarterly">[\s\S]*?<\/script>\n/, "");
   /* Market Cap in the Stock Detail header (replaces the Sector tile there): put back the loader's three-file Promise.all, the Sector tile, its variables and its note */
   s = s.replace(/\/\* Market capitalisation for the header = [\s\S]*?return out\}\n\n/, "");
   s = s.replace('j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});', () => 'j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2]}});');

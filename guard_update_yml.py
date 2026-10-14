@@ -51,6 +51,7 @@ def without_market_cap(html):
     """index.html with exactly the approved header edit reversed (the loader's fourth request, the marketCap() helper, the Market Cap tile, its variable and its note).
     A page that does not carry the edit comes back unchanged, so the guards can apply this to both the working file and HEAD and then compare them byte for byte:
     any OTHER difference in index.html is still a difference."""
+    html = re.sub(r'<script type="module" id="stocklens-quarterly">[\s\S]*?</script>\n', "", html, count=1)      # the read-only Quarterly Results section module is an addition with its own tests (tests/test_quarterly_ui.js)
     s = re.sub(r"/\* Market capitalisation for the header = [\s\S]*?return out\}\n\n", "", html, count=1)
     s = s.replace('j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});',
                   'j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2]}});', 1)

@@ -384,7 +384,7 @@ class WorkflowTests(unittest.TestCase):
             t = wf(name)
             for step in re.split(r"\n      - ", t):
                 if "UPSTOX_ANALYTICS_TOKEN" in step:
-                    self.assertRegex(step, r"python (fundamentals_updater|financials_updater|financial_history_updater|shareholding_updater)\.py", name)
+                    self.assertRegex(step, r"python (fundamentals_updater|financials_updater|financial_history_updater|shareholding_updater|quarterly_results_updater)\.py", name)
         self.assertNotIn("UPSTOX", job_block(wf("update.yml"), "deploy"))
 
     def test_9_only_the_save_job_can_write(self):

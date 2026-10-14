@@ -1,0 +1,81 @@
+name: Quarterly results test batch (read-only)
+
+# MANUAL, READ-ONLY test of the quarterly-results updater against the real Upstox API. Run it by hand: Actions > "Quarterly results test batch (read-only)" > Run workflow.
+# It asks Upstox for the quarterly income statement of AT MOST THREE listed symbols (checked below) and uploads
+#   - the RAW responses (public company figures, no token), so the real response shape can be reviewed, and
+#   - the shards the updater would publish (out/by_symbol/quarterly_results/*.json) and its summary,
+# as one artifact kept for 7 days. It pushes nothing, writes to no branch, does not touch GitHub Pages, the saved-data cache or any ledger, and no other workflow calls it.
+# The only thing it takes from the data branch is the published stock directory (read-only checkout, no credentials kept).
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "One to three stock symbols from the stock directory, comma separated (include one bank: banks have no 'Revenue' line)."
+        required: true
+        default: "TCS,HDFCBANK,RELIANCE"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-quarterly-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check the symbol list (one to three plain symbols)
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          parts = [p.strip() for p in os.environ["SYMBOLS"].split(",")]
+          if not 1 <= len(parts) <= 3 or any(not re.fullmatch(r"[A-Z0-9&-]{1,20}", p) for p in parts) or len(set(parts)) != len(parts):
+              sys.exit("::error::Give one to three different upper-case stock symbols, comma separated (no spaces).")
+          print("Symbols:", ",".join(parts))
+          PY
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check out the data branch (read-only)
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Use the published directory
+        run: mkdir -p out && cp ledger-branch/stock_directory.json out/stock_directory.json
+
+      - name: Run the quarterly results updater on the listed symbols
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          QUARTERLY_SYMBOLS: ${{ inputs.symbols }}
+          QUARTERLY_MAX_CALLS: "6"
+          QUARTERLY_SAVE_RAW: probe_output/raw
+        run: python quarterly_results_updater.py
+
+      - name: Save the raw responses and the would-be shards
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarterly-test-batch
+          path: |
+            probe_output/raw
+            out/by_symbol/quarterly_results
+            out/quarterly_results.json
+          if-no-files-found: ignore
+          retention-days: 7

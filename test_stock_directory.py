@@ -530,10 +530,12 @@ class Wiring(unittest.TestCase):
     def test_update_workflow_publishes_the_directory_with_one_guarded_copy(self):
         t = (self.WF / "update.yml").read_text()
         copies = [l for l in t.splitlines() if "stock_directory.json" in l and "cp " in l]
-        self.assertEqual(copies, ["          if [ -f ledger-branch/stock_directory.json ]; then cp ledger-branch/stock_directory.json _site/out/stock_directory.json; fi"])
-        self.assertLess(t.index("cp out/*.json _site/out/"), t.index("stock_directory.json"))
-        self.assertLess(t.index("stock_directory.json"), t.index("Upload Pages artifact"))
-        self.assertEqual(len(re.findall(r"stock_directory\.json", t)), 3)          # only the one copy line names the file (three times)
+        site_copy = "          if [ -f ledger-branch/stock_directory.json ]; then cp ledger-branch/stock_directory.json _site/out/stock_directory.json; fi"
+        # the quarterly results step hands the published directory to its updater (one copy into out/); the site copy is still the one publishing line
+        self.assertEqual(copies, ["          cp ledger-branch/stock_directory.json out/stock_directory.json", site_copy])
+        self.assertLess(t.index("cp out/*.json _site/out/"), t.index(site_copy))
+        self.assertLess(t.index(site_copy), t.index("Upload Pages artifact"))
+        self.assertEqual(len(re.findall(r"stock_directory\.json", t)), 5)          # the quarterly copy names it twice, the site copy three times
         self.assertNotRegex(t, r"STOCKLENS_UNIVERSE_FILE=[^\n]*stock_directory")
         self.assertNotIn("universe.json _site", t)                                  # the research universe is not published by this step
 
@@ -550,8 +552,11 @@ class Wiring(unittest.TestCase):
 
     def test_no_other_workflow_mentions_the_directory_and_no_builder_workflow_exists(self):
         for p in self.WF.glob("*.yml"):
-            if p.name not in ("update.yml", "historical.yml"):
+            if p.name not in ("update.yml", "historical.yml", "quarterly_probe.yml"):
                 self.assertNotIn("stock_directory", p.read_text(), p.name)
+        # quarterly_probe.yml (manual, read-only test batch) copies the published directory in exactly one command and nowhere else
+        probe = [l.strip() for l in (self.WF / "quarterly_probe.yml").read_text().splitlines() if "stock_directory" in l]
+        self.assertEqual(probe, ["run: mkdir -p out && cp ledger-branch/stock_directory.json out/stock_directory.json"])
         # historical.yml READS the directory (read-only checkout of the data branch) to choose the next batch of stocks, in exactly one command and nowhere else
         lines = [l.strip() for l in (self.WF / "historical.yml").read_text().splitlines() if "stock_directory" in l]
         self.assertEqual(lines, ["run: python historical_batch.py choose --directory ledger-branch/stock_directory.json --saved ledger-branch/historical --out batch"])

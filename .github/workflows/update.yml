@@ -155,6 +155,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Quarterly results (Upstox quarterly income statement). The updater reads the published stock directory from the data branch (copied to out/ for it), asks Upstox for the stalest
+      # stocks within the call budget, keeps its cache in data/quarterly_cache.json and writes out/by_symbol/quarterly_results/<SYMBOL>.json plus out/quarterly_results.json. Both folders are
+      # in the saved-data cache and are published by the Build site folder step below (cp -r out/by_symbol). If it fails, nothing changes: the last published shards stay as they were.
+      - name: Update quarterly results (Upstox)
+        id: quarterly
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          QUARTERLY_MAX_CALLS: "100"
+        run: |
+          cp ledger-branch/stock_directory.json out/stock_directory.json
+          python quarterly_results_updater.py
+
+      # continue-on-error keeps a quarterly-results problem from blocking the rest of the daily build, so a failure is reported here instead of being silent. The updater writes a shard only after
+      # it passes its own checks, and never from a failed call, so a failed run leaves the previously published shards exactly as they were (older, never altered or invented).
+      - name: Report a quarterly results failure
+        if: steps.quarterly.outcome == 'failure'
+        run: echo "::warning::The quarterly results update failed or timed out. The quarterly results published on the site are from the last successful run."
+
       - name: Validate outputs
         continue-on-error: true
         run: python validate_outputs.py
