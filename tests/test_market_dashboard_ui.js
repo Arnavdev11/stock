@@ -408,6 +408,11 @@ const actLazy = (async () => {
   const missing = MC.sectionHtml("mk-today", MC.model(SCANS, Object.assign({}, HIST, { benchmark: null }), FII), {});
   re(missing, /NIFTY 50 history is not loaded/, "no benchmark at all: the plain unavailable message"); no(missing, /Stale:|class="mk-idx"/, "with no invented value");
   no(MC.sectionHtml("mk-today", MC.model(SCANS, HN("2026-10-02"), FII), { index: "SENSEX" }), /Stale: this NIFTY 50/, "the SENSEX tab never carries the NIFTY notice");
+  // the 9 -> 12 October incident: history stuck on Friday while the scans are Monday's; once the history advances the notice goes and the shown date is the last candle's
+  { const sc = Object.assign({}, SCANS, { as_of: "2026-10-12" }), stuck = view("2026-10-09", sc), moved = view("2026-10-12", sc);
+    re(stuck, /Stale: this NIFTY 50 value is from <b>2026-10-09<\/b>, older than the market data dated <b>2026-10-12<\/b>/, "stuck on 9 Oct against 12 Oct scans: labelled stale with both dates");
+    no(moved, /mk-stale|Stale:/, "advanced to 12 Oct: no stale notice"); re(moved, /<p class="mk-sub">As of 2026-10-12<\/p>/, "and 12 Oct, the last candle, is the date shown");
+    eq(MC.indices(HN("2026-10-12"))[0].perf.date, "2026-10-12", "the benchmark series ends on the displayed date"); }
   // the shown value and date come from the same candle as the benchmark's last entry
   const ix = MC.indices(HN("2026-10-02")); eq([ix.length, ix[0].perf.date, ix[0].perf.last], [1, "2026-10-02", lastClose], "indices(): last candle date and close agree with what is displayed"); }
 
