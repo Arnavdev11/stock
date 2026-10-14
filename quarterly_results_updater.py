@@ -461,6 +461,26 @@ def load_entries(path=DIRECTORY_FILE):
     return out
 
 
+def resolve_priority(entries, loader=None):
+    """The coverage-universe symbols that are in the stock directory, fetched first. Never silent:
+    - the universe cannot be loaded -> the run FAILS (exception type only, no detail) rather than quietly falling back to alphabetical order, which is what left TCS without a shard;
+    - some priority symbols are not in the directory -> a warning with the count and at most 5 names;
+    - priority symbols were loaded but NONE is in the directory -> the run FAILS (the coverage guarantee would be empty)."""
+    loader = loader or universe.load_entries
+    try:
+        wanted = list(loader())
+    except Exception as err:
+        fail("the coverage universe could not be loaded (%s); refusing to fall back to alphabetical order. Nothing was fetched or published." % type(err).__name__)
+    found = [x for x in wanted if x in entries]
+    missing = [x for x in wanted if x not in entries]
+    log("priority coverage: loaded %d, in the stock directory %d, missing %d" % (len(wanted), len(found), len(missing)))
+    if missing:
+        log("::warning::%d priority symbol(s) are not in the stock directory and will not be fetched: %s%s" % (len(missing), ", ".join(missing[:5]), " ..." if len(missing) > 5 else ""))
+    if wanted and not found:
+        fail("none of the %d priority symbols is in the stock directory; refusing to run without the coverage guarantee." % len(wanted))
+    return found
+
+
 def main(argv=None):
     token = get_token()
     entries = load_entries()
@@ -489,10 +509,7 @@ def main(argv=None):
         return body, err
 
     day = dt.date.fromisoformat(today())
-    try:
-        priority = [x for x in universe.load_entries() if x in entries]
-    except Exception:                                         # no usable coverage universe: plain stalest-first
-        priority = []
+    priority = resolve_priority(entries)
     summary = run_batch(entries, cache, fetch, day, api.max_calls, priority)
     docs, meta, problems = build_outputs(entries, cache, day.isoformat())
     for sym, bad in problems:
