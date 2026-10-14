@@ -3145,6 +3145,17 @@ Ui.prototype.render=function(){
 /* ---------- the loop ---------- */
 /* the service's own error codes, in plain words (public test only; anything else stays a generic failure) */
 var CODE_WHY={snapshot_disabled:"the live service is switched off for public use",no_snapshot_yet:"the live service is running but has not produced a snapshot yet (it only connects to the exchange feed during market hours)",invalid_snapshot:"the live service's snapshot failed its own checks",feed_unavailable:"the live service has no working exchange feed right now",stale_feed:"the live service's exchange feed has stopped updating"};
+/* read a body but never hold more than maxBytes: a streamed body is cut off as soon as it passes the cap (null = too large); without a stream the whole text is read and then measured */
+function readCapped(r){
+  var cap=CFG.maxBytes;
+  if(r.body&&typeof r.body.getReader==="function"&&typeof TextDecoder==="function"){
+    var rd=r.body.getReader(),dec=new TextDecoder("utf-8"),got=0,out="";
+    var step=function(){return rd.read().then(function(c){
+      if(c.done)return out+dec.decode();
+      got+=c.value.length;if(got>cap){try{rd.cancel()}catch(e){}return null}
+      out+=dec.decode(c.value,{stream:true});return step()})};
+    return step()}
+  return r.text().then(function(t){return t.length>cap?null:t})}
 function poll(url){
   var ac=typeof AbortController==="function"?new AbortController():null,timer=setTimeout(function(){if(ac)ac.abort()},CFG.timeout);
   var done=function(x){clearTimeout(timer);return x};
@@ -3153,11 +3164,11 @@ function poll(url){
       /* a refusal may carry the service's own short error code; read at most maxBytes of it and keep it only if it is one of the known codes */
       var cl0=r.headers.get("Content-Length"),base={status:r.status,error:"HTTP "+r.status};
       if(cl0&&+cl0>CFG.maxBytes)return base;
-      return r.text().then(function(t){var c=null;try{if(t.length<=CFG.maxBytes){var o=JSON.parse(t);if(o&&typeof o==="object"&&typeof o.error==="string"&&Object.prototype.hasOwnProperty.call(CODE_WHY,o.error))c=o.error}}catch(e){}
+      return readCapped(r).then(function(t){var c=null;try{if(t!==null){var o=JSON.parse(t);if(o&&typeof o==="object"&&typeof o.error==="string"&&Object.prototype.hasOwnProperty.call(CODE_WHY,o.error))c=o.error}}catch(e){}
         if(c)base.code=c;return base},function(){return base})}
     var cl=r.headers.get("Content-Length");if(cl&&+cl>CFG.maxBytes)return{status:200,text:"x".repeat(CFG.maxBytes+1)};
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
-    return r.text().then(function(t){return{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
+    return readCapped(r).then(function(t){return t===null?{status:200,text:"x".repeat(CFG.maxBytes+1)}:{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
 function start(g,env){
   var ctl=new Controller({privateTest:g.privateTest===true,pub:g.pub===true}),ui=new Ui(env.document,g.privateTest===true,g.pub===true),busy=false;
   function next(){env.setTimeout(tick,g.pub===true?CFG.pollPublic:g.privateTest===true?CFG.pollTest:CFG.poll)}

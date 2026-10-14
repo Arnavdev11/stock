@@ -45,7 +45,7 @@ function makeDoc() {
 function load(loc, fetchImpl) {
   const doc = makeDoc(), fetches = [], timers = [];
   const win = { location: loc, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; } };
-  const ctx = { window: win, document: doc, URLSearchParams, Date, JSON, Math, Object, Array, Number, String, isFinite, encodeURIComponent, setTimeout: (f, ms) => { timers.push([f, ms]); return 1; }, clearTimeout() {},
+  const ctx = { window: win, document: doc, TextDecoder, URLSearchParams, Date, JSON, Math, Object, Array, Number, String, isFinite, encodeURIComponent, setTimeout: (f, ms) => { timers.push([f, ms]); return 1; }, clearTimeout() {},
     fetch: (u, o) => { fetches.push([u, o]); return fetchImpl ? fetchImpl(u, o) : Promise.reject(new Error("no")); } };
   win.window = win; vm.createContext(ctx); vm.runInContext(code, ctx);
   return { win, doc, fetches, timers, L: win.SLLive };
@@ -520,6 +520,16 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
         { const doc = makeDoc(), r = load(page(), () => Promise.reject(new TypeError("Failed to fetch")));
           r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 6; i++) await new Promise((rs) => setImmediate(rs));
           ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent), "unreachable -> UNAVAILABLE"); }
+        /* streamed bodies are cut off at the cap, with or without a Content-Length */
+        { const enc = new TextEncoder(), chunks = (n, size) => { let i = 0, cancelled = false; return { cancelled: () => cancelled, body: { getReader: () => ({ read: () => Promise.resolve(i++ < n ? { done: false, value: enc.encode("x".repeat(size)) } : { done: true }), cancel: () => { cancelled = true; } }) } }; };
+          const mk = (st, c) => () => Promise.resolve(Object.assign({ ok: st < 300, status: st, headers: { get: () => null }, text: () => Promise.reject(new Error("text() must not be used")) }, c));
+          for (const [st, rx] of [[200, /UNAVAILABLE/], [503, /not reachable/]]) {
+            const c = chunks(1000, 1000), doc = makeDoc(), r = load(page(), mk(st, c));
+            r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 12; i++) await new Promise((rs) => setImmediate(rs));
+            ok(c.cancelled(), "an endless stream is cancelled once past the cap (HTTP " + st + ")"); ok(rx.test(doc.byId["market"].firstChild.textContent) && !/· LIVE ·/.test(doc.byId["market"].firstChild.textContent), "and is never shown as live"); }
+          { const e = { error: "no_snapshot_yet" }, bytes = enc.encode(JSON.stringify(e)), doc = makeDoc(), r = load(page(), () => Promise.resolve({ ok: false, status: 503, headers: { get: () => null }, body: { getReader: () => { let d = false; return { read: () => Promise.resolve(d ? { done: true } : (d = true, { done: false, value: bytes })), cancel() {} }; } } }));
+            r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 12; i++) await new Promise((rs) => setImmediate(rs));
+            ok(/not produced a snapshot yet/.test(doc.byId["market"].firstChild.textContent), "a small streamed error body is still understood"); } }
         /* a code on the LOCAL (non-public) path changes nothing: local wording is untouched */
         { const c = new L.Controller({ privateTest: true, pub: false }), v = c.ingest({ status: 503, error: "HTTP 503", code: "no_snapshot_yet" }, Date.now()); eq(v.reason, "HTTP 503", "local mode ignores service codes"); }
       }
