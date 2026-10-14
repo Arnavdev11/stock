@@ -118,6 +118,25 @@ class CapTests(unittest.TestCase):
         self.assertEqual(err, "call limit for this run reached")
         self.assertEqual(api.s.n, n)                              # no request is started once the cap is reached
 
+    def test_the_probe_api_never_exceeds_its_strict_cap(self):
+        for cap in (10, 11, 12, 130):
+            for replies in ([Resp(500, {})], [Resp(200, {"status": "success", "data": {}})], [Resp(429, {})], [Resp(404, {})]):
+                api = cp.make_fundamentals_api("tok-123456", cap)
+                api.s = Session(replies)
+                for _ in range(cap * 2):
+                    api.get("INE0/profile")
+                self.assertLessEqual(api.s.n, cap, (cap, replies[0].status_code))
+                self.assertEqual(api.calls, api.s.n)
+        # and the strict cap is the documented one
+        self.assertEqual(cp.FUNDAMENTALS_CALL_CAP + cp.CANDLE_CALL_CAP, 146)
+
+    def test_without_the_compensation_the_production_client_would_overshoot(self):
+        api = uc.Upstox("tok-123456", 10)                         # the plain budget: documents why make_fundamentals_api exists
+        api.s = Session([Resp(500, {})])
+        for _ in range(20):
+            api.get("INE0/profile")
+        self.assertGreater(api.s.n, 10)
+
     def test_a_rejected_token_stops_the_probe_but_the_report_is_still_written(self):
         api = uc.Upstox("tok-123456", 10)
         api.s = Session([Resp(401, {})])
@@ -240,6 +259,7 @@ class RunTests(unittest.TestCase):
         self.assertEqual(rep, disk)
         self.assertEqual(files, ["probe_output/report.json"])
         self.assertEqual(rep["calls"], {"fundamentals": 7, "candles": 2})
+        self.assertTrue(rep["within_caps"])
         self.assertEqual(rep["summary"]["income"]["ok"], 2)
         self.assertEqual(rep["summary"]["candles"]["error"], 0)
         self.assertIn("not probed", rep["shareholding"])

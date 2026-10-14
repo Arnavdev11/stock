@@ -2,7 +2,7 @@ name: Coverage probe (read-only)
 
 # MANUAL, READ-ONLY probe of the Upstox endpoints the research updaters use, for a small fixed set of stocks from the published stock directory. Run it by hand:
 # Actions > "Coverage probe (read-only)" > Run workflow. It makes about 85 to 130 real GET requests (12 stocks x 7 endpoints; a standalone retry adds one request per statement
-# with no consolidated data), at 2 s pacing, so it takes roughly 3 to 5 minutes. Caps: no new fundamentals request starts at 130 requests (a request already started may finish its 2 retries) and candle requests stop at 16, retries included.
+# with no consolidated data), at 2 s pacing, so it takes roughly 3 to 5 minutes. Strict maximum: 130 fundamentals requests plus 16 candle requests (146 in all), retries included; it may stop slightly earlier.
 # It uploads ONE artifact (probe_output: report.json plus the raw responses, public company figures, no token) kept for 7 days. It pushes nothing, writes to no branch,
 # does not touch GitHub Pages, the saved-data cache, any ledger or any published file, and no other workflow calls it.
 # The only thing it takes from the data branch is the published stock directory (read-only checkout, no credentials kept). Shareholding (NSE filings) is not probed.

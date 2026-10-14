@@ -12,7 +12,7 @@ It reuses the production code READ-ONLY, so the probe measures what the pipeline
 What it never does (enforced by test_coverage_probe.py):
   * it calls none of the production writers (write_json, write_outputs, the shard writers), reads or writes no cache, ledger, out/ file or site file;
   * its only write function refuses any path outside probe_output/;
-  * the call budget is a hard cap (retries count against it).
+  * the request budget is a STRICT maximum: 130 fundamentals requests plus 16 candle requests = 146 in all, retries included.
 
 Endpoints per stock (Upstox), with the calls each costs when consolidated data exists (a standalone retry adds one call per statement that has no consolidated data):
   1 GET /v2/fundamentals/{ISIN}/profile                                         sector
@@ -47,8 +47,8 @@ DIRECTORY_FILE = Path(os.environ.get("PROBE_DIRECTORY", "out/stock_directory.jso
 # 4 large caps, 3 mid caps, a bank and a card lender (financials: no plain "Revenue" line), a 2025-listed financial, a micro cap, and a stock with a loss-making history.
 DEFAULT_SYMBOLS = ("RELIANCE", "HDFCBANK", "TCS", "INFY", "PERSISTENT", "VOLTAS", "ASTRAL", "YESBANK", "SBICARD", "JIOFIN", "3BBLACKBIO", "SUZLON")
 MAX_SYMBOLS = 12
-FUNDAMENTALS_CALL_CAP = 130      # no new fundamentals request starts at or over this count; a request already started may finish its retries (at most 2 more). 12 stocks need 72 to 120
-CANDLE_CALL_CAP = 16             # hard cap on candle requests, retries included (12 stocks need 12)
+FUNDAMENTALS_CALL_CAP = 130      # STRICT maximum of fundamentals requests, retries included (see make_fundamentals_api). 12 stocks need 72 to 120
+CANDLE_CALL_CAP = 16             # STRICT maximum of candle requests, retries included (hist.Client checks before every attempt). 12 stocks need 12
 CANDLE_WINDOW_DAYS = 180
 SYMBOL_RE = re.compile(r"^[A-Z0-9&_.-]{1,20}$")
 
@@ -82,6 +82,13 @@ def write_artifact(rel, obj, root=None):
 
 
 # ------------------------------------------------------------------ requests
+def make_fundamentals_api(token, cap=None):
+    """uc.Upstox with a STRICT request maximum. Upstox.get checks its budget only when a call starts, and one call may then make up to RETRIES attempts, so a plain budget of N can
+    end at N + RETRIES - 1 requests. Starting no call unless a full set of retries still fits keeps the total at or below the cap (it may stop up to RETRIES - 1 requests early)."""
+    cap = FUNDAMENTALS_CALL_CAP if cap is None else cap
+    return uc.Upstox(token, cap - (uc.RETRIES - 1))
+
+
 class Recorder:
     """Wraps uc.Upstox: same get(path, params) -> (body, error); saves each raw response under probe_output/raw (public figures, no credential in it)."""
 
@@ -234,6 +241,7 @@ def run(symbols, directory, api, client, end, identity=None, root=None):
             uc.log(sym, " ".join("%s=%s" % (e, r[e]["status"]) for e in ENDPOINTS))
     finally:
         report["calls"] = {"fundamentals": api.calls, "candles": client.calls}
+        report["within_caps"] = api.calls <= FUNDAMENTALS_CALL_CAP and client.calls <= CANDLE_CALL_CAP
         report["summary"] = summarize(report["results"])
         write_artifact("report.json", report, root)
     return report
@@ -255,7 +263,7 @@ def main():
     symbols = choose_symbols(os.environ.get("PROBE_SYMBOLS"))
     present = [s for s in symbols if s in directory]
     hist.MAX_CALLS_PER_RUN = CANDLE_CALL_CAP
-    api = uc.Upstox(token, FUNDAMENTALS_CALL_CAP)
+    api = make_fundamentals_api(token)
     client = hist.Client(token)
     report = run(symbols, directory, api, client, hist.last_complete_day(), identity_check(directory, present))
     uc.log("calls used: fundamentals %d, candles %d" % (report["calls"]["fundamentals"], report["calls"]["candles"]))
