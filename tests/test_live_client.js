@@ -15,7 +15,8 @@ const code = html.split(TAG)[1].split("</script>")[0];
 ok(!/innerHTML|outerHTML|insertAdjacent|\beval\s*\(|new Function|document\.write|javascript:/.test(code), "no HTML-injection or code-evaluation sinks");
 ok((code.match(/\bfetch\(/g) || []).length === 1, "exactly one fetch call");
 ok(!/XMLHttpRequest|WebSocket|sendBeacon|EventSource|importScripts|localStorage|sessionStorage|document\.cookie/.test(code), "no other network or storage API");
-ok([...code.matchAll(/https?:\/\/[^\s"'<)]+/g)].every((m) => m[0] === "http://127.0.0.1:"), "the only web address is the loopback relay (the hosted service address is configuration, shipped empty; the page host is a bare host name)");
+ok([...code.matchAll(/https?:\/\/[^\s"'<)]+/g)].every((m) => m[0] === "http://127.0.0.1:" || m[0] === "https://stocklens-live.onrender.com"), "the only web addresses are the loopback relay and the ONE fixed hosted test origin (the production hosted address is configuration, shipped empty; the page host is a bare host name)");
+ok((code.match(/https:\/\/stocklens-live\.onrender\.com/g) || []).length === 1, "the hosted test origin appears exactly once, as one constant");
 ok(!/token|secret|apikey|api_key|bearer|authorization|password|credential/i.test(code.replace(/\/\*[\s\S]*?\*\//g, "").replace("Upstox market data feed V3 (ltpc)", "").replace('credentials:"omit"', "")), "no token, key or credential words");
 ok(!/\b(buy|sell|target price|rating|recommend)/i.test(code), "no advice language");
 ok(!/credentials:"omit"/.test("") && /credentials:"omit"/.test(code) && /redirect:"error"/.test(code) && /cache:"no-store"/.test(code), "fetch options pinned");
@@ -440,6 +441,85 @@ for (const l of [loc("example.com", ""), loc("example.com", "?live=local"), loc(
         const r = load(page(), () => Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve(JSON.stringify(live)) }));
         r.L.start({ url: SVC, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 4; i++) await new Promise((rs) => setImmediate(rs));
         ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent), "a response with no readable Date header is UNAVAILABLE even if the snapshot looks fresh"); }
+    }
+    /* ============ Stage 5: the opt-in PUBLIC TEST (?live=public_test). Off for everybody who does not open that exact address. ============ */
+    {
+      const L = load(loc("example.com", "")).L, base = FIX.cases.find((c) => c.name === "test_set universe"), clone = (d) => JSON.parse(JSON.stringify(d));
+      const URL_ = "https://stocklens-live.onrender.com/v1/live/snapshot.json";
+      const page = (over) => Object.assign({ protocol: "https:", hostname: "arnavdev11.github.io", port: "", pathname: "/stock/", search: "?live=public_test" }, over || {});
+      const got = (l, pub) => { const g = L.gate(l, pub); return g === null ? null : JSON.parse(JSON.stringify(g)); };
+      eq(L.PUBLIC_TEST_ORIGIN, "https://stocklens-live.onrender.com", "the fixed hosted origin");
+      eq(JSON.parse(JSON.stringify(L.PUBLIC_LIVE)), { enabled: false, url: "" }, "the production switch is still OFF");
+      /* opted in */
+      eq(got(page()), { url: URL_, pub: true, privateTest: true, port: null, optIn: true }, "the exact page + ?live=public_test -> the fixed service address, limited public mode");
+      for (const p of ["/stock/", "/stock", "/stock/index.html"]) eq(got(page({ pathname: p })) !== null, true, "page path " + p);
+      eq(got(page({ port: undefined })) !== null, true, "an absent port is the default port");
+      eq(got(page(), { enabled: false, url: "" }) !== null, true, "opt-in works with the production switch off (and does not turn it on)");
+      eq(JSON.parse(JSON.stringify(L.PUBLIC_LIVE)).enabled, false, "still off afterwards");
+      /* everything else on the real page: nothing */
+      for (const s of ["", "?", "?live=local", "?live=public", "?live=Public_Test", "?live=public_test ", "?live=public_test2", "?live=public_testing", "?live_set=private_test", "?live_set=public_test", "?public_test=1",
+        "?live=public_test&live=local", "?live=local&live=public_test", "?live=", "?x=live=public_test", "#live=public_test", "?live[]=public_test"])
+        eq(got(page({ search: s })), null, "no opt-in for search " + JSON.stringify(s));
+      eq(got(page({ search: "?live=public_test&live_set=private_test&url=https://evil.example/v1/live/snapshot.json&origin=https://evil.example" })).url, URL_, "extra options cannot change the address");
+      eq(got(page({ search: "?foo=1&live=public_test" })) !== null, true, "an unrelated option beside it is ignored");
+      /* only the exact host / scheme / port / path */
+      for (const l of [page({ protocol: "http:" }), page({ protocol: "file:" }), page({ protocol: undefined }), page({ hostname: "arnavdev11.github.io." }), page({ hostname: "ARNAVDEV11.github.io" }), page({ hostname: "evil.github.io" }),
+        page({ hostname: "arnavdev11.github.io.evil.com" }), page({ hostname: "evil-arnavdev11.github.io" }), page({ hostname: "xarnavdev11.github.io" }), page({ hostname: "stocklens-live.onrender.com" }),
+        page({ hostname: "example.com" }), page({ hostname: "" }), page({ hostname: 5 }), page({ port: "8443" }), page({ port: "443" }), page({ pathname: "/other/" }), page({ pathname: "/" }), page({ pathname: "/stock/../other/" }),
+        page({ pathname: "/stocks/" }), page({ pathname: "/stock/x" }), page({ pathname: 5 }), null, undefined, {}, { hostname: "arnavdev11.github.io" }])
+        eq(got(l), null, "no opt-in from page " + JSON.stringify(l));
+      eq(got({ protocol: "https:", hostname: "arnavdev11.github.io", pathname: "/stock/", search: { toString() { throw new Error("x"); } } }), null, "a hostile search value is refused, not thrown");
+      /* loopback pages keep their own behaviour */
+      eq(L.gate(loc("127.0.0.1", "?live=public_test")), null, "a loopback page never takes the public test");
+      eq(L.gate(loc("localhost", "?live=public_test&live_set=private_test")), null, "nor localhost");
+      eq(L.gate(loc("127.0.0.1", "?live=local")).port, 8765, "the local gate is unchanged");
+      eq(L.gate(loc("127.0.0.1", "?live=local&live_set=private_test")).privateTest, true, "the local private test is unchanged");
+      /* the real page: nothing happens without the option */
+      for (const l of [page({ search: "" }), page({ search: "?live=local" }), page({ search: "?live=public" }), page({ search: "?live_set=private_test" })]) {
+        const r = load(l); eq(r.fetches.length, 0, "no request"); eq(r.doc.calls.create, 0, "no DOM node"); eq(r.timers.length, 0, "no timer"); }
+      /* with the option: exactly one fetch of the fixed address, with the strict fetch options */
+      { const r = load(page()); eq(r.fetches.length, 1, "one request on load");
+        eq(r.fetches[0][0], URL_, "the fixed address");
+        const o = r.fetches[0][1]; eq([o.cache, o.credentials, o.mode, o.redirect, o.referrerPolicy], ["no-store", "omit", "cors", "error", "no-referrer"], "no cache, no credentials, no redirects"); }
+      /* the controller in this mode is the public one: the service's clock is required, only the limited set is accepted */
+      { const pubDoc = (d) => { const x = clone(d); x.breadth = { advances: 0, declines: 0, unchanged: 0, counted: 0 }; x.gainers = null; x.losers = null; return x; };
+        const now = base.doc.server_ts_ms + 1000, ctl = () => new L.Controller({ privateTest: true, pub: true });
+        eq(ctl().ingest({ status: 200, text: JSON.stringify(pubDoc(base.doc)), dateMs: now }, now).state, "live", "a fresh limited snapshot is live");
+        eq(ctl().ingest({ status: 200, text: JSON.stringify(pubDoc(base.doc)) }, now).state, "hidden", "no service clock -> never live");
+        const full = pubDoc(base.doc); full.scope.universe = "nse_eq_all";
+        eq(ctl().ingest({ status: 200, text: JSON.stringify(full), dateMs: now }, now).state, "hidden", "a full-universe snapshot is refused in the public test");
+        for (const bad of [{ status: 503, error: "HTTP 503" }, { status: 404, error: "HTTP 404" }, { error: "request failed" }]) {
+          const v = ctl().ingest(bad, now); eq([v.state, L.labelOf(v)], ["unavailable", "UNAVAILABLE"], "a disabled / missing / unreachable service is UNAVAILABLE, never LIVE"); } }
+      /* the source adds no other way in */
+      ok(!/live_origin|live_url|q\.get\(["'](url|origin|backend)/.test(code), "no option names an address or backend");
+      ok((code.match(/PUBLIC_TEST_ORIGIN\+PATH_LIVE/g) || []).length === 1, "the address is built in exactly one place, from two constants");
+      /* ---- SYNTHETIC off-hours fixtures: made-up service answers for testing the page's messages. They contain NO market data, are never served by index.html, and prove nothing about the real feed. ---- */
+      { const SYNTHETIC = "SYNTHETIC TEST FIXTURE - not a real service answer";
+        const answer = (status, body, hdr) => () => Promise.resolve({ ok: status >= 200 && status < 300, status, headers: { get: (k) => (hdr || {})[k.toLowerCase()] || null }, text: () => Promise.resolve(body) });
+        const cases = [
+          ["snapshot_disabled", 503, /switched off/], ["no_snapshot_yet", 503, /not produced a snapshot yet.*market hours/], ["feed_unavailable", 503, /no working exchange feed/],
+          ["stale_feed", 503, /stopped updating/], ["invalid_snapshot", 503, /failed its own checks/]];
+        for (const [code, st, rx] of cases) {
+          const doc = makeDoc(), r = load(page(), answer(st, JSON.stringify({ error: code, note: SYNTHETIC })));
+          r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 6; i++) await new Promise((rs) => setImmediate(rs));
+          const chip = doc.byId["market"].firstChild.textContent;
+          ok(/UNAVAILABLE/.test(chip) && rx.test(chip) && !/· LIVE ·/.test(chip), "specific unavailable message for " + code + ": " + chip);
+          eq(doc.byId["market"].all((n) => n.attrs["data-lv"]).length, 0, "no live panel for " + code); }
+        /* unknown codes, junk and oversize bodies fall back to the generic message and never leak the body text */
+        for (const body of [JSON.stringify({ error: "<img src=x>" }), "not json", JSON.stringify({ error: 5 }), JSON.stringify({ error: "constructor" }), JSON.stringify({ error: "x".repeat(70000) })]) {
+          const doc = makeDoc(), r = load(page(), answer(503, body));
+          r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 6; i++) await new Promise((rs) => setImmediate(rs));
+          const chip = doc.byId["market"].firstChild.textContent; ok(/UNAVAILABLE/.test(chip) && /not reachable/.test(chip) && !/<img|constructor/.test(chip), "generic message for a bad error body"); }
+        { const doc = makeDoc(), r = load(page(), answer(503, "{}", { "content-length": "999999" }));
+          r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 6; i++) await new Promise((rs) => setImmediate(rs));
+          ok(/not reachable/.test(doc.byId["market"].firstChild.textContent), "an oversize refusal is not read"); }
+        /* an unreachable / CORS-blocked service */
+        { const doc = makeDoc(), r = load(page(), () => Promise.reject(new TypeError("Failed to fetch")));
+          r.L.start({ url: URL_, pub: true, privateTest: true, port: null }, { document: doc, setTimeout() {} }); for (let i = 0; i < 6; i++) await new Promise((rs) => setImmediate(rs));
+          ok(/UNAVAILABLE/.test(doc.byId["market"].firstChild.textContent), "unreachable -> UNAVAILABLE"); }
+        /* a code on the LOCAL (non-public) path changes nothing: local wording is untouched */
+        { const c = new L.Controller({ privateTest: true, pub: false }), v = c.ingest({ status: 503, error: "HTTP 503", code: "no_snapshot_yet" }, Date.now()); eq(v.reason, "HTTP 503", "local mode ignores service codes"); }
+      }
     }
     console.log("Live client tests passed (" + checks + " checks)");
   })();
