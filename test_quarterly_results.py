@@ -219,6 +219,27 @@ class RunTests(unittest.TestCase):
             return table.get((isin, basis), (None, "HTTP 404"))
         return f
 
+    def test_priority_stocks_are_fetched_first_so_a_capped_run_reaches_them(self):
+        # Regression: a 2,548-stock directory with a 100-call cap, alphabetical among never-checked stocks, never reached TCS (position ~2,250), so its shard was never published.
+        entries = {"AAA": ENTRIES["AAA"], "BBB": ENTRIES["BBB"], "CCC": ENTRIES["CCC"]}
+        log = []
+        q.run_batch(entries, {}, self.fetcher({}, log), D(2026, 8, 1), 1, priority=["CCC"])
+        self.assertEqual([c[0] for c in log], [ENTRIES["CCC"]["isin"]])
+        log2 = []
+        q.run_batch(entries, {}, self.fetcher({}, log2), D(2026, 8, 1), 1)                    # no priority: unchanged alphabetical order
+        self.assertEqual([c[0] for c in log2], [ENTRIES["AAA"]["isin"]])
+        # a priority stock that is not due is not fetched again; the rest keep stalest-first order
+        cache = {"CCC": {**q.empty_record(), "last_checked": "2026-08-01"}}
+        log3 = []
+        q.run_batch(entries, cache, self.fetcher({}, log3), D(2026, 8, 1), 1, priority=["CCC", "BBB"])
+        self.assertEqual([c[0] for c in log3], [ENTRIES["BBB"]["isin"]])
+
+    def test_main_passes_the_coverage_universe_as_priority(self):
+        import inspect
+        src = inspect.getsource(q.main)
+        self.assertIn("universe.load_entries()", src)
+        self.assertIn("api.max_calls, priority", src)
+
     def test_stalest_first_call_cap_and_errors_leave_data_untouched(self):
         cache = {"AAA": {**q.empty_record(), "last_checked": "2026-01-01", "quarters": {"2026-03-31": {"quarter": "Mar 2026", "retrieved_on": "2026-04-01", "values": {"revenue": 1.0}, "checks": {}, "revisions": []}}}}
         log = []
