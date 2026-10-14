@@ -89,22 +89,60 @@ def make_fundamentals_api(token, cap=None):
     return uc.Upstox(token, cap - (uc.RETRIES - 1))
 
 
+class Tally:
+    """Requests made per logical call. One logical call makes 1 request, plus 1 for every retry (Upstox.get and Client.candles retry on network errors, 429 and 5xx).
+    retries = requests - logical calls that made at least one request. Only counts and endpoint labels are kept: no URL, header or token."""
+
+    def __init__(self):
+        self.logical, self.retries, self.events = 0, 0, []
+
+    def note(self, label, before, after):
+        used = after - before
+        if used > 0:
+            self.logical += 1
+            self.retries += used - 1
+            if used > 1:
+                self.events.append({"call": label, "requests": used})
+
+    def as_dict(self):
+        return {"logical_calls": self.logical, "retries": self.retries, "retried_calls": self.events[:50]}
+
+
 class Recorder:
     """Wraps uc.Upstox: same get(path, params) -> (body, error); saves each raw response under probe_output/raw (public figures, no credential in it)."""
 
     def __init__(self, api, root=None):
-        self.api, self.root = api, root
+        self.api, self.root, self.tally = api, root, Tally()
 
     @property
     def calls(self):
         return self.api.calls
 
     def get(self, path, params=None):
+        before = self.api.calls
         body, err = self.api.get(path, params)
+        self.tally.note(path.split("/", 1)[-1], before, self.api.calls)
         if body is not None:
             name = re.sub(r"[^A-Za-z0-9_.-]+", "_", "_".join([path] + [str(v) for v in sorted((params or {}).items())]))[:120]
             write_artifact("raw/%s.json" % name, body, self.root)
         return body, err
+
+
+class CandleRecorder:
+    """Wraps hist.Client the same way: same candles(key, frm, to), plus the retry tally."""
+
+    def __init__(self, client):
+        self.client, self.tally = client, Tally()
+
+    @property
+    def calls(self):
+        return self.client.calls
+
+    def candles(self, key, frm, to):
+        before = self.client.calls
+        out = self.client.candles(key, frm, to)
+        self.tally.note("candles", before, self.client.calls)
+        return out
 
 
 def short(err):
@@ -223,7 +261,7 @@ def run(symbols, directory, api, client, end, identity=None, root=None):
     report = {"kind": "coverage_probe", "generated_on": dt.date.today().isoformat(), "symbols": list(symbols), "endpoints": list(ENDPOINTS),
               "caps": {"fundamentals": FUNDAMENTALS_CALL_CAP, "candles": CANDLE_CALL_CAP}, "shareholding": "not probed (NSE filing collection is excluded until its terms are reviewed)",
               "identity": identity or {}, "results": {}, "summary": {}}
-    rec = Recorder(api, root)
+    rec, crec = Recorder(api, root), CandleRecorder(client)
     try:
         for sym in symbols:
             entry = directory.get(sym)
@@ -237,10 +275,11 @@ def run(symbols, directory, api, client, end, identity=None, root=None):
             for name, path, extra, parser in fin.SECTIONS:
                 r[name] = probe_section(rec, isin, name, path, extra, parser)
             r["quarterly"] = probe_quarterly(rec, isin)
-            r["candles"] = probe_candles(client, isin, end)
+            r["candles"] = probe_candles(crec, isin, end)
             uc.log(sym, " ".join("%s=%s" % (e, r[e]["status"]) for e in ENDPOINTS))
     finally:
         report["calls"] = {"fundamentals": api.calls, "candles": client.calls}
+        report["retries"] = {"fundamentals": rec.tally.as_dict(), "candles": crec.tally.as_dict()}
         report["within_caps"] = api.calls <= FUNDAMENTALS_CALL_CAP and client.calls <= CANDLE_CALL_CAP
         report["summary"] = summarize(report["results"])
         write_artifact("report.json", report, root)
@@ -257,6 +296,73 @@ def summarize(results):
     return out
 
 
+def _cell(v):
+    return re.sub(r"[|\r\n`<>]+", " ", str(v)).strip()[:160]
+
+
+def summary_markdown(report):
+    """The whole report as GitHub-flavoured markdown for the Actions step summary. Built only from report.json (public figures and counts; the report never holds the token)."""
+    rep = report if isinstance(report, dict) else {}
+    calls, caps, ret = rep.get("calls") or {}, rep.get("caps") or {}, rep.get("retries") or {}
+    ok = rep.get("within_caps")
+    out = ["## Coverage probe (read-only)", "",
+           "Generated %s - %d symbol(s). Shareholding: %s" % (_cell(rep.get("generated_on", "?")), len(rep.get("symbols") or []), _cell(rep.get("shareholding", "?"))), "",
+           "### Requests and cap", "",
+           "| | Requests | Cap | Retries | Logical calls |", "|---|---|---|---|---|"]
+    for k in ("fundamentals", "candles"):
+        r = ret.get(k) or {}
+        out.append("| %s | %s | %s | %s | %s |" % (k, calls.get(k, "?"), caps.get(k, "?"), r.get("retries", "?"), r.get("logical_calls", "?")))
+    out += ["", "**Cap compliance: %s** (total %s of %s requests)" % ("WITHIN CAPS" if ok is True else "CAP EXCEEDED OR UNKNOWN" if ok is False else "UNKNOWN",
+            sum(v for v in calls.values() if isinstance(v, int)), sum(v for v in caps.values() if isinstance(v, int)))]
+    for k in ("fundamentals", "candles"):
+        for e in (ret.get(k) or {}).get("retried_calls") or []:
+            out.append("- retried %s call: %s: %s requests" % (k, _cell(e.get("call")), _cell(e.get("requests"))))
+    out += ["", "### Identity (directory ISIN vs Upstox instrument master)", "", "| Symbol | Result |", "|---|---|"]
+    for s, v in sorted((rep.get("identity") or {}).items()):
+        out.append("| %s | %s |" % (_cell(s), _cell(v)))
+    out += ["", "### Endpoint statuses by stock", "", "| Symbol | " + " | ".join(ENDPOINTS) + " |", "|---|" + "---|" * len(ENDPOINTS)]
+    results = rep.get("results") or {}
+    for s, r in results.items():
+        r = r if isinstance(r, dict) else {}
+        out.append("| %s | %s |" % (_cell(s), " | ".join(_cell((r.get(e) or {}).get("status", r.get("directory", "-"))) for e in ENDPOINTS)))
+    out += ["", "### Totals per endpoint", "", "| Endpoint | " + " | ".join(s for s in STATUSES if s != "not_run") + " |", "|---|" + "---|" * (len(STATUSES) - 1)]
+    for e, c in (rep.get("summary") or {}).items():
+        out.append("| %s | %s |" % (_cell(e), " | ".join(str((c or {}).get(s, 0)) for s in STATUSES if s != "not_run")))
+    out += ["", "### Missing fields, errors and quarterly/candle detail", "", "| Symbol | Endpoint | Status | Basis | Missing fields | Error / problem | Detail |", "|---|---|---|---|---|---|---|"]
+    n = 0
+    for s, r in results.items():
+        for e in ENDPOINTS:
+            x = (r or {}).get(e) if isinstance(r, dict) else None
+            if not isinstance(x, dict):
+                continue
+            detail = ""
+            if e == "quarterly":
+                detail = "quarters=%s %s..%s same-quarter-last-year=%s" % (x.get("quarters"), x.get("first"), x.get("latest"), x.get("year_ago_quarter_present"))
+            elif e == "candles":
+                detail = "candles=%s %s..%s" % (x.get("candles"), x.get("first"), x.get("last"))
+            elif x.get("period"):
+                detail = "period=%s" % x.get("period")
+            if x.get("status") != "ok" or e in ("quarterly", "candles"):
+                n += 1
+                out.append("| %s | %s | %s | %s | %s | %s | %s |" % (_cell(s), e, _cell(x.get("status")), _cell(x.get("basis", "")), _cell(", ".join(x.get("missing") or [])),
+                                                                _cell(x.get("error") or x.get("problem") or ""), _cell(detail)))
+    if not n:
+        out.append("| - | - | - | - | - | - | - |")
+    return "\n".join(out) + "\n"
+
+
+def summary_main(path=None):
+    """python coverage_probe.py summary  ->  markdown on stdout (the workflow appends it to the step summary). Reads only probe_output/report.json."""
+    p = Path(path) if path else OUT_DIR / "report.json"
+    try:
+        report = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print("## Coverage probe\n\nNo readable report.json was produced; see the job log.")
+        return 0
+    sys.stdout.write(summary_markdown(report))
+    return 0
+
+
 def main():
     token = uc.get_token()
     directory = load_directory()
@@ -271,4 +377,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(summary_main() if sys.argv[1:] == ["summary"] else main())

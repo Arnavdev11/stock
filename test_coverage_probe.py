@@ -298,6 +298,83 @@ class RunTests(unittest.TestCase):
             self.assertEqual(len([x for x in root.rglob("*") if x.is_file()]), 1)      # an error stores nothing
 
 
+class SummaryTests(unittest.TestCase):
+    REPORT = {
+        "kind": "coverage_probe", "generated_on": "2026-10-14", "symbols": ["AAA", "BBB"], "shareholding": "not probed",
+        "caps": {"fundamentals": 130, "candles": 16}, "calls": {"fundamentals": 15, "candles": 3}, "within_caps": True,
+        "retries": {"fundamentals": {"logical_calls": 13, "retries": 2, "retried_calls": [{"call": "income-statement", "requests": 2}, {"call": "profile", "requests": 2}]},
+                    "candles": {"logical_calls": 2, "retries": 1, "retried_calls": [{"call": "candles", "requests": 2}]}},
+        "identity": {"AAA": "match", "BBB": "isin_mismatch"},
+        "results": {
+            "AAA": {"isin": "INE000A01011", "name": "A", "profile": {"status": "ok"}, "key_ratios": {"status": "partial", "missing": ["roce", "ev_ebitda"]},
+                    "income": {"status": "ok"}, "balance_sheet": {"status": "ok"}, "cash_flow": {"status": "ok"},
+                    "quarterly": {"status": "ok", "quarters": 4, "first": "2025-12-31", "latest": "2026-09-30", "year_ago_quarter_present": False, "basis": "consolidated"},
+                    "candles": {"status": "ok", "candles": 123, "first": "2026-04-01", "last": "2026-10-13"}},
+            "BBB": {"directory": "not_in_directory"}},
+        "summary": {"key_ratios": {"ok": 0, "partial": 1, "no_data": 0, "rejected": 0, "error": 0, "skipped_call_cap": 0}},
+    }
+
+    def test_the_summary_shows_every_stock_status_identity_missing_fields_requests_retries_and_cap(self):
+        md = cp.summary_markdown(self.REPORT)
+        for needle in ("| AAA |", "| BBB |", "isin_mismatch", "roce, ev_ebitda", "WITHIN CAPS", "total 18 of 146", "| fundamentals | 15 | 130 | 2 | 13 |", "| candles | 3 | 16 | 1 | 2 |",
+                       "retried fundamentals call: income-statement: 2 requests", "retried candles call: candles: 2 requests", "same-quarter-last-year=False", "candles=123", "not_in_directory"):
+            self.assertIn(needle, md)
+
+    def test_a_cap_breach_or_missing_flag_is_never_shown_as_compliant(self):
+        self.assertIn("CAP EXCEEDED", cp.summary_markdown(dict(self.REPORT, within_caps=False)))
+        bad = dict(self.REPORT)
+        del bad["within_caps"]
+        self.assertNotIn("WITHIN CAPS", cp.summary_markdown(bad))
+
+    def test_markdown_cannot_be_broken_or_injected_by_report_text(self):
+        r = json.loads(json.dumps(self.REPORT))
+        r["results"]["AAA"]["income"] = {"status": "error", "error": "a|b\n<script>`x`"}
+        row = [l for l in cp.summary_markdown(r).splitlines() if "script" in l or "a b" in l][0]
+        self.assertNotIn("<", row)
+        self.assertEqual(row.count("|"), 8)
+
+    def test_an_unreadable_or_empty_report_still_gives_a_message(self):
+        self.assertIn("Coverage probe", cp.summary_markdown({}))
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(cp.summary_main(Path(d) / "nope.json"), 0)
+        self.assertIn("No readable report.json", out.getvalue())
+
+    def test_the_summary_never_contains_the_token(self):
+        tok = "tok-SECRET-123456"
+        with mock.patch.dict("os.environ", {"UPSTOX_ANALYTICS_TOKEN": tok}):
+            self.assertNotIn(tok, cp.summary_markdown(self.REPORT))
+        self.assertNotIn("environ", SRC[SRC.index("def summary_markdown"):SRC.index("def main")])
+
+    def test_retries_are_counted_from_real_attempts(self):
+        api = cp.make_fundamentals_api("tok-123456", 30)
+        api.s = Session([Resp(500, {}), Resp(200, {"status": "success", "data": {}})])
+        rec = cp.Recorder(api, None)
+        with mock.patch("time.sleep"), tempfile.TemporaryDirectory() as d:
+            rec.root = Path(d) / "probe_output"
+            body, err = rec.get("INE0/profile")
+        self.assertIsNone(err)
+        self.assertEqual(rec.tally.as_dict(), {"logical_calls": 1, "retries": 1, "retried_calls": [{"call": "profile", "requests": 2}]})
+        self.assertEqual(api.calls, 2)
+
+    def test_a_call_refused_by_the_cap_counts_no_request_and_no_retry(self):
+        api = uc.Upstox("tok-123456", 0)
+        rec = cp.Recorder(api, None)
+        rec.get("INE0/profile")
+        self.assertEqual(rec.tally.as_dict(), {"logical_calls": 0, "retries": 0, "retried_calls": []})
+
+    def test_the_run_report_carries_the_retry_tallies(self):
+        rep, _, _ = RunTests().run_probe(["AAA"])
+        self.assertEqual(rep["retries"]["fundamentals"], {"logical_calls": 0, "retries": 0, "retried_calls": []})
+        self.assertEqual(rep["retries"]["candles"], {"logical_calls": 0, "retries": 0, "retried_calls": []})
+
+    def test_workflow_writes_the_summary_from_the_report_only(self):
+        self.assertIn('python coverage_probe.py summary >> "$GITHUB_STEP_SUMMARY"', WF)
+        self.assertNotIn("::notice", WF)
+        step = WF[WF.index("Show the full report"):WF.index("Save the report")]
+        self.assertNotIn("secrets.", step)
+        self.assertIn("if: always()", step)
+
+
 class WorkflowTests(unittest.TestCase):
     def test_manual_only_read_only_and_isolated(self):
         self.assertIn("workflow_dispatch:", WF)
