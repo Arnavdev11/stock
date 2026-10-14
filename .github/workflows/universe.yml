@@ -3,6 +3,7 @@ name: Build coverage universe
 # Builds universe.json - the list of stocks every stock-specific updater works on - and saves it on the `stocklens-data` branch (next to the ledgers).
 #   Stage 1: mode = nifty500  (NSE's official NIFTY 500 constituent list, matched to the stocks Upstox serves)
 #   Stage 2: mode = all_eq    (not used yet; it needs an explicit decision and an exclusion list for ETFs and other non-equity instruments)
+#   Directory: mode = directory (every stock in the published stock directory on the data branch; nothing is downloaded). It is refused unless confirm_full_universe is exactly "yes".
 # Without a universe.json on the data branch every updater keeps using the 10 development stocks, so nothing changes until this has run.
 # Needs no secret: the NSE list and the Upstox instrument file are public downloads. It publishes nothing and touches no site file.
 # The branch is never created here, and only universe.json is ever committed.
@@ -11,9 +12,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "nifty500 (Stage 1). all_eq is Stage 2 and is refused here until it is approved."
+        description: "nifty500 (Stage 1) or directory (every stock in the published stock directory; needs confirm_full_universe=yes). all_eq is Stage 2 and is refused here until it is approved."
         required: false
         default: "nifty500"
+      confirm_full_universe:
+        description: 'Type yes to build the directory-based universe (about 2,500 stocks). Ignored for nifty500.'
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -33,12 +38,19 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v4
 
-      - name: Refuse anything but Stage 1
+      - name: Refuse anything but nifty500 or a confirmed directory universe
+        env:
+          MODE: ${{ inputs.mode || 'nifty500' }}
+          CONFIRM: ${{ inputs.confirm_full_universe }}
         run: |
-          if [ "${{ inputs.mode || 'nifty500' }}" != "nifty500" ]; then
-            echo "::error::Only mode nifty500 (Stage 1) can be built here. Stage 2 needs an explicit approval."
-            exit 1
+          if [ "$MODE" = "nifty500" ]; then
+            exit 0
           fi
+          if [ "$MODE" = "directory" ] && [ "$CONFIRM" = "yes" ]; then
+            exit 0
+          fi
+          echo "::error::Only mode nifty500, or mode directory with confirm_full_universe=yes, can be built here. Stage 2 (all_eq) needs an explicit approval."
+          exit 1
 
       - name: Look for the data branch
         run: |
@@ -65,9 +77,15 @@ jobs:
         run: pip install requests
 
       - name: Build the universe (the previous one is kept if the new list looks wrong)
+        env:
+          MODE: ${{ inputs.mode || 'nifty500' }}
         run: |
           cp -f ledger-branch/universe.json universe-new.json 2>/dev/null || true
-          python universe.py build --mode nifty500 --fetch --out universe-new.json
+          if [ "$MODE" = "directory" ]; then
+            python directory_universe.py build --directory ledger-branch/stock_directory.json --out universe-new.json
+          else
+            python universe.py build --mode nifty500 --fetch --out universe-new.json
+          fi
           python universe.py check universe-new.json
 
       - name: Commit universe.json to the data branch
