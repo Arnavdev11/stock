@@ -45393,6 +45393,425 @@
    "name": "ICICI Bank Limited",
    "quarters": [
     {
+     "quarter_end": "2026-09-30",
+     "status": "available",
+     "reason": null,
+     "values": {
+      "promoters": 0.0,
+      "fii": 50.44,
+      "other_dii": 12.39,
+      "mutual_funds": 29.39,
+      "retail_other": 7.78
+     },
+     "format_version": "new-domestic-foreign",
+     "percent_unit": "fraction",
+     "diagnostics": {
+      "total_reported_pct": 100.0,
+      "employee_trusts_pct": null,
+      "employee_trusts_mode": "none",
+      "retail_other_excl_trusts": 7.78,
+      "governments_pct": 0.22,
+      "promoter_row_absent": true,
+      "share_basis_total": 7178746196.0,
+      "dr_custodian_shares": null,
+      "non_promoter_non_public_shares": null,
+      "share_derived_pct": {
+       "promoters": 0.0,
+       "fii": 50.44,
+       "other_dii": 12.38,
+       "mutual_funds": 29.39,
+       "retail_other": 7.78
+      },
+      "conflict": null
+     },
+     "quality": {
+      "status": "ok",
+      "flags": []
+     },
+     "raw": {
+      "total_shares": 7178746196.0,
+      "rows": {
+       "AlternativeInvestmentFunds": [
+        75673596.0,
+        0.0105
+       ],
+       "AssetReconstructionCompanies": [
+        0.0,
+        0.0
+       ],
+       "AssociateCompaniesOrSubsidiaries": [
+        0.0,
+        0.0
+       ],
+       "Banks": [
+        7351463.0,
+        0.001
+       ],
+       "BodiesCorporate": [
+        53141925.0,
+        0.0074
+       ],
+       "CentralGovernmentOrPresidentOfIndia": [
+        15694107.0,
+        0.0022
+       ],
+       "DirectorsAndDirectorsRelatives": [
+        3129985.0,
+        0.0004
+       ],
+       "ForeignCompanies": [
+        177172.0,
+        0.0
+       ],
+       "ForeignDirectInvestment": [
+        0.0,
+        0.0
+       ],
+       "ForeignNationals": [
+        20874.0,
+        0.0
+       ],
+       "ForeignVentureCapitalInvestors": [
+        0.0,
+        0.0
+       ],
+       "Governments": [
+        15764363.0,
+        0.0022
+       ],
+       "InstitutionsDomestic": [
+        2999120893.0,
+        0.4178
+       ],
+       "InstitutionsForeign": [
+        3621025268.0,
+        0.5044
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryOne": [
+        2391432149.0,
+        0.3331
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryTwo": [
+        98395269.0,
+        0.0137
+       ],
+       "InsuranceCompanies": [
+        548910596.0,
+        0.0765
+       ],
+       "InvestorEducationAndProtectionFund": [
+        11097935.0,
+        0.0015
+       ],
+       "KeyManagerialPersonnel": [
+        528263.0,
+        0.0001
+       ],
+       "MutualFundsOrUTI": [
+        2110033323.0,
+        0.2939
+       ],
+       "NBFCsRegisteredWithRBI": [
+        3408597.0,
+        0.0005
+       ],
+       "NonInstitutions": [
+        542835672.0,
+        0.0756
+       ],
+       "NonResidentIndians": [
+        28788167.0,
+        0.004
+       ],
+       "OtherFinancialInstitutions": [
+        508.0,
+        0.0
+       ],
+       "OtherInstitutionsForeign": [
+        184135.0,
+        0.0
+       ],
+       "OtherNonInstitutions": [
+        16318110.0,
+        0.0023
+       ],
+       "OverseasDepositories": [
+        1131013715.0,
+        0.1576
+       ],
+       "ProvidentFundsOrPensionFunds": [
+        253742810.0,
+        0.0353
+       ],
+       "PublicShareholding": [
+        7178746196.0,
+        1.0
+       ],
+       "RelativesOfPromotersOtherThanPromoterGroup": [
+        0.0,
+        0.0
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh": [
+        75975993.0,
+        0.0106
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh": [
+        353657248.0,
+        0.0493
+       ],
+       "ShareholdingByCompaniesOrBodiesCorporateWhereCentralOrStateGovernmentIsPromoter": [
+        340.0,
+        0.0
+       ],
+       "ShareholdingPattern": [
+        7178746196.0,
+        1.0
+       ],
+       "SovereignWealthFundsDomestic": [
+        0.0,
+        0.0
+       ],
+       "SovereignWealthFundsForeign": [
+        0.0,
+        0.0
+       ],
+       "StateGovernmentsOrGovernors": [
+        69916.0,
+        0.0
+       ],
+       "TrustsWhereAnyPersonBelongingToPromoterAndPromoterGroupIsTrusteeOrBeneficiaryOrAuthorOfTrust": [
+        0.0,
+        0.0
+       ],
+       "VentureCapitalFunds": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "source": {
+      "provider": "NSE",
+      "record_id": "214250",
+      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/SHP_1737444_14102026120238_WEB.xml",
+      "broadcast_date": "2026-10-14",
+      "submission_date": "2026-10-14",
+      "revised": false,
+      "revision_date": null,
+      "revision_remark": null
+     },
+     "fetched": "2026-10-14",
+     "revisions": [],
+     "named_holders": {
+      "version": 2,
+      "status": "available",
+      "reason": null,
+      "fetched": "2026-10-14",
+      "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
+      "holders": [
+       {
+        "holder_name": "DEUTSCHE BANK TRUST COMPANY AMERICAS",
+        "category": "Foreign Investor",
+        "label": "Foreign \u2013 Other",
+        "section": "overseas_depositories",
+        "shares": 1131013715,
+        "percentage": 15.76,
+        "axis": "DetailsOfSharesHeldByOverseasDepositoriesAxis",
+        "member": "OverseasDepositories_Context15"
+       },
+       {
+        "holder_name": "SBI MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 446693828,
+        "percentage": 6.22,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context21"
+       },
+       {
+        "holder_name": "ICICI PRUDENTIAL MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 318557995,
+        "percentage": 4.44,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context15"
+       },
+       {
+        "holder_name": "LIFE INSURANCE CORPORATION OF INDIA",
+        "category": "DII",
+        "label": "DII \u2013 Insurance",
+        "section": "insurance_companies",
+        "shares": 280209646,
+        "percentage": 3.9,
+        "axis": "DetailsOfSharesHeldByInsuranceCompaniesAxis",
+        "member": "InsuranceCompanies_Context15"
+       },
+       {
+        "holder_name": "HDFC MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 257941546,
+        "percentage": 3.59,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context17"
+       },
+       {
+        "holder_name": "NPS TRUST - A/C LIC PENSION FUND SCHEME - NPS TIER",
+        "category": "DII",
+        "label": "DII \u2013 Other",
+        "section": "provident_pension_funds",
+        "shares": 253742810,
+        "percentage": 3.53,
+        "axis": "DetailsOfSharesHeldByProvidentFundsOrPensionFundsAxis",
+        "member": "ProvidentFundsOrPensionFunds_Context15"
+       },
+       {
+        "holder_name": "NIPPON LIFE INDIA MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 169881031,
+        "percentage": 2.37,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context19"
+       },
+       {
+        "holder_name": "UTI MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 162515070,
+        "percentage": 2.26,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context20"
+       },
+       {
+        "holder_name": "SBI LIFE INSURANCE CO.LTD",
+        "category": "DII",
+        "label": "DII \u2013 Insurance",
+        "section": "insurance_companies",
+        "shares": 100562278,
+        "percentage": 1.4,
+        "axis": "DetailsOfSharesHeldByInsuranceCompaniesAxis",
+        "member": "InsuranceCompanies_Context16"
+       },
+       {
+        "holder_name": "GOVERNMENT OF SINGAPORE - E",
+        "category": "Foreign Investor",
+        "label": "FPI",
+        "section": "fpi_category_one",
+        "shares": 97136394,
+        "percentage": 1.35,
+        "axis": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis",
+        "member": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOne_Context15"
+       },
+       {
+        "holder_name": "GOVERNMENT PENSION FUND GLOBAL",
+        "category": "Foreign Investor",
+        "label": "FPI",
+        "section": "fpi_category_one",
+        "shares": 95684606,
+        "percentage": 1.33,
+        "axis": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis",
+        "member": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOne_Context18"
+       },
+       {
+        "holder_name": "KOTAK MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 95206821,
+        "percentage": 1.33,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context18"
+       },
+       {
+        "holder_name": "VANGUARD TOTAL INTERNATIONAL STOCK INDEX FUND",
+        "category": "Foreign Investor",
+        "label": "FPI",
+        "section": "fpi_category_one",
+        "shares": 78549363,
+        "percentage": 1.09,
+        "axis": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis",
+        "member": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOne_Context17"
+       },
+       {
+        "holder_name": "AXIS MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 76391795,
+        "percentage": 1.06,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context22"
+       },
+       {
+        "holder_name": "VANGUARD EMERGING STOCK MARKETS STOCK INDEX FUND, A SERI",
+        "category": "Foreign Investor",
+        "label": "FPI",
+        "section": "fpi_category_one",
+        "shares": 75269894,
+        "percentage": 1.05,
+        "axis": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis",
+        "member": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOne_Context16"
+       },
+       {
+        "holder_name": "ADITYA BIRLA SUN LIFE MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 74024912,
+        "percentage": 1.03,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context16"
+       }
+      ],
+      "excluded": {
+       "zero_share": 0,
+       "category_rows": 2,
+       "persons_in_concert": 0,
+       "unclaimed": 0,
+       "unnamed": 0,
+       "unmapped_axis": 8,
+       "conflicting": 0
+      },
+      "unmapped_axes": {
+       "DetailsOfSharesHeldByOtherNonInstitutionsAxis": 8
+      },
+      "section_totals": {
+       "overseas_depositories": {
+        "named_shares": 1131013715,
+        "category_total_shares": 1131013715,
+        "named_count": 1
+       },
+       "mutual_funds": {
+        "named_shares": 1601212998,
+        "category_total_shares": 2110033323,
+        "named_count": 8
+       },
+       "insurance_companies": {
+        "named_shares": 380771924,
+        "category_total_shares": 548910596,
+        "named_count": 2
+       },
+       "provident_pension_funds": {
+        "named_shares": 253742810,
+        "category_total_shares": 253742810,
+        "named_count": 1
+       },
+       "fpi_category_one": {
+        "named_shares": 346640257,
+        "category_total_shares": null,
+        "named_count": 4
+       }
+      },
+      "flags": []
+     }
+    },
+    {
      "quarter_end": "2026-06-30",
      "status": "available",
      "reason": null,
@@ -54202,6 +54621,328 @@
    "isin": "INE062A01012",
    "name": "State Bank of India",
    "quarters": [
+    {
+     "quarter_end": "2026-09-30",
+     "status": "available",
+     "reason": null,
+     "values": {
+      "promoters": 55.45,
+      "fii": 11.07,
+      "other_dii": 12.66,
+      "mutual_funds": 13.68,
+      "retail_other": 7.14
+     },
+     "format_version": "new-domestic-foreign",
+     "percent_unit": "fraction",
+     "diagnostics": {
+      "total_reported_pct": 100.0,
+      "employee_trusts_pct": null,
+      "employee_trusts_mode": "none",
+      "retail_other_excl_trusts": 7.14,
+      "governments_pct": 0.02,
+      "promoter_row_absent": false,
+      "share_basis_total": 9160369796.0,
+      "dr_custodian_shares": 0.0,
+      "non_promoter_non_public_shares": 0.0,
+      "share_derived_pct": {
+       "promoters": 55.45,
+       "fii": 11.07,
+       "other_dii": 12.66,
+       "mutual_funds": 13.68,
+       "retail_other": 7.14
+      },
+      "conflict": null
+     },
+     "quality": {
+      "status": "ok",
+      "flags": []
+     },
+     "raw": {
+      "total_shares": 9160369796.0,
+      "rows": {
+       "AlternativeInvestmentFunds": [
+        33418025.0,
+        0.0036
+       ],
+       "AssociateCompaniesOrSubsidiaries": [
+        35.0,
+        0.0
+       ],
+       "Banks": [
+        779486.0,
+        0.0001
+       ],
+       "BodiesCorporate": [
+        56494515.0,
+        0.0062
+       ],
+       "CentralGovernmentOrPresidentOfIndia": [
+        19000.0,
+        0.0
+       ],
+       "CentralGovernmentOrStateGovernmentS": [
+        5079775288.0,
+        0.5545
+       ],
+       "CustodianOrDRHolder": [
+        0.0,
+        null
+       ],
+       "DirectorsAndDirectorsRelatives": [
+        1590.0,
+        0.0
+       ],
+       "ForeignCompanies": [
+        1698641.0,
+        0.0002
+       ],
+       "ForeignNationals": [
+        2120.0,
+        0.0
+       ],
+       "Governments": [
+        1473053.0,
+        0.0002
+       ],
+       "Indian": [
+        5079775288.0,
+        0.5545
+       ],
+       "InstitutionsDomestic": [
+        2412919449.0,
+        0.2634
+       ],
+       "InstitutionsForeign": [
+        1013992055.0,
+        0.1107
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryOne": [
+        988441904.0,
+        0.1079
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryTwo": [
+        25237951.0,
+        0.0028
+       ],
+       "InsuranceCompanies": [
+        904140881.0,
+        0.0987
+       ],
+       "InvestorEducationAndProtectionFund": [
+        16227246.0,
+        0.0018
+       ],
+       "KeyManagerialPersonnel": [
+        140.0,
+        0.0
+       ],
+       "MutualFundsOrUTI": [
+        1252853591.0,
+        0.1368
+       ],
+       "NBFCsRegisteredWithRBI": [
+        132686.0,
+        0.0
+       ],
+       "NonInstitutions": [
+        652209951.0,
+        0.0712
+       ],
+       "NonResidentIndians": [
+        27760696.0,
+        0.003
+       ],
+       "OtherFinancialInstitutions": [
+        1280678.0,
+        0.0001
+       ],
+       "OtherInstitutionsForeign": [
+        312200.0,
+        0.0
+       ],
+       "OtherNonInstitutions": [
+        16334153.0,
+        0.0018
+       ],
+       "ProvidentFundsOrPensionFunds": [
+        208802886.0,
+        0.0228
+       ],
+       "PublicShareholding": [
+        4080594508.0,
+        0.4455
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh": [
+        16727765.0,
+        0.0018
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh": [
+        516963050.0,
+        0.0564
+       ],
+       "ShareholdingByCompaniesOrBodiesCorporateWhereCentralOrStateGovernmentIsPromoter": [
+        234473.0,
+        0.0
+       ],
+       "ShareholdingOfPromoterAndPromoterGroup": [
+        5079775288.0,
+        0.5545
+       ],
+       "ShareholdingPattern": [
+        9160369796.0,
+        1.0
+       ],
+       "SharesHeldByNonPromoterNonPublicShareholders": [
+        0.0,
+        null
+       ],
+       "SovereignWealthFundsDomestic": [
+        11511216.0,
+        0.0013
+       ],
+       "StateGovernmentsOrGovernors": [
+        1219580.0,
+        0.0001
+       ]
+      }
+     },
+     "source": {
+      "provider": "NSE",
+      "record_id": "214335",
+      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/SHP_1737748_14102026040650_WEB.xml",
+      "broadcast_date": "2026-10-14",
+      "submission_date": "2026-10-14",
+      "revised": false,
+      "revision_date": null,
+      "revision_remark": null
+     },
+     "fetched": "2026-10-14",
+     "revisions": [],
+     "named_holders": {
+      "version": 2,
+      "status": "available",
+      "reason": null,
+      "fetched": "2026-10-14",
+      "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
+      "holders": [
+       {
+        "holder_name": "PRESIDENT OF INDIA",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_central_state_government",
+        "shares": 5079775288,
+        "percentage": 55.45,
+        "axis": "DetailsOfSharesHeldByCentralGovernmentOrStateGovernmentsAxis",
+        "member": "CentralGovernmentOrStateGovernments_Context15"
+       },
+       {
+        "holder_name": "LIFE INSURANCE CORPORATION OF INDIA",
+        "category": "DII",
+        "label": "DII \u2013 Insurance",
+        "section": "insurance_companies",
+        "shares": 750382535,
+        "percentage": 8.19,
+        "axis": "DetailsOfSharesHeldByInsuranceCompaniesAxis",
+        "member": "InsuranceCompanies_Context15"
+       },
+       {
+        "holder_name": "SBI MUTUAL FUND SCHEMES",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 283682554,
+        "percentage": 3.1,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context15"
+       },
+       {
+        "holder_name": "NPS TRUST SCHEMES",
+        "category": "DII",
+        "label": "DII \u2013 Other",
+        "section": "provident_pension_funds",
+        "shares": 208802886,
+        "percentage": 2.28,
+        "axis": "DetailsOfSharesHeldByProvidentFundsOrPensionFundsAxis",
+        "member": "ProvidentFundsOrPensionFunds_Context15"
+       },
+       {
+        "holder_name": "HDFC MUTUAL FUND SCHEMES",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 161790280,
+        "percentage": 1.77,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context16"
+       },
+       {
+        "holder_name": "ICICI MUTUAL FUND SCHEMES",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 136808868,
+        "percentage": 1.49,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context18"
+       },
+       {
+        "holder_name": "NIPPON LIFE INDIA MUTUAL FUND SCHEMES",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 125105125,
+        "percentage": 1.37,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context17"
+       },
+       {
+        "holder_name": "KOTAK MUTUAL FUND SCHEMES",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 106243064,
+        "percentage": 1.16,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context19"
+       }
+      ],
+      "excluded": {
+       "zero_share": 1,
+       "category_rows": 1,
+       "persons_in_concert": 0,
+       "unclaimed": 0,
+       "unnamed": 0,
+       "unmapped_axis": 4,
+       "conflicting": 0
+      },
+      "unmapped_axes": {
+       "DetailsOfSharesHeldByOtherNonInstitutionsAxis": 4
+      },
+      "section_totals": {
+       "promoter_central_state_government": {
+        "named_shares": 5079775288,
+        "category_total_shares": 5079775288,
+        "named_count": 1
+       },
+       "insurance_companies": {
+        "named_shares": 750382535,
+        "category_total_shares": 904140881,
+        "named_count": 1
+       },
+       "mutual_funds": {
+        "named_shares": 813629891,
+        "category_total_shares": 1252853591,
+        "named_count": 5
+       },
+       "provident_pension_funds": {
+        "named_shares": 208802886,
+        "category_total_shares": 208802886,
+        "named_count": 1
+       }
+      },
+      "flags": []
+     }
+    },
     {
      "quarter_end": "2026-06-30",
      "status": "available",
