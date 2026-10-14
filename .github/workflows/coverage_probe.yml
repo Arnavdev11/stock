@@ -70,6 +70,10 @@ jobs:
           PROBE_SYMBOLS: ${{ inputs.symbols }}
         run: python coverage_probe.py
 
+      - name: Show the full report in the run summary (report.json only, no secrets)
+        if: always()
+        run: python coverage_probe.py summary >> "$GITHUB_STEP_SUMMARY"
+
       - name: Save the report and the raw responses
         if: always()
         uses: actions/upload-artifact@v4
