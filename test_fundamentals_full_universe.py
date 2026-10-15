@@ -351,6 +351,26 @@ class UniverseGuards(unittest.TestCase):
         self.assertIn("check_doc", src)
 
 
+class NotInUpstoxClassification(unittest.TestCase):
+    def test_unserved_symbols_are_classified_even_when_the_budget_is_spent(self):
+        h = Harness(self, 40, letters="A", missing_from_upstox=("A0038", "A0039"), cap=4)       # 4 calls = 2 stocks; the unserved ones sort last
+        out = h.run()
+        cov = out["coverage"]
+        self.assertEqual(cov["not_in_upstox"], 2)                                               # local data: no call needed, so not left as "not yet fetched"
+        self.assertEqual(cov["not_yet_fetched"], 40 - 2 - 2)
+        self.assertEqual(h.requests_this_run, 4)
+        self.assertEqual(vo.check_fundamentals(out), [])
+
+    def test_a_stale_not_found_is_cleared_once_upstox_lists_the_symbol(self):
+        h = Harness(self, 6, letters="A", missing_from_upstox=("A0005",), cap=1000)
+        h.run()
+        read = lambda: json.loads((h.t / "data" / "c.json").read_text())["stocks"]["A0005"].get("last_error")
+        self.assertEqual(read(), fu.NOT_FOUND_ERROR)
+        h.instruments = dict(h.instruments, **{"A0005": {"isin": "INE000000051", "name": "Late Listed"}})
+        h.run(cap=0)                                          # no budget at all: the stale "not found" must still be dropped, not carried
+        self.assertIsNone(read())
+
+
 class ShareholdingIsolation(unittest.TestCase):
     def test_no_workflow_opts_the_shareholding_collector_into_the_universe(self):
         for wf in (HERE / ".github" / "workflows").glob("*.yml"):

@@ -230,16 +230,18 @@ def main():
     for sym in symbols:
         m = instruments.get(sym)
         old = stocks.get(sym) or {}
-        if api.calls >= MAX_CALLS_PER_RUN:
-            if m and (is_stale(old.get("profile_fetched"), PROFILE_MAX_AGE_DAYS) or is_stale(old.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS)):
-                pending += 1                 # needs work but not reached this run: not an error, it keeps its previous data and goes first next time
-            continue
-        e = stocks.setdefault(sym, {})
-        if not m:
-            e["last_error"] = NOT_FOUND_ERROR
+        if not m:                            # the instrument list is local data: this costs no API call, so it is classified even after the budget is spent
+            stocks.setdefault(sym, {})["last_error"] = NOT_FOUND_ERROR
             tally["not_in_upstox"] += 1
             log(sym, "- not found")
             continue
+        if old.get("last_error") == NOT_FOUND_ERROR:
+            old["last_error"] = None         # Upstox lists it now: a stale "not found" must not outlive the listing, even if the budget is spent before it is fetched
+        if api.calls >= MAX_CALLS_PER_RUN:
+            if (is_stale(old.get("profile_fetched"), PROFILE_MAX_AGE_DAYS) or is_stale(old.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS)):
+                pending += 1                 # needs work but not reached this run: not an error, it keeps its previous data and goes first next time
+            continue
+        e = stocks.setdefault(sym, {})
         e["isin"], e["company_name"] = m["isin"], m["name"]
         errs = []
         calls_before, ratios_now = api.calls, False
