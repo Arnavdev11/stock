@@ -337,7 +337,10 @@ def make_out(root):
                                                        "total_revenue_growth": None, "net_profit_growth": None, "checks": {}},
                             "balance_sheet": {"period": "Mar 2026", "basis": "consolidated", "total_equity": 300.0, "total_assets": 900.0, "total_debt": None}}
     put(o / "financials.json", {"schema": 2, "stocks": [fin("AAA", 10.0), fin("CCC", -2.0)]})
-    put(o / "market_dma.json", {"as_of": "2026-10-14", "stocks": [{"symbol": "AAA", "close": 200.0}, {"symbol": "CCC", "close": 50.0}]})
+    shard = lambda sym, close: {"stocks": {sym: {"symbol": sym, "candles": [{"date": "2026-10-13", "close": close - 1}, {"date": "2026-10-14", "close": close}]}}}
+    put(o / "by_symbol" / "historical" / "AAA.json", shard("AAA", 200.0))
+    put(o / "by_symbol" / "historical" / "CCC.json", shard("CCC", 50.0))
+    put(o / "market_dma.json", {"as_of": "2026-10-14", "stocks": [{"symbol": "BANKX", "close": 999.0}]})        # unpublished in production: must never be read
     qs = lambda r1, r0: {"stocks": {"AAA": {"basis": "consolidated", "quarters": [
         {"quarter_end": "2026-06-30", "values": {"revenue": r1, "profit_after_tax": 30}}, {"quarter_end": "2025-06-30", "values": {"revenue": r0, "profit_after_tax": 20}}]}}}
     put(o / "by_symbol" / "quarterly_results" / "AAA.json", qs(120, 100))
@@ -435,7 +438,7 @@ class Adapter(unittest.TestCase):
         self.assertIn("provider", out)
 
     def test_nan_in_an_input_is_treated_as_unreadable(self):
-        (self.d / "out" / "market_dma.json").write_text('{"as_of":"2026-10-14","stocks":[{"symbol":"AAA","close":NaN}]}', encoding="utf-8")
+        (self.d / "out" / "by_symbol" / "historical" / "AAA.json").write_text('{"stocks":{"AAA":{"candles":[{"date":"2026-10-14","close":NaN}]}}}', encoding="utf-8")
         rc, _, _ = self.cli()
         self.assertEqual(rc, 0)
         m = {r["symbol"]: r["metrics"] for r in json.loads((self.d / "out" / "derived_metrics.json").read_text())["stocks"]}
@@ -456,6 +459,27 @@ class Adapter(unittest.TestCase):
         self.assertIs(dm.classify_financial(None, listed=True), True)
         self.assertIsNone(dm.classify_financial(None))
         self.assertIsNone(dm.classify_financial("  "))
+
+    def test_price_comes_from_historical_files_never_from_market_dma(self):
+        self.cli()
+        m = {r["symbol"]: r["metrics"] for r in json.loads((self.d / "out" / "derived_metrics.json").read_text())["stocks"]}
+        self.assertEqual(m["AAA"]["pe"]["value"], 20.0)
+        self.assertIn("price 2026-10-14", m["AAA"]["pe"]["input_period"])        # the candle's own date
+        self.assertNotIn("999", json.dumps(m["BANKX"]))                         # the unpublished market_dma close is ignored
+
+    def test_the_single_historical_file_is_used_when_there_is_no_shard(self):
+        (self.d / "out" / "by_symbol" / "historical" / "AAA.json").unlink()
+        put(self.d / "out" / "historical.json", {"stocks": {"AAA": {"candles": [{"date": "2026-10-14", "close": 180.0}]}}})
+        self.cli()
+        m = {r["symbol"]: r["metrics"] for r in json.loads((self.d / "out" / "derived_metrics.json").read_text())["stocks"]}
+        self.assertEqual(m["AAA"]["pe"]["value"], 18.0)
+
+    def test_latest_close_rules(self):
+        c = lambda d, v: {"date": d, "close": v}
+        self.assertEqual(dm.latest_close({"candles": [c("2026-10-13", 5), c("2026-10-14", 6), c("2026-10-12", 4)]}), {"close": 6, "date": "2026-10-14"})
+        self.assertIsNone(dm.latest_close({"candles": [c("2026-10-14", 0), c("2026-10-14", -1), c("14-10-2026", 5), c("2026-13-45", 5), c("2026-10-14", None), c("2026-10-14", float("nan"))]}))
+        for junk in (None, 5, {}, {"candles": "x"}, {"candles": [None, 3]}):
+            self.assertIsNone(dm.latest_close(junk))
 
     def test_unsafe_symbol_never_builds_a_path(self):
         put(self.d / "out" / "stock_directory.json", {"symbols": [{"symbol": "../evil"}, {"symbol": "AAA"}]})

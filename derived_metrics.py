@@ -14,7 +14,7 @@ same basis (consolidated / standalone) and from compatible periods. Missing is n
 denominator makes them meaningless (zero or negative equity, zero/negative growth base) are reported unavailable with a reason.
 
 Which metrics can be calculated from the data StockLens stores today (see FEASIBILITY) is decided by the adapter inputs, not by hope:
-  pe                  price (market data close) / annual EPS                       -> calculable
+  pe                  price (latest valid daily close in the published historical files) / annual EPS                       -> calculable
   revenue_growth      provider annual growth, else same-quarter year-on-year       -> calculable
   profit_growth       provider annual growth, else same-quarter year-on-year       -> calculable
   roe, roa            need a prior-year balance sheet (only the latest is stored)  -> formula tested, inputs absent
@@ -432,6 +432,17 @@ def classify_financial(label, listed=False):
     return False if isinstance(label, str) and label.strip() else None
 
 
+def latest_close(stock):
+    """{"close", "date"} of the newest valid daily candle in a historical stock object, else None. Valid = a YYYY-MM-DD date and a finite close above zero.
+    The published historical files are the only price source: market_dma.json is not published, so it is never read."""
+    candles = stock.get("candles") if isinstance(stock, dict) else None
+    good = [c for c in (candles or []) if isinstance(c, dict) and isinstance(c.get("date"), str) and _day(c["date"]) and c["date"][:10] == c["date"] and isnum(c.get("close")) and c["close"] > 0]
+    if not good:
+        return None
+    last = max(good, key=lambda c: c["date"])
+    return {"close": last["close"], "date": last["date"]}
+
+
 def _load(path):
     """(document | None, problem | None). Strict JSON: NaN / Infinity are refused."""
     def bad(c):
@@ -453,12 +464,12 @@ def load_inputs(data_dir, financial_symbols=()):
     """Reads <data_dir>/out/ and returns (list of per-stock inputs, files report). Reads only; a missing or damaged file just leaves its inputs absent."""
     out = Path(data_dir) / "out"
     files, docs = {}, {}
-    for name in ("fundamentals.json", "financials.json", "market_dma.json", "stock_directory.json"):
+    for name in ("fundamentals.json", "financials.json", "historical.json", "stock_directory.json"):
         docs[name], prob = _load(out / name)
         files[name] = "present" if docs[name] is not None else prob
     fund, fin = _rows(docs["fundamentals.json"]), _rows(docs["financials.json"])
-    dma = _rows(docs["market_dma.json"])
-    price_date = docs["market_dma.json"].get("as_of") if isinstance(docs["market_dma.json"], dict) else None
+    hist = docs["historical.json"].get("stocks") if isinstance(docs["historical.json"], dict) else None
+    hist = hist if isinstance(hist, dict) else {}
     directory = docs["stock_directory.json"]
     names = []
     if isinstance(directory, dict) and isinstance(directory.get("symbols"), list):
@@ -477,8 +488,11 @@ def load_inputs(data_dir, financial_symbols=()):
             qdoc = q.get(sym) if isinstance(q, dict) else None
             shards += 1 if qdoc else 0
         frow = fund.get(sym) or {}
-        close = (dma.get(sym) or {}).get("close")
-        price = {"close": close, "date": price_date} if isnum(close) else None
+        price = None
+        if SYMBOL_RE.match(sym):
+            shard, _ = _load(out / "by_symbol" / "historical" / (sym + ".json"))
+            st = ((shard or {}).get("stocks") or {}).get(sym) if isinstance((shard or {}).get("stocks"), dict) else None
+            price = latest_close(st if isinstance(st, dict) else hist.get(sym))
         financial = classify_financial(frow.get("sector"), sym in fin_set)
         item = inputs_from(frow, fin.get(sym), qdoc, price, financial)
         item["symbol"] = sym
@@ -521,7 +535,7 @@ def main(argv=None):
             sys.stderr.write("cannot read --financial-symbols\n")
             return 2
     target = Path(a.out) if a.out else Path(a.data_dir) / "out" / OUT_NAME
-    if target.name in ("fundamentals.json", "financials.json", "market_dma.json", "stock_directory.json") or target.name.startswith("quarterly"):
+    if target.name in ("fundamentals.json", "financials.json", "historical.json", "stock_directory.json") or target.name.startswith("quarterly"):
         sys.stderr.write("refusing to write over an input file\n")
         return 2
     doc = run(a.data_dir, a.now, fin)
