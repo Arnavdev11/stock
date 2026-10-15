@@ -28,6 +28,7 @@ import datetime as dt
 import calendar
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -408,8 +409,121 @@ def inputs_from(fund_row, fin_row, qdoc, price, financial=False):
             "annual": annual, "balance": balance, "growth_verified": True, "quarterly": qdoc}
 
 
+# ---------------------------------------------------------------- read-only adapter + CLI (no network, no API calls)
+FINANCIAL_WORDS = ("bank", "financ", "insur", "nbfc", "lending", "credit")
+OUT_NAME = "derived_metrics.json"
+SYMBOL_RE = re.compile(r"^(?=.*[A-Z0-9])[A-Z0-9&\-_.]{1,30}$")
+
+
+def is_financial_label(label):
+    """Internal only: decides the exclusions; the label itself is never written to the output."""
+    t = str(label or "").lower()
+    return any(w in t for w in FINANCIAL_WORDS)
+
+
+def _load(path):
+    """(document | None, problem | None). Strict JSON: NaN / Infinity are refused."""
+    def bad(c):
+        raise ValueError("non-finite number")
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"), parse_constant=bad), None
+    except FileNotFoundError:
+        return None, "missing"
+    except (OSError, ValueError) as e:
+        return None, "unreadable (%s)" % type(e).__name__
+
+
+def _rows(doc, key="stocks"):
+    rows = doc.get(key) if isinstance(doc, dict) else None
+    return {r["symbol"]: r for r in rows if isinstance(r, dict) and isinstance(r.get("symbol"), str)} if isinstance(rows, list) else {}
+
+
+def load_inputs(data_dir, financial_symbols=()):
+    """Reads <data_dir>/out/ and returns (list of per-stock inputs, files report). Reads only; a missing or damaged file just leaves its inputs absent."""
+    out = Path(data_dir) / "out"
+    files, docs = {}, {}
+    for name in ("fundamentals.json", "financials.json", "market_dma.json", "stock_directory.json"):
+        docs[name], prob = _load(out / name)
+        files[name] = "present" if docs[name] is not None else prob
+    fund, fin = _rows(docs["fundamentals.json"]), _rows(docs["financials.json"])
+    dma = _rows(docs["market_dma.json"])
+    price_date = docs["market_dma.json"].get("as_of") if isinstance(docs["market_dma.json"], dict) else None
+    directory = docs["stock_directory.json"]
+    names = []
+    if isinstance(directory, dict) and isinstance(directory.get("symbols"), list):
+        names = [x["symbol"] for x in directory["symbols"] if isinstance(x, dict) and isinstance(x.get("symbol"), str)]
+    directory_names = bool(names)
+    if not names:
+        names = sorted(set(fund) | set(fin))
+    fin_set = {s.strip().upper() for s in financial_symbols}
+    shards = 0
+    stocks = []
+    for sym in names:
+        qdoc = None
+        if SYMBOL_RE.match(sym):                      # the same safe-file-name rule the shards use
+            d, _ = _load(out / "by_symbol" / "quarterly_results" / (sym + ".json"))
+            q = (d or {}).get("stocks") if isinstance(d, dict) else None
+            qdoc = q.get(sym) if isinstance(q, dict) else None
+            shards += 1 if qdoc else 0
+        frow = fund.get(sym) or {}
+        close = (dma.get(sym) or {}).get("close")
+        price = {"close": close, "date": price_date} if isnum(close) else None
+        financial = sym in fin_set or is_financial_label(frow.get("sector"))
+        item = inputs_from(frow, fin.get(sym), qdoc, price, financial)
+        item["symbol"] = sym
+        stocks.append(item)
+    files["quarterly_shards_read"] = shards
+    files["universe_source"] = "stock_directory.json" if directory_names else "fundamentals + financials rows"
+    return stocks, files
+
+
+def run(data_dir, now=None, financial_symbols=()):
+    now = now or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stocks, files = load_inputs(data_dir, financial_symbols)
+    doc = document(build(stocks, now), now)
+    doc["inputs"] = files
+    return doc
+
+
+def report(doc):
+    lines = ["derived metrics: %d stocks | inputs: %s" % (doc["coverage"]["stocks"], json.dumps(doc["inputs"])),
+             "%-15s %8s %10s %12s %8s %8s" % ("metric", "provider", "calculated", "unavailable", "before%", "after%")]
+    for m, c in doc["coverage"]["metrics"].items():
+        lines.append("%-15s %8d %10d %12d %8s %8s" % (m, c["provider"], c["calculated"], c["unavailable"], c["before_pct"], c["after_pct"]))
+    return "\n".join(lines)
+
+
 def main(argv=None):
-    sys.stderr.write("derived_metrics: library module; the adapter that reads out/ is deliberately not wired into any workflow yet.\n")
+    import argparse
+    ap = argparse.ArgumentParser(description="Read-only: derive missing metrics from the published out/ files into out/derived_metrics.json (no network).")
+    ap.add_argument("--data-dir", default=".", help="folder that contains out/")
+    ap.add_argument("--out", help="output file (default <data-dir>/out/derived_metrics.json); never one of the input files")
+    ap.add_argument("--financial-symbols", help="optional text file, one symbol per line, of banks/NBFCs/insurers (internal; never published)")
+    ap.add_argument("--now", help="ISO timestamp for the calculation (default: current UTC time)")
+    ap.add_argument("--report-only", action="store_true", help="print the coverage report and write nothing")
+    a = ap.parse_args(argv)
+    fin = []
+    if a.financial_symbols:
+        try:
+            fin = Path(a.financial_symbols).read_text(encoding="utf-8").split()
+        except OSError:
+            sys.stderr.write("cannot read --financial-symbols\n")
+            return 2
+    target = Path(a.out) if a.out else Path(a.data_dir) / "out" / OUT_NAME
+    if target.name in ("fundamentals.json", "financials.json", "market_dma.json", "stock_directory.json") or target.name.startswith("quarterly"):
+        sys.stderr.write("refusing to write over an input file\n")
+        return 2
+    doc = run(a.data_dir, a.now, fin)
+    if doc["inputs"].get("fundamentals.json") != "present" and doc["inputs"].get("financials.json") != "present":
+        sys.stderr.write("no real output files found under %s/out: nothing to derive from; nothing written\n" % a.data_dir)
+        return 1
+    print(report(doc))
+    if not a.report_only:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".tmp")
+        tmp.write_text(json.dumps(doc, indent=1, allow_nan=False), encoding="utf-8")
+        tmp.replace(target)
+        print("wrote", target)
     return 0
 
 

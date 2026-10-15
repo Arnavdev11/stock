@@ -304,3 +304,130 @@ class CoverageMeasurement(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- the read-only adapter / CLI (fixture files only)
+import contextlib
+import hashlib
+import io
+import tempfile
+from pathlib import Path
+
+
+def put(path, doc):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+
+def make_out(root):
+    o = root / "out"
+    put(o / "stock_directory.json", {"symbols": [{"symbol": s, "isin": "INE%08d1" % i, "name": s} for i, s in enumerate(["AAA", "BANKX", "CCC", "DDD"])]})
+    put(o / "fundamentals.json", {"as_of": "2026-10-14", "source": "Upstox", "stocks": [
+        {"symbol": "AAA", "pe": None, "pb": 3.0, "roa": None, "roe": 18.0, "roce": None, "ev_ebitda": None, "revenue_growth": None, "profit_growth": None, "sector": None},
+        {"symbol": "BANKX", "pe": 12.0, "pb": 1.5, "roa": 1.1, "roe": 14.0, "roce": None, "ev_ebitda": None, "revenue_growth": None, "profit_growth": None, "sector": "Banks"},
+        {"symbol": "CCC", "pe": None, "pb": None, "roa": None, "roe": None, "roce": None, "ev_ebitda": None, "revenue_growth": None, "profit_growth": None, "sector": None}]})
+    fin = lambda sym, eps: {"symbol": sym, "income": {"period": "Mar 2026", "basis": "consolidated", "eps_basic": eps, "eps_diluted": None, "net_profit": 50.0,
+                                                       "total_revenue_growth": None, "net_profit_growth": None, "checks": {}},
+                            "balance_sheet": {"period": "Mar 2026", "basis": "consolidated", "total_equity": 300.0, "total_assets": 900.0, "total_debt": None}}
+    put(o / "financials.json", {"schema": 2, "stocks": [fin("AAA", 10.0), fin("CCC", -2.0)]})
+    put(o / "market_dma.json", {"as_of": "2026-10-14", "stocks": [{"symbol": "AAA", "close": 200.0}, {"symbol": "CCC", "close": 50.0}]})
+    qs = lambda r1, r0: {"stocks": {"AAA": {"basis": "consolidated", "quarters": [
+        {"quarter_end": "2026-06-30", "values": {"revenue": r1, "profit_after_tax": 30}}, {"quarter_end": "2025-06-30", "values": {"revenue": r0, "profit_after_tax": 20}}]}}}
+    put(o / "by_symbol" / "quarterly_results" / "AAA.json", qs(120, 100))
+    (o / "by_symbol" / "quarterly_results" / "DDD.json").write_text("{not json", encoding="utf-8")
+
+
+def tree_hash(root):
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+class Adapter(unittest.TestCase):
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.d, ignore_errors=True))
+        make_out(self.d)
+
+    def cli(self, *args):
+        buf, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            rc = dm.main(["--data-dir", str(self.d), "--now", NOW] + list(args))
+        return rc, buf.getvalue(), err.getvalue()
+
+    def test_writes_separate_output_and_never_touches_inputs(self):
+        before = tree_hash(self.d)
+        rc, out, _ = self.cli()
+        self.assertEqual(rc, 0)
+        after = tree_hash(self.d)
+        new = set(after) - set(before)
+        self.assertEqual(new, {"out/derived_metrics.json"})
+        self.assertTrue(all(after[k] == before[k] for k in before))          # every input byte-identical
+        doc = json.loads((self.d / "out" / "derived_metrics.json").read_text())
+        self.assertEqual(doc["coverage"]["stocks"], 4)                       # the directory is the universe
+        self.assertEqual(doc["inputs"]["universe_source"], "stock_directory.json")
+
+    def test_values_and_provenance(self):
+        self.cli()
+        doc = json.loads((self.d / "out" / "derived_metrics.json").read_text())
+        m = {r["symbol"]: r["metrics"] for r in doc["stocks"]}
+        self.assertEqual(m["AAA"]["pe"]["value"], 20.0)                      # 200 / basic EPS 10 (diluted absent)
+        self.assertEqual(m["AAA"]["pe"]["source"], "calculated")
+        self.assertEqual(m["AAA"]["roe"], {"source": "provider", "value": 18.0})
+        self.assertEqual(m["AAA"]["revenue_growth"]["value"], 20.0)
+        self.assertEqual(m["AAA"]["profit_growth"]["value"], 50.0)
+        self.assertEqual(m["AAA"]["roa"]["reason"], "prior_year_balance_sheet_not_stored")
+        self.assertEqual(m["CCC"]["pe"]["reason"], "eps_negative_pe_not_meaningful")
+        self.assertEqual(m["BANKX"]["pe"], {"source": "provider", "value": 12.0})
+        self.assertEqual(m["BANKX"]["roce"]["reason"], "not_applicable_financial_company")   # sector read internally from the row
+        self.assertEqual(m["DDD"]["pe"]["source"], "unavailable")             # damaged shard + no rows: still gets an entry
+        self.assertNotIn("Banks", json.dumps(doc))
+
+    def test_coverage_counts_reconcile(self):
+        self.cli()
+        c = json.loads((self.d / "out" / "derived_metrics.json").read_text())["coverage"]["metrics"]
+        for name, x in c.items():
+            self.assertEqual(x["provider"] + x["calculated"] + x["unavailable"], 4, name)
+        self.assertEqual((c["pe"]["provider"], c["pe"]["calculated"]), (1, 1))
+        self.assertEqual(c["pe"]["before_pct"], 25.0)
+        self.assertEqual(c["pe"]["after_pct"], 50.0)
+        self.assertEqual(c["roce"]["calculated"], 0)
+
+    def test_financial_symbols_file(self):
+        f = self.d / "fin.txt"
+        f.write_text("AAA\n", encoding="utf-8")
+        self.cli("--financial-symbols", str(f))
+        m = {r["symbol"]: r["metrics"] for r in json.loads((self.d / "out" / "derived_metrics.json").read_text())["stocks"]}
+        self.assertEqual(m["AAA"]["debt_to_equity"]["reason"], "not_applicable_financial_company")
+
+    def test_no_real_files_writes_nothing(self):
+        e = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(e, ignore_errors=True))
+        buf, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            rc = dm.main(["--data-dir", str(e)])
+        self.assertEqual(rc, 1)
+        self.assertIn("no real output files", err.getvalue())
+        self.assertEqual(list(e.rglob("*")), [])
+
+    def test_refuses_to_overwrite_an_input(self):
+        rc, _, err = self.cli("--out", str(self.d / "out" / "fundamentals.json"))
+        self.assertEqual(rc, 2)
+        self.assertIn("refusing", err)
+
+    def test_report_only_writes_nothing(self):
+        before = tree_hash(self.d)
+        rc, out, _ = self.cli("--report-only")
+        self.assertEqual(rc, 0)
+        self.assertEqual(tree_hash(self.d), before)
+        self.assertIn("provider", out)
+
+    def test_nan_in_an_input_is_treated_as_unreadable(self):
+        (self.d / "out" / "market_dma.json").write_text('{"as_of":"2026-10-14","stocks":[{"symbol":"AAA","close":NaN}]}', encoding="utf-8")
+        rc, _, _ = self.cli()
+        self.assertEqual(rc, 0)
+        m = {r["symbol"]: r["metrics"] for r in json.loads((self.d / "out" / "derived_metrics.json").read_text())["stocks"]}
+        self.assertEqual(m["AAA"]["pe"]["reason"], "price_missing_or_invalid")
+
+    def test_unsafe_symbol_never_builds_a_path(self):
+        put(self.d / "out" / "stock_directory.json", {"symbols": [{"symbol": "../evil"}, {"symbol": "AAA"}]})
+        rc, _, _ = self.cli()
+        self.assertEqual(rc, 0)
