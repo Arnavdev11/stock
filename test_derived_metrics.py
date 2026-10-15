@@ -175,11 +175,18 @@ class StockDerivation(unittest.TestCase):
         self.assertEqual(m["roa"]["source"], "calculated")
 
     def test_non_financial_ratios_calculate_when_inputs_exist(self):
-        m = self.derive(annual=ann(), balance=bal(total_debt=300.0), ebit=120.0, ebitda=150.0, enterprise_value=1500.0, bvps=50.0, price=PRICE)
+        m = self.derive(financial=False, annual=ann(), balance=bal(total_debt=300.0), ebit=120.0, ebitda=150.0, enterprise_value=1500.0, bvps=50.0, price=PRICE)
         self.assertEqual(m["debt_to_equity"]["value"], 0.5)
         self.assertEqual(m["ev_ebitda"]["value"], 10.0)
         self.assertEqual(m["pb"]["value"], 4.0)
         self.assertEqual(m["roce"]["source"], "calculated")
+
+    def test_unknown_sector_blocks_mechanical_ratios_but_keeps_input_reasons(self):
+        full = self.derive(annual=ann(), balance=bal(total_debt=300.0), ebit=120.0, ebitda=150.0, enterprise_value=1500.0)   # financial not stated
+        for k in ("roce", "ev_ebitda", "debt_to_equity"):
+            self.assertEqual(full[k]["reason"], "sector_unknown_cannot_verify_non_financial", k)
+        thin = self.derive(annual=ann(), balance=bal())
+        self.assertEqual(thin["debt_to_equity"]["reason"], "total_borrowings_missing")           # the real gap is still what is reported
 
     def test_sector_name_never_written(self):
         out = json.dumps(self.derive(financial=True, sector="Banks", annual=ann(), balance=bal()))
@@ -405,13 +412,20 @@ class Adapter(unittest.TestCase):
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
             rc = dm.main(["--data-dir", str(e)])
         self.assertEqual(rc, 1)
-        self.assertIn("no real output files", err.getvalue())
+        self.assertIn("no usable fundamentals.json", err.getvalue())
         self.assertEqual(list(e.rglob("*")), [])
 
     def test_refuses_to_overwrite_an_input(self):
         rc, _, err = self.cli("--out", str(self.d / "out" / "fundamentals.json"))
         self.assertEqual(rc, 2)
         self.assertIn("refusing", err)
+
+    def test_no_network_is_attempted(self):
+        import socket
+        from unittest import mock
+        with mock.patch.object(socket, "socket", side_effect=AssertionError("network used")), mock.patch.object(socket, "create_connection", side_effect=AssertionError("network used")):
+            rc, _, _ = self.cli()
+        self.assertEqual(rc, 0)
 
     def test_report_only_writes_nothing(self):
         before = tree_hash(self.d)
@@ -426,6 +440,22 @@ class Adapter(unittest.TestCase):
         self.assertEqual(rc, 0)
         m = {r["symbol"]: r["metrics"] for r in json.loads((self.d / "out" / "derived_metrics.json").read_text())["stocks"]}
         self.assertEqual(m["AAA"]["pe"]["reason"], "price_missing_or_invalid")
+
+    def test_unreadable_inputs_fail_clearly_and_write_nothing(self):
+        for n in ("fundamentals.json", "financials.json"):
+            (self.d / "out" / n).write_text("{broken", encoding="utf-8")
+        before = tree_hash(self.d)
+        rc, _, err = self.cli()
+        self.assertEqual(rc, 1)
+        self.assertIn("unreadable", err)
+        self.assertEqual(tree_hash(self.d), before)
+
+    def test_known_non_financial_sector_label_allows_ratios(self):
+        self.assertIs(dm.classify_financial("Metals"), False)
+        self.assertIs(dm.classify_financial("Private Sector Bank"), True)
+        self.assertIs(dm.classify_financial(None, listed=True), True)
+        self.assertIsNone(dm.classify_financial(None))
+        self.assertIsNone(dm.classify_financial("  "))
 
     def test_unsafe_symbol_never_builds_a_path(self):
         put(self.d / "out" / "stock_directory.json", {"symbols": [{"symbol": "../evil"}, {"symbol": "AAA"}]})

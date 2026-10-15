@@ -250,7 +250,7 @@ def derive_stock(inp, now):
     """inp (all optional):
          provider   {metric: value}            what Upstox returned (fundamentals row)
          basis_ok   ignored
-         financial  bool                       bank / NBFC / insurer etc. (internal; never published)
+         financial  True / False / None            bank-NBFC-insurer / known non-financial / sector unknown (internal; never published; None blocks ROCE, EV/EBITDA, debt/equity)
          price      {"close": x, "date": "YYYY-MM-DD"}
          annual     {"period": "Mar 2026", "basis": ..., "eps_basic", "eps_diluted", "net_profit",
                      "total_revenue_growth", "net_profit_growth", "growth_verified": bool}
@@ -271,7 +271,7 @@ def derive_stock(inp, now):
 
 def _derive(inp, now, out):
     prov = inp.get("provider") if isinstance(inp.get("provider"), dict) else {}
-    financial = bool(inp.get("financial"))
+    financial = inp.get("financial")      # True = bank/NBFC/insurer, False = established non-financial, None = sector unknown
     ann = inp.get("annual") if isinstance(inp.get("annual"), dict) else {}
     bal = inp.get("balance") if isinstance(inp.get("balance"), dict) else {}
     prior = bal.get("prior") if isinstance(bal.get("prior"), dict) else {}
@@ -325,7 +325,7 @@ def _derive(inp, now, out):
                 done(metric, v, r, "FY %s average of %s and %s (%s)" % (bal.get("period"), prior.get("period"), bal.get("period"), bal.get("basis")))
 
     for metric in FINANCIAL_EXCLUDED:
-        if todo(metric) and financial:
+        if todo(metric) and financial is True:
             out[metric] = unavailable("not_applicable_financial_company")
 
     if todo("roce"):
@@ -341,6 +341,10 @@ def _derive(inp, now, out):
     if todo("debt_to_equity"):
         v, r = debt_to_equity_from(bal.get("total_debt"), bal.get("total_equity"))
         done("debt_to_equity", v, r, "FY %s (%s)" % (bal.get("period"), bal.get("basis")))
+
+    for metric in FINANCIAL_EXCLUDED:       # fail closed: a mechanical ratio is only published when the company is positively known not to be financial
+        if out.get(metric, {}).get("source") == "calculated" and financial is not False:
+            out[metric] = unavailable("sector_unknown_cannot_verify_non_financial")
 
     for metric, provider_field, fields in (("revenue_growth", "total_revenue_growth", ("revenue", "total_revenue")),
                                            ("profit_growth", "net_profit_growth", ("profit_after_tax",))):
@@ -390,7 +394,7 @@ def document(rows, now):
             "stocks": rows, "coverage": coverage(rows)}
 
 
-def inputs_from(fund_row, fin_row, qdoc, price, financial=False):
+def inputs_from(fund_row, fin_row, qdoc, price, financial=None):
     """Map the real published shapes (fundamentals row, financials row, quarterly_results stock document, market close) to derive_stock inputs.
     The latest balance sheet is all that is stored, so no prior-year balance is supplied: roe/roa/roce stay unavailable with that reason.
     Provider annual growth is passed on only when its summary value was verified against the detail line (the financials 'checks')."""
@@ -419,6 +423,13 @@ def is_financial_label(label):
     """Internal only: decides the exclusions; the label itself is never written to the output."""
     t = str(label or "").lower()
     return any(w in t for w in FINANCIAL_WORDS)
+
+
+def classify_financial(label, listed=False):
+    """True (listed, or a financial sector label), False (a stated non-financial label), None (unknown: ratios that need the answer stay blocked)."""
+    if listed or is_financial_label(label):
+        return True
+    return False if isinstance(label, str) and label.strip() else None
 
 
 def _load(path):
@@ -468,7 +479,7 @@ def load_inputs(data_dir, financial_symbols=()):
         frow = fund.get(sym) or {}
         close = (dma.get(sym) or {}).get("close")
         price = {"close": close, "date": price_date} if isnum(close) else None
-        financial = sym in fin_set or is_financial_label(frow.get("sector"))
+        financial = classify_financial(frow.get("sector"), sym in fin_set)
         item = inputs_from(frow, fin.get(sym), qdoc, price, financial)
         item["symbol"] = sym
         stocks.append(item)
@@ -515,7 +526,8 @@ def main(argv=None):
         return 2
     doc = run(a.data_dir, a.now, fin)
     if doc["inputs"].get("fundamentals.json") != "present" and doc["inputs"].get("financials.json") != "present":
-        sys.stderr.write("no real output files found under %s/out: nothing to derive from; nothing written\n" % a.data_dir)
+        sys.stderr.write("no usable fundamentals.json or financials.json under %s/out (%s / %s): nothing to derive from; nothing written\n" % (
+            a.data_dir, doc["inputs"].get("fundamentals.json"), doc["inputs"].get("financials.json")))
         return 1
     print(report(doc))
     if not a.report_only:
