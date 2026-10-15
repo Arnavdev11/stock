@@ -195,6 +195,24 @@ class FlowTests(unittest.TestCase):
         self.assertTrue(all("time_period" not in p for p in by["cash-flow"]))
         self.assertTrue(all(p.get("time_period") == "yearly" for p in by["income-statement"]))
 
+    def test_a_stock_that_keeps_failing_goes_to_the_back_of_the_queue(self):
+        today = uc.today()
+        old = {n: {"fetched": "2020-01-01", "schema": fu.SCHEMA_VERSION, "basis": "consolidated", "data": {"period": "Mar 2020"}} for n in ("income", "balance_sheet", "cash_flow")}
+        self.cache.write_text(json.dumps({"stocks": dict(
+            {s: {"isin": "INE_" + s, **json.loads(json.dumps(old))} for s in self.insts if s != "RELIANCE"},
+            RELIANCE={"isin": "INE_RELIANCE", "last_error": "income: no usable data", "last_attempt": today})}))
+        for ep in ("income-statement", "balance-sheet", "cash-flow"):
+            for t in ("consolidated", "standalone"):
+                self.rules[("INE_RELIANCE", ep, t)] = Resp(404, {})
+        with mock.patch.object(fu, "MAX_CALLS_PER_RUN", 3):
+            self.run_main()
+        self.assertEqual(len(self.calls), 3)
+        self.assertNotIn("INE_RELIANCE", {c[0] for c in self.calls})          # the three calls went to a stock that is actually due
+        self.assertEqual(fu.staleness_key({"income": {"fetched": "2026-01-01"}, "last_error": "x", "last_attempt": "2026-10-15"}), "2026-10-15")
+        self.assertEqual(fu.staleness_key({"income": {"fetched": "2026-01-01"}, "balance_sheet": {"fetched": "2026-02-01"}, "cash_flow": {"fetched": "2026-03-01"}}), "2026-01-01")
+        self.assertEqual(fu.staleness_key({"last_attempt": "2026-10-15"}), "")        # an attempt that did not fail never moves a stock back
+        self.assertEqual(fu.staleness_key(None), "")
+
     def test_old_schema_cache_is_refetched_once(self):
         today = uc.today()
         self.cache.write_text(json.dumps({"stocks": {"RELIANCE": {"isin": "INE_RELIANCE", "income": {

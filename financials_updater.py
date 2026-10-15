@@ -261,6 +261,16 @@ def needs_refresh(sec):
     return is_stale(sec.get("fetched"), STATEMENT_MAX_AGE_DAYS) or sec.get("schema") != SCHEMA_VERSION
 
 
+def staleness_key(entry):
+    """What order_stalest sorts on: the oldest statement fetch (never fetched = ""). A stock whose last attempt FAILED counts as if it had been refreshed on the day of that
+    attempt, so a stock Upstox keeps refusing goes to the back of the queue instead of taking the front of every run's budget while thousands of others wait."""
+    e = entry or {}
+    key = min([(e.get(n) or {}).get("fetched") or "" for n, *_ in SECTIONS])
+    if e.get("last_error") and e.get("last_attempt"):
+        key = max(key, e["last_attempt"])
+    return key
+
+
 def main():
     token = get_token()
     cache = json.loads(CACHE_FILE.read_text(encoding="utf-8")) if CACHE_FILE.exists() else {}
@@ -273,7 +283,7 @@ def main():
     except universe.UniverseError as err:
         fail(str(err))
     # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time
-    symbols = universe.order_stalest(symbols, {x: min([((stocks.get(x) or {}).get(n) or {}).get("fetched") or "" for n, *_ in SECTIONS]) for x in symbols})
+    symbols = universe.order_stalest(symbols, {x: staleness_key(stocks.get(x)) for x in symbols})
     log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
     pending = 0
     for sym in symbols:
@@ -287,7 +297,7 @@ def main():
             log(sym, "- not found")
             continue
         e["isin"], e["company_name"] = m["isin"], m["name"]
-        problems = []
+        problems, calls_before = [], api.calls
         for name, path, extra, parser in SECTIONS:
             sec = e.setdefault(name, {})
             if not needs_refresh(sec):
@@ -301,6 +311,8 @@ def main():
             else:
                 sec.update({"data": data, "basis": basis, "fetched": today(), "schema": SCHEMA_VERSION, "error": None})
         e["last_error"] = "; ".join(problems) or None
+        if api.calls > calls_before:
+            e["last_attempt"] = today()          # drives the back-off in staleness_key(): only a FAILED attempt moves a stock back
         log(sym, "- ok" if not problems else "- problem: " + e["last_error"])
 
     if pending:
