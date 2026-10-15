@@ -278,7 +278,25 @@ def stale_copy_observations(reports, ledger, days, counts, holidays, gaps, today
     return out, ignored
 
 
-def assess(days, reports, counts, now, holidays, cfg=GATE, stale_ledger=None, ledger_problems=0):
+def failed_request_records(ledger, days, holidays, gaps, today):
+    """-> (records, ignored). A FAILED REQUEST is a weekday on which NSE gave no usable answer (nse_dates.FAILURE_KINDS): blocked, rate limited, a server error, an HTML/error page,
+    bytes that are not text, or a file dated otherwise than asked for. It is not an answer about the day, so it is never a holiday and never removes a gap; it is listed next to the gap.
+    Records that cannot apply (the day is a known holiday, has a valid file, or is outside the loaded range) are counted in `ignored`, not hidden."""
+    ignored, gapset, out = {"known_holiday": 0, "has_a_valid_file": 0, "outside_loaded_range": 0}, set(gaps), []
+    for iso, rec in sorted(ledger.items()):
+        if iso in holidays:
+            ignored["known_holiday"] += 1
+        elif iso in days:
+            ignored["has_a_valid_file"] += 1
+        elif iso not in gapset:
+            ignored["outside_loaded_range"] += 1
+        else:
+            out.append({"date": iso, "kind": rec["kind"], "attempts": rec["attempts"], "max_attempts": nd.max_attempts(rec["kind"]), "first_seen": rec["first_seen"],
+                        "last_attempt": rec["last_attempt"], "status": nd.request_state(rec), "age_days": (today - dt.date.fromisoformat(iso)).days})
+    return out, ignored
+
+
+def assess(days, reports, counts, now, holidays, cfg=GATE, stale_ledger=None, ledger_problems=0, request_ledger=None, request_ledger_problems=0):
     """Checks everything that must be true before anything is published. Returns the data_quality block; status is 'pass' or 'fail' (with errors)."""
     errors, warnings = [], []
     rejected = [{"file": r["file"], "status": r["status"], "problem": r["problem"]} for r in reports if r["status"] != "ok"]
@@ -330,14 +348,23 @@ def assess(days, reports, counts, now, holidays, cfg=GATE, stale_ledger=None, le
     # that answer is listed next to the gap as an unconfirmed observation (what NSE sent), never as a reason to remove the gap.
     gaps = calendar_gaps(list(days), holidays)
     observed, ignored = stale_copy_observations(reports, stale_ledger or {}, days, counts, holidays, gaps, now.date())
+    failed, failed_ignored = failed_request_records(request_ledger or {}, days, holidays, gaps, now.date())
     recent = [g for g in gaps if g >= (dt.date.fromisoformat(latest) - dt.timedelta(days=400)).isoformat()]
     if recent:
         warnings.append("%d weekday(s) have no file and are not known holidays; averages across them use the days that exist" % len(recent))
     if observed:
         warnings.append("%d of the weekdays without a file were answered by NSE with an earlier trading day's file (an unconfirmed observation of what NSE sent, not proof of a market holiday; "
                         "the day's file may also not have been published): %s" % (len(observed), ", ".join(o["date"] for o in observed[-20:])))
+    if failed:
+        kinds = {}
+        for f in failed:
+            kinds[f["kind"]] = kinds.get(f["kind"], 0) + 1
+        warnings.append("%d weekday(s) without a file had a failed or unusable NSE response (%s): not holidays, still unexplained gaps; each is asked for again at most once a day and only a limited number of times: %s"
+                        % (len(failed), ", ".join("%s %d" % kv for kv in sorted(kinds.items())), ", ".join(f["date"] for f in failed[-20:])))
     if ledger_problems:
         warnings.append("%d invalid line(s) in %s were ignored" % (ledger_problems, nd.STALE_FILE_NAME))
+    if request_ledger_problems:
+        warnings.append("%d invalid line(s) in %s were ignored" % (request_ledger_problems, nd.FAILURE_FILE_NAME))
     for r in reports:
         if r["status"] != "ok":
             warnings.append("file %s rejected: %s" % (r["file"], r["problem"]))
@@ -348,6 +375,7 @@ def assess(days, reports, counts, now, holidays, cfg=GATE, stale_ledger=None, le
                "latest_day_rows": dict(c), "trading_days_loaded": len(days), "first_date": min(days), "unexplained_weekday_gaps": len(gaps),
                "weekday_gaps_with_stale_copy_observation": len(observed), "weekday_gaps_without_observation": len(gaps) - len(observed), "nse_stale_copy_observations": observed[:60],
                "nse_stale_copy_records_ignored": dict(ignored, invalid_lines=ledger_problems),
+               "weekday_gaps_with_failed_nse_response": len(failed), "nse_failed_responses": failed[:60], "nse_failed_response_records_ignored": dict(failed_ignored, invalid_lines=request_ledger_problems),
                "checks": {"dates_valid_and_not_future": latest <= now.date().isoformat(), "series_filter": "EQ only", "duplicates_resolved": True,
                           "universe_vs_previous_day": "checked", "schema_columns": "checked", "percentages": "checked"}})
     if errors:
@@ -512,7 +540,9 @@ def run(root=ROOT, now=None, cfg=GATE):
     holidays = read_holidays(Path(root) / "data" / "holidays.txt")
     days, reports, counts = load_days(raw_dir, now.date(), cfg)
     ledger, ledger_problems = nd.read_observations(Path(root) / "data" / nd.STALE_FILE_NAME, now.date())
-    dq, latest = assess(days, reports, counts, now, holidays, cfg, stale_ledger=ledger, ledger_problems=len(ledger_problems))
+    failures, failure_problems = nd.read_failures(Path(root) / "data" / nd.FAILURE_FILE_NAME, now.date())
+    dq, latest = assess(days, reports, counts, now, holidays, cfg, stale_ledger=ledger, ledger_problems=len(ledger_problems),
+                        request_ledger=failures, request_ledger_problems=len(failure_problems))
     if dq["status"] != "pass":
         return 1, ["data-quality gate FAILED: " + e for e in dq["errors"]]
     docs = compute(days, latest, dq, now, md.DEFAULTS, holidays)

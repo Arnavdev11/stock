@@ -37,6 +37,7 @@ import nse_dates as nd
 ROOT = Path(os.environ.get("DATA_DIR", "."))
 RAW, OUT = ROOT / "data" / "raw", ROOT / "out"
 HOLIDAYS = ROOT / "data" / "holidays.txt"
+FAILED_REQUESTS = ROOT / "data" / nd.FAILURE_FILE_NAME   # days on which NSE gave no usable answer (blocked, rate limited, server error, HTML page ...): never a holiday, retried a limited number of times
 STALE_COPIES = ROOT / "data" / nd.STALE_FILE_NAME      # unconfirmed OBSERVATIONS of days on which NSE answered with an earlier day's file (never saved, never used, never a holiday)
 ARCHIVE = "https://archives.nseindia.com"
 BHAV_URL = ARCHIVE + "/products/content/sec_bhavdata_full_{:%d%m%Y}.csv"
@@ -72,8 +73,17 @@ def make_session():
 def download_missing(s, today=None):
     """Download every missing weekday file. A response is saved under the requested day ONLY if every row inside it is dated that day: a stale copy (NSE's answer for a
     holiday: the previous trading day's file) or any other mismatch is never saved, never relabelled and never used (see nse_dates.py).
-    A stale copy older than 3 days is kept as an unconfirmed OBSERVATION, not as a holiday: it is asked for again after 7 days (so a file that appears later is saved normally),
-    and only after 3 identical answers is it left alone."""
+
+    What each kind of answer means (nse_dates.classify_response), for a day more than 3 days old:
+      404 (not_found)         the project's existing signal that there is no file -> the day is added to data/holidays.txt, the repository's authoritative holiday list.
+                              This is the ONLY way this function adds a holiday.
+      stale copy              an unconfirmed OBSERVATION (data/nse_stale_copy_days.txt), asked again after 7 days, left alone after 3 identical answers. Never a holiday.
+      403 / 429 / 5xx / other status / a 200 that is not a bhavcopy CSV (an HTML or error page) / undecodable bytes / a file dated otherwise than asked for
+                              a FAILED REQUEST (data/nse_failed_requests.txt): not a holiday, the weekday stays an unexplained gap, asked again at most once a day and only a limited
+                              number of times (4; 8 for rate limits and server errors), then left alone and reported.
+    A connection error says nothing about the day and is not recorded (the next run asks again).
+    A day more than 3 days old is judged this way; a more recent one may simply not be published yet and is asked for again on the next run without being recorded.
+    A file that exists is never requested again, and a file saved by a later request clears the day's records."""
     RAW.mkdir(parents=True, exist_ok=True)
     known_holidays = set(HOLIDAYS.read_text().split()) if HOLIDAYS.exists() else set()
     today = today or dt.date.today()
@@ -81,6 +91,10 @@ def download_missing(s, today=None):
     for n, why in problems:
         log("ignored line %d of %s: %s" % (n, STALE_COPIES.name, why))
     changed = bool(problems)          # a rewrite drops the invalid lines (they were logged above)
+    failed, fproblems = nd.read_failures(FAILED_REQUESTS, today)
+    for n, why in fproblems:
+        log("ignored line %d of %s: %s" % (n, FAILED_REQUESTS.name, why))
+    fchanged = bool(fproblems)
     new = 0
     for i in range(DAYS_BACK, -1, -1):
         d = today - dt.timedelta(days=i)
@@ -90,21 +104,17 @@ def download_missing(s, today=None):
             continue
         if iso in seen and not nd.due_for_recheck(seen[iso], today):
             continue                  # an observation that was checked recently, or already seen 3 times
+        if iso in failed and not nd.request_due(failed[iso], today):
+            continue                  # a failed request that was tried today, or has used up its attempts
         try:
             r = s.get(BHAV_URL.format(d), timeout=30)
-            text, enc = nd.decode_text(r.content) if r.status_code == 200 else (None, None)
-            ok = text is not None and "SYMBOL" in text[:300]          # on the decoded text: UTF-16 bytes do not contain b"SYMBOL"
-            undecodable = r.status_code == 200 and text is None       # a file that arrived but cannot be read is a problem to see, not a sign of a holiday
         except requests.RequestException as e:
             log("network problem on", d, e)
-            ok = False
             time.sleep(5)
             continue
-        if undecodable:
-            log("NOT saved", f.name, "- the response could not be decoded as text (UTF-8, UTF-16/32 with a BOM or Windows-1252); not used")
-            if os.environ.get("GITHUB_ACTIONS"):
-                print("::warning title=NSE response not saved::%s: the response could not be decoded" % f.name, flush=True)
-        elif ok:
+        kind, text, enc = nd.classify_response(r.status_code, r.content)
+        old = nd.old_enough(iso, today)
+        if kind == "data":
             verdict, served = nd.classify(nd.dates_of_text(text), d)
             if verdict == "match":
                 if enc in ("utf-8", "utf-8-sig"):
@@ -118,25 +128,47 @@ def download_missing(s, today=None):
                     del seen[iso]
                     changed = True
                     log("the file for", iso, "is now available: its earlier stale-copy observation is dropped")
+                if iso in failed:
+                    del failed[iso]
+                    fchanged = True
+                    log("the file for", iso, "is now available: its earlier failed-request record is dropped")
             elif verdict == "stale_copy":
-                if nd.old_enough(iso, today):
+                if old:
                     rec = nd.observe(seen, iso, served, today)
                     changed = True
                     log("NOT saved", f.name, "- NSE answered with the file dated", served, "(check %d of %d; an unconfirmed observation, not a confirmed holiday)" % (rec["checks"], nd.MAX_STALE_CHECKS))
+                    if iso in failed:
+                        del failed[iso]       # a usable (if stale) answer replaces the earlier failure
+                        fchanged = True
                 else:
                     log("NOT saved", f.name, "- NSE answered with the file dated", served, "; the day may not be published yet, will ask again")
             else:
-                log("NOT saved", f.name, "- the dates inside the response do not match the day asked for (or could not be read); not used")
-                if os.environ.get("GITHUB_ACTIONS"):
-                    print("::warning title=NSE response not saved::%s: the dates inside do not match the requested day" % f.name, flush=True)
-        elif (today - d).days > 3:  # older than 3 days and missing = market holiday
-            known_holidays.add(iso)
+                kind = "mismatch"
+        if kind == "not_found":
+            if old:                   # older than 3 days and missing = market holiday (the project's existing rule, unchanged for a 404)
+                known_holidays.add(iso)
+                if iso in failed:
+                    del failed[iso]
+                    fchanged = True
+        elif kind != "data":
+            if kind == "mismatch":
+                log("NOT saved", f.name, "- the dates inside the response do not match the day asked for (or are not a believable earlier trading day, or could not be read); not used")
+            else:
+                log("NOT saved", f.name, "- no usable answer (%s, HTTP %s); not a holiday" % (kind, r.status_code))
+            if os.environ.get("GITHUB_ACTIONS"):
+                print("::warning title=NSE response not saved::%s: %s" % (f.name, kind), flush=True)
+            if old:
+                rec = nd.record_failure(failed, iso, kind, today)
+                fchanged = True
+                log("failed request recorded: %s attempt %d of %d%s" % (kind, rec["attempts"], nd.max_attempts(kind), "" if nd.request_due(rec, today + dt.timedelta(days=1)) else " (no more automatic retries)"))
         time.sleep(WAIT)
     HOLIDAYS.parent.mkdir(parents=True, exist_ok=True)
     HOLIDAYS.write_text("\n".join(sorted(known_holidays)))
     if changed:
         nd.write_observations(STALE_COPIES, seen)
-    log("new daily files:", new, "| stale-copy observations on record (unconfirmed, not used):", len(seen))
+    if fchanged:
+        nd.write_failures(FAILED_REQUESTS, failed)
+    log("new daily files:", new, "| stale-copy observations on record (unconfirmed, not used):", len(seen), "| failed requests on record (not holidays):", len(failed))
 
 
 # ---------------------------------------------------------------- 2. calculations
