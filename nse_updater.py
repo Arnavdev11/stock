@@ -32,9 +32,12 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+import nse_dates as nd
+
 ROOT = Path(os.environ.get("DATA_DIR", "."))
 RAW, OUT = ROOT / "data" / "raw", ROOT / "out"
 HOLIDAYS = ROOT / "data" / "holidays.txt"
+STALE_COPIES = ROOT / "data" / nd.STALE_FILE_NAME      # days on which NSE answered with the previous trading day's file (not saved, not used)
 ARCHIVE = "https://archives.nseindia.com"
 BHAV_URL = ARCHIVE + "/products/content/sec_bhavdata_full_{:%d%m%Y}.csv"
 BULK_URL = ARCHIVE + "/content/equities/bulk.csv"
@@ -66,15 +69,19 @@ def make_session():
 
 
 # ---------------------------------------------------------------- 1. download daily files
-def download_missing(s):
+def download_missing(s, today=None):
+    """Download every missing weekday file. A response is saved under the requested day ONLY if every row inside it is dated that day: a stale copy (NSE's answer for a
+    holiday: the previous trading day's file) or any other mismatch is never saved, never relabelled and never used (see nse_dates.py)."""
     RAW.mkdir(parents=True, exist_ok=True)
     known_holidays = set(HOLIDAYS.read_text().split()) if HOLIDAYS.exists() else set()
-    today = dt.date.today()
+    stale = nd.read_stale(STALE_COPIES)
+    stale_before = dict(stale)
+    today = today or dt.date.today()
     new = 0
     for i in range(DAYS_BACK, -1, -1):
         d = today - dt.timedelta(days=i)
         f = RAW / f"bhav_{d:%Y%m%d}.csv"
-        if d.weekday() >= 5 or f.exists() or d.isoformat() in known_holidays:
+        if d.weekday() >= 5 or f.exists() or d.isoformat() in known_holidays or d.isoformat() in stale:
             continue
         try:
             r = s.get(BHAV_URL.format(d), timeout=30)
@@ -85,15 +92,29 @@ def download_missing(s):
             time.sleep(5)
             continue
         if ok:
-            f.write_bytes(r.content)
-            new += 1
-            log("saved", f.name)
+            verdict, served = nd.classify(nd.response_dates(r.content), d)
+            if verdict == "match":
+                f.write_bytes(r.content)
+                new += 1
+                log("saved", f.name)
+            elif verdict == "stale_copy":
+                if nd.old_enough(d.isoformat(), today):
+                    stale[d.isoformat()] = served
+                    log("NOT saved", f.name, "- NSE answered with the file dated", served, "(no session on", d.isoformat() + "); recorded, not used")
+                else:
+                    log("NOT saved", f.name, "- NSE answered with the file dated", served, "; the day may not be published yet, will ask again")
+            else:
+                log("NOT saved", f.name, "- the dates inside the response do not match the day asked for; not used")
+                if os.environ.get("GITHUB_ACTIONS"):
+                    print("::warning title=NSE response not saved::%s: the dates inside do not match the requested day" % f.name, flush=True)
         elif (today - d).days > 3:  # older than 3 days and missing = market holiday
             known_holidays.add(d.isoformat())
         time.sleep(WAIT)
     HOLIDAYS.parent.mkdir(parents=True, exist_ok=True)
     HOLIDAYS.write_text("\n".join(sorted(known_holidays)))
-    log("new daily files:", new)
+    if stale != stale_before:
+        nd.write_stale(STALE_COPIES, stale)
+    log("new daily files:", new, "| days answered with an earlier day's file (recorded, not used):", len(stale))
 
 
 # ---------------------------------------------------------------- 2. calculations

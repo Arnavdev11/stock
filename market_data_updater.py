@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 import market_derive as md
+import nse_dates as nd
 import validate_market_outputs as vmo
 
 ROOT = Path(os.environ.get("DATA_DIR", "."))
@@ -141,7 +142,8 @@ def parse_bhav_file(path, name_date):
     rep["rows"], rep["missing_optional"] = len(out), [c for c in OPTIONAL_COLS if c not in header]
     wrong = sum(1 for r in out if parse_nse_date(r.get("DATE1")) != name_date)
     if wrong:
-        return None, dict(rep, status="date_mismatch", problem="%d row(s) are not dated %s" % (wrong, name_date))
+        verdict, served = nd.classify([parse_nse_date(r.get("DATE1")) for r in out], name_date)
+        return None, dict(rep, status="date_mismatch", problem="%d row(s) are not dated %s" % (wrong, name_date), stale_copy_of=served if verdict == "stale_copy" else None)
     return out, rep
 
 
@@ -243,7 +245,7 @@ def load_days(raw_dir, today_ist, cfg=GATE):
 
 
 # ---------------------------------------------------------------- 2. the data-quality gate
-def assess(days, reports, counts, now, holidays, cfg=GATE):
+def assess(days, reports, counts, now, holidays, cfg=GATE, stale_days=frozenset()):
     """Checks everything that must be true before anything is published. Returns the data_quality block; status is 'pass' or 'fail' (with errors)."""
     errors, warnings = [], []
     rejected = [{"file": r["file"], "status": r["status"], "problem": r["problem"]} for r in reports if r["status"] != "ok"]
@@ -291,10 +293,16 @@ def assess(days, reports, counts, now, holidays, cfg=GATE):
                    ("duplicate_identical", "identical duplicate rows (removed)")):
         if c[k]:
             warnings.append("%d %s on %s" % (c[k], msg, latest))
-    gaps = calendar_gaps(list(days), holidays)
+    # A weekday for which NSE only ever answered with an earlier day's file (a market holiday) is REPORTED as such, not hidden: it is listed below and its file stays rejected.
+    # Only a day old enough that "not published yet" is no longer an explanation counts; every other missing weekday stays an unexplained gap.
+    stale_copy = {d for d in stale_days if nd.old_enough(d, now.date())} | {r["date"] for r in reports if r.get("stale_copy_of") and r.get("date") and nd.old_enough(r["date"], now.date())}
+    stale_copy -= set(days)                       # a day with a good file is never a stale-copy day
+    gaps = calendar_gaps(list(days), set(holidays) | stale_copy)
     recent = [g for g in gaps if g >= (dt.date.fromisoformat(latest) - dt.timedelta(days=400)).isoformat()]
     if recent:
         warnings.append("%d weekday(s) have no file and are not known holidays; averages across them use the days that exist" % len(recent))
+    if stale_copy:
+        warnings.append("%d weekday(s) were market holidays on which NSE answered with the previous trading day's file (not used as a trading day): %s" % (len(stale_copy), ", ".join(sorted(stale_copy)[-20:])))
     for r in reports:
         if r["status"] != "ok":
             warnings.append("file %s rejected: %s" % (r["file"], r["problem"]))
@@ -302,7 +310,7 @@ def assess(days, reports, counts, now, holidays, cfg=GATE):
     if missing_opt:
         warnings.append("optional columns missing from some files: " + ", ".join(missing_opt))
     dq.update({"latest_date": latest, "expected_latest_trading_day": expected, "source_is_latest_trading_day": is_latest, "stale_days": max(0, stale),
-               "latest_day_rows": dict(c), "trading_days_loaded": len(days), "first_date": min(days), "unexplained_weekday_gaps": len(gaps),
+               "latest_day_rows": dict(c), "trading_days_loaded": len(days), "first_date": min(days), "unexplained_weekday_gaps": len(gaps), "stale_copy_days": sorted(stale_copy),
                "checks": {"dates_valid_and_not_future": latest <= now.date().isoformat(), "series_filter": "EQ only", "duplicates_resolved": True,
                           "universe_vs_previous_day": "checked", "schema_columns": "checked", "percentages": "checked"}})
     if errors:
@@ -466,7 +474,7 @@ def run(root=ROOT, now=None, cfg=GATE):
     now = now or dt.datetime.now(IST)
     holidays = read_holidays(Path(root) / "data" / "holidays.txt")
     days, reports, counts = load_days(raw_dir, now.date(), cfg)
-    dq, latest = assess(days, reports, counts, now, holidays, cfg)
+    dq, latest = assess(days, reports, counts, now, holidays, cfg, stale_days=set(nd.read_stale(Path(root) / "data" / nd.STALE_FILE_NAME)))
     if dq["status"] != "pass":
         return 1, ["data-quality gate FAILED: " + e for e in dq["errors"]]
     docs = compute(days, latest, dq, now, md.DEFAULTS, holidays)
