@@ -37,7 +37,7 @@ import nse_dates as nd
 ROOT = Path(os.environ.get("DATA_DIR", "."))
 RAW, OUT = ROOT / "data" / "raw", ROOT / "out"
 HOLIDAYS = ROOT / "data" / "holidays.txt"
-STALE_COPIES = ROOT / "data" / nd.STALE_FILE_NAME      # days on which NSE answered with the previous trading day's file (not saved, not used)
+STALE_COPIES = ROOT / "data" / nd.STALE_FILE_NAME      # unconfirmed OBSERVATIONS of days on which NSE answered with an earlier day's file (never saved, never used, never a holiday)
 ARCHIVE = "https://archives.nseindia.com"
 BHAV_URL = ARCHIVE + "/products/content/sec_bhavdata_full_{:%d%m%Y}.csv"
 BULK_URL = ARCHIVE + "/content/equities/bulk.csv"
@@ -71,50 +71,72 @@ def make_session():
 # ---------------------------------------------------------------- 1. download daily files
 def download_missing(s, today=None):
     """Download every missing weekday file. A response is saved under the requested day ONLY if every row inside it is dated that day: a stale copy (NSE's answer for a
-    holiday: the previous trading day's file) or any other mismatch is never saved, never relabelled and never used (see nse_dates.py)."""
+    holiday: the previous trading day's file) or any other mismatch is never saved, never relabelled and never used (see nse_dates.py).
+    A stale copy older than 3 days is kept as an unconfirmed OBSERVATION, not as a holiday: it is asked for again after 7 days (so a file that appears later is saved normally),
+    and only after 3 identical answers is it left alone."""
     RAW.mkdir(parents=True, exist_ok=True)
     known_holidays = set(HOLIDAYS.read_text().split()) if HOLIDAYS.exists() else set()
-    stale = nd.read_stale(STALE_COPIES)
-    stale_before = dict(stale)
     today = today or dt.date.today()
+    seen, problems = nd.read_observations(STALE_COPIES, today)
+    for n, why in problems:
+        log("ignored line %d of %s: %s" % (n, STALE_COPIES.name, why))
+    changed = bool(problems)          # a rewrite drops the invalid lines (they were logged above)
     new = 0
     for i in range(DAYS_BACK, -1, -1):
         d = today - dt.timedelta(days=i)
+        iso = d.isoformat()
         f = RAW / f"bhav_{d:%Y%m%d}.csv"
-        if d.weekday() >= 5 or f.exists() or d.isoformat() in known_holidays or d.isoformat() in stale:
+        if d.weekday() >= 5 or f.exists() or iso in known_holidays:
             continue
+        if iso in seen and not nd.due_for_recheck(seen[iso], today):
+            continue                  # an observation that was checked recently, or already seen 3 times
         try:
             r = s.get(BHAV_URL.format(d), timeout=30)
-            ok = r.status_code == 200 and b"SYMBOL" in r.content[:300]
+            text, enc = nd.decode_text(r.content) if r.status_code == 200 else (None, None)
+            ok = text is not None and "SYMBOL" in text[:300]          # on the decoded text: UTF-16 bytes do not contain b"SYMBOL"
+            undecodable = r.status_code == 200 and text is None       # a file that arrived but cannot be read is a problem to see, not a sign of a holiday
         except requests.RequestException as e:
             log("network problem on", d, e)
             ok = False
             time.sleep(5)
             continue
-        if ok:
-            verdict, served = nd.classify(nd.response_dates(r.content), d)
+        if undecodable:
+            log("NOT saved", f.name, "- the response could not be decoded as text (UTF-8, UTF-16/32 with a BOM or Windows-1252); not used")
+            if os.environ.get("GITHUB_ACTIONS"):
+                print("::warning title=NSE response not saved::%s: the response could not be decoded" % f.name, flush=True)
+        elif ok:
+            verdict, served = nd.classify(nd.dates_of_text(text), d)
             if verdict == "match":
-                f.write_bytes(r.content)
+                if enc in ("utf-8", "utf-8-sig"):
+                    f.write_bytes(r.content)             # byte for byte
+                else:
+                    f.write_bytes(text.encode("utf-8"))  # the readers expect UTF-8: same text, same dates, other encoding
+                    log("re-encoded", f.name, "from", enc, "to UTF-8")
                 new += 1
                 log("saved", f.name)
+                if iso in seen:
+                    del seen[iso]
+                    changed = True
+                    log("the file for", iso, "is now available: its earlier stale-copy observation is dropped")
             elif verdict == "stale_copy":
-                if nd.old_enough(d.isoformat(), today):
-                    stale[d.isoformat()] = served
-                    log("NOT saved", f.name, "- NSE answered with the file dated", served, "(no session on", d.isoformat() + "); recorded, not used")
+                if nd.old_enough(iso, today):
+                    rec = nd.observe(seen, iso, served, today)
+                    changed = True
+                    log("NOT saved", f.name, "- NSE answered with the file dated", served, "(check %d of %d; an unconfirmed observation, not a confirmed holiday)" % (rec["checks"], nd.MAX_STALE_CHECKS))
                 else:
                     log("NOT saved", f.name, "- NSE answered with the file dated", served, "; the day may not be published yet, will ask again")
             else:
-                log("NOT saved", f.name, "- the dates inside the response do not match the day asked for; not used")
+                log("NOT saved", f.name, "- the dates inside the response do not match the day asked for (or could not be read); not used")
                 if os.environ.get("GITHUB_ACTIONS"):
                     print("::warning title=NSE response not saved::%s: the dates inside do not match the requested day" % f.name, flush=True)
         elif (today - d).days > 3:  # older than 3 days and missing = market holiday
-            known_holidays.add(d.isoformat())
+            known_holidays.add(iso)
         time.sleep(WAIT)
     HOLIDAYS.parent.mkdir(parents=True, exist_ok=True)
     HOLIDAYS.write_text("\n".join(sorted(known_holidays)))
-    if stale != stale_before:
-        nd.write_stale(STALE_COPIES, stale)
-    log("new daily files:", new, "| days answered with an earlier day's file (recorded, not used):", len(stale))
+    if changed:
+        nd.write_observations(STALE_COPIES, seen)
+    log("new daily files:", new, "| stale-copy observations on record (unconfirmed, not used):", len(seen))
 
 
 # ---------------------------------------------------------------- 2. calculations
