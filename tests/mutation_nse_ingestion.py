@@ -42,6 +42,7 @@ def run(i, m):
     tmp = Path(tempfile.mkdtemp())
     try:
         shutil.copy(ROOT / "test_nse_ingestion.py", tmp / "test_nse_ingestion.py")
+        shutil.copy(ROOT / "nse_dates.py", tmp / "nse_dates.py")      # nse_updater.py imports it
         (tmp / U).write_text(src.replace(old, new, 1))
         r = subprocess.run([sys.executable, "-m", "unittest", "-f", "test_nse_ingestion"], cwd=tmp, capture_output=True, text=True, timeout=600)
         return i, name, "killed" if r.returncode != 0 else "SURVIVED"
