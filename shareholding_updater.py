@@ -1035,6 +1035,21 @@ def count_values(ledger):
 
 
 # ---------------------------------------------------------------- main
+FOLLOW_UNIVERSE_ENV = "SHAREHOLDING_FOLLOW_UNIVERSE"
+
+
+def collection_symbols(env=None):
+    """The stocks this NSE/XBRL collector may read. It is deliberately NOT tied to the size of universe.json: the filings come from NSE, and widening that collection to the whole
+    coverage universe is a separate decision (terms and volume review), so building or growing universe.json must never widen it by itself.
+    Default (always, whether or not STOCKLENS_UNIVERSE_FILE is set): the 10 development stocks plus the five-stock research test batch - exactly what a run did before any universe.json existed.
+    Explicit opt-in: SHAREHOLDING_FOLLOW_UNIVERSE set to exactly "yes" follows the configured universe (a bad universe file then stops the run), as before."""
+    env = os.environ if env is None else env
+    if (env.get(FOLLOW_UNIVERSE_ENV) or "").strip() == "yes":
+        return research_test_batch.extend(universe.load(env), env)
+    base = universe.fallback_symbols()
+    return base + [s for s in research_test_batch.SYMBOLS if s not in base]
+
+
 def main():
     day = today()
     try:
@@ -1045,7 +1060,7 @@ def main():
         return 1
     ledger = copy.deepcopy(old)
     try:
-        uni = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
+        uni = collection_symbols()      # bounded unless SHAREHOLDING_FOLLOW_UNIVERSE=yes: the size of universe.json never widens this collector
     except universe.UniverseError as e:
         print("::error::" + str(e))
         return 1
@@ -1065,6 +1080,8 @@ def main():
     wanted = universe.order_stalest(wanted, {x: _last(x) for x in wanted})
     wanted = wanted[:universe.budget("SHAREHOLDING_MAX_STOCKS", len(wanted))]
     log("Ledger source:", kind, "- universe:", len(uni), "- stocks in this run:", len(wanted), "- download budget:", budget[0])
+    if universe.configured_path() and (os.environ.get(FOLLOW_UNIVERSE_ENV) or "").strip() != "yes":
+        log("A coverage universe is configured but this collector does not follow it (it stays on the %d bounded stocks); set %s=yes to follow it." % (len(uni), FOLLOW_UNIVERSE_ENV))
     for sym in wanted:
         before = copy.deepcopy(ledger["stocks"].get(sym))
         try:
