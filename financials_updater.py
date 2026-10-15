@@ -25,6 +25,7 @@ CACHE_FILE = ROOT / "data" / "financials_cache.json"
 OUT_FILE = ROOT / "out" / "financials.json"
 MAX_CALLS_PER_RUN = universe.budget("FINANCIALS_MAX_CALLS", 120)   # a NIFTY 500 fill is set by the workflow
 STATEMENT_MAX_AGE_DAYS = 30
+FAILURE_BACKOFF_DAYS = 3      # a stock whose last attempt FAILED is not asked for again for this many days (then it is retried, and again after each further failure)
 SCHEMA_VERSION = 2            # cached sections with another version are refetched once
 CASHFLOW_PATH = "cash-flow"   # confirmed: /v2/fundamentals/{ISIN}/cash-flow
 
@@ -261,6 +262,13 @@ def needs_refresh(sec):
     return is_stale(sec.get("fetched"), STATEMENT_MAX_AGE_DAYS) or sec.get("schema") != SCHEMA_VERSION
 
 
+def in_backoff(entry):
+    """True while a stock's last attempt failed less than FAILURE_BACKOFF_DAYS ago. Only a failure (last_error set) backs a stock off; running out of budget is not a failure.
+    Nothing is marked fetched and nothing is excluded for good: after the back-off the stock is simply due again."""
+    e = entry or {}
+    return bool(e.get("last_error")) and not is_stale(e.get("last_attempt"), FAILURE_BACKOFF_DAYS)
+
+
 def staleness_key(entry):
     """What order_stalest sorts on: the oldest statement fetch (never fetched = ""). A stock whose last attempt FAILED counts as if it had been refreshed on the day of that
     attempt, so a stock Upstox keeps refusing goes to the back of the queue instead of taking the front of every run's budget while thousands of others wait."""
@@ -285,8 +293,11 @@ def main():
     # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time
     symbols = universe.order_stalest(symbols, {x: staleness_key(stocks.get(x)) for x in symbols})
     log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
-    pending = 0
+    pending = backed_off = 0
     for sym in symbols:
+        if in_backoff(stocks.get(sym)):
+            backed_off += 1                  # failed recently: costs no call, keeps whatever it had, comes back after FAILURE_BACKOFF_DAYS
+            continue
         if api.calls >= MAX_CALLS_PER_RUN:
             pending += 1                     # not reached this run: not an error, keeps its previous data, goes first next time
             continue
@@ -315,6 +326,8 @@ def main():
             e["last_attempt"] = today()          # drives the back-off in staleness_key(): only a FAILED attempt moves a stock back
         log(sym, "- ok" if not problems else "- problem: " + e["last_error"])
 
+    if backed_off:
+        log("Waiting out a failure back-off (%d days) in this run:" % FAILURE_BACKOFF_DAYS, backed_off, "stock(s)")
     if pending:
         log("Not reached in this run (call budget):", pending, "stock(s)")
     rows, errors, dates = [], [], []

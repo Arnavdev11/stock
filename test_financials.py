@@ -1,4 +1,4 @@
-import contextlib, copy, io, json, os, sys, tempfile, unittest
+import contextlib, copy, datetime, io, json, os, sys, tempfile, types, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -137,6 +137,12 @@ class CashFlowTests(unittest.TestCase):
         self.assertEqual((r["period"], r["operating"], r["financing"]), ("Mar 2026", 111.0, 333.0))
 
 
+class FakeDate(datetime.date):
+    now = datetime.date(2026, 10, 1)
+    @classmethod
+    def today(cls): return cls.now
+
+
 class Resp:
     def __init__(self, code, body=None): self.status_code, self._b, self.content = code, body, b"[]"
     def json(self): return self._b
@@ -212,6 +218,89 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(fu.staleness_key({"income": {"fetched": "2026-01-01"}, "balance_sheet": {"fetched": "2026-02-01"}, "cash_flow": {"fetched": "2026-03-01"}}), "2026-01-01")
         self.assertEqual(fu.staleness_key({"last_attempt": "2026-10-15"}), "")        # an attempt that did not fail never moves a stock back
         self.assertEqual(fu.staleness_key(None), "")
+
+    # ---- failure back-off (FAILURE_BACKOFF_DAYS): a failing stock waits, is retried afterwards, and never takes the budget of the others
+    D0 = datetime.date(2026, 10, 1)
+
+    def on_day(self, offset):
+        FakeDate.now = self.D0 + datetime.timedelta(days=offset)
+        p = mock.patch.object(uc, "dt", types.SimpleNamespace(date=FakeDate)); p.start(); self.addCleanup(p.stop)
+
+    def fail_reliance(self):
+        for ep in ("income-statement", "balance-sheet", "cash-flow"):
+            for t in ("consolidated", "standalone"):
+                self.rules[("INE_RELIANCE", ep, t)] = Resp(404, {})
+
+    def rel_calls(self): return sum(1 for c in self.calls if c[0] == "INE_RELIANCE")
+
+    def cache_entry(self, sym): return json.loads(self.cache.read_text())["stocks"][sym]
+
+    def test_repeated_failures_wait_out_the_back_off_then_are_retried(self):
+        self.fail_reliance(); self.on_day(0)
+        self.run_main()
+        self.assertEqual(self.rel_calls(), 6)                                    # 3 statements x (consolidated + standalone)
+        e = self.cache_entry("RELIANCE")
+        self.assertTrue(e["last_error"]); self.assertEqual(e["last_attempt"], "2026-10-01")
+        self.assertTrue(all("fetched" not in (e.get(n) or {}) for n in ("income", "balance_sheet", "cash_flow")))    # a failure is never recorded as a fetch
+        doc = self.strict()
+        self.assertNotIn("RELIANCE", [s["symbol"] for s in doc["stocks"]])        # no data, so no row; the failure is listed
+        self.assertTrue(any(x["symbol"] == "RELIANCE" for x in doc["errors"]))
+        for offset in (1, 2):                                                    # still inside the back-off: not asked for at all
+            self.calls.clear(); self.on_day(offset); log = self.run_main()
+            self.assertEqual(self.rel_calls(), 0)
+            self.assertIn("failure back-off", log)
+        self.calls.clear(); self.on_day(3); self.run_main()
+        self.assertEqual(self.rel_calls(), 6)                                    # retried after FAILURE_BACKOFF_DAYS
+        self.assertEqual(self.cache_entry("RELIANCE")["last_attempt"], "2026-10-04")
+        self.calls.clear(); self.on_day(4); self.run_main()
+        self.assertEqual(self.rel_calls(), 0)                                    # failed again, so it waits again: the back-off restarts
+
+    def test_a_stock_recovers_after_the_back_off(self):
+        self.fail_reliance(); self.on_day(0); self.run_main()
+        for ep in ("income-statement", "balance-sheet", "cash-flow"):
+            for t in ("consolidated", "standalone"):
+                self.rules.pop(("INE_RELIANCE", ep, t))                          # the provider recovers
+        self.calls.clear(); self.on_day(2); self.run_main()
+        self.assertEqual(self.rel_calls(), 0)                                    # recovery is only noticed after the back-off
+        self.calls.clear(); self.on_day(3); self.run_main()
+        self.assertEqual(self.rel_calls(), 3)
+        e = self.cache_entry("RELIANCE")
+        self.assertIsNone(e["last_error"])
+        self.assertTrue(all(e[n]["fetched"] == "2026-10-04" for n in ("income", "balance_sheet", "cash_flow")))
+        self.assertIn("RELIANCE", [s["symbol"] for s in self.strict()["stocks"]])
+        self.calls.clear(); self.on_day(4); self.run_main()
+        self.assertEqual(self.calls, [])                                         # recovered and fresh: no further calls
+
+    def test_a_backed_off_stock_costs_no_budget(self):
+        self.fail_reliance(); self.on_day(0); self.run_main()
+        c = json.loads(self.cache.read_text()); c["stocks"]["INFY"]["income"]["fetched"] = "2020-01-01"; self.cache.write_text(json.dumps(c))
+        self.calls.clear(); self.on_day(1)
+        with mock.patch.object(fu, "MAX_CALLS_PER_RUN", 1):
+            self.run_main()
+        self.assertEqual([c[0] for c in self.calls], ["INE_INFY"])               # the single allowed call went to the stock that is due
+
+    def test_running_out_of_budget_is_not_a_failure_and_the_next_run_resumes(self):
+        self.on_day(0)
+        with mock.patch.object(fu, "MAX_CALLS_PER_RUN", 4):                      # one stock (3 calls) plus one call of the next
+            self.run_main()
+        self.assertEqual(len(self.calls), 4)
+        c = json.loads(self.cache.read_text())["stocks"]
+        self.assertTrue(all(not in_ for in_ in (fu.in_backoff(e) for e in c.values())))     # nobody is backed off for a budget cut
+        self.assertTrue(all(not e.get("last_error") or e["last_error"].startswith("Symbol not found") for e in c.values()))     # no failure was recorded
+        self.assertTrue(all("last_attempt" not in e or not e.get("last_error") for e in c.values()))
+        self.calls.clear(); self.on_day(1)
+        self.run_main()                                                          # the rest, next day, with no back-off in the way
+        self.assertEqual(len({s["symbol"] for s in self.strict()["stocks"]}), 9)
+
+    def test_the_back_off_rule(self):
+        self.on_day(0)
+        self.assertFalse(fu.in_backoff(None)); self.assertFalse(fu.in_backoff({}))
+        self.assertFalse(fu.in_backoff({"last_attempt": "2026-10-01"}))          # an attempt that did not fail never backs off
+        self.assertTrue(fu.in_backoff({"last_error": "x", "last_attempt": "2026-10-01"}))
+        self.assertFalse(fu.in_backoff({"last_error": "x"}))                     # no attempt date: due
+        self.assertFalse(fu.in_backoff({"last_error": "x", "last_attempt": "garbage"}))
+        self.on_day(fu.FAILURE_BACKOFF_DAYS - 1); self.assertTrue(fu.in_backoff({"last_error": "x", "last_attempt": "2026-10-01"}))
+        self.on_day(fu.FAILURE_BACKOFF_DAYS); self.assertFalse(fu.in_backoff({"last_error": "x", "last_attempt": "2026-10-01"}))
 
     def test_old_schema_cache_is_refetched_once(self):
         today = uc.today()
