@@ -47,6 +47,10 @@ PROFILE_MAX_AGE_DAYS = 90  # sector rarely changes
 RETRIES = 3
 RATIO_KEYS = {"P/E": "pe", "P/B": "pb", "ROA": "roa", "ROE": "roe",
               "ROCE": "roce", "EV/EBITDA": "ev_ebitda"}
+METRICS = tuple(RATIO_KEYS.values())
+NOT_FOUND_ERROR = "Symbol not found in Upstox NSE equity instruments"
+COVERAGE_NOTE = ("Counts describe what this file holds, not what Upstox could provide: a metric the provider did not return stays null and is listed in the row's 'missing'. "
+                 "A stock in the universe that has no row yet has not been fetched (or Upstox does not serve it); it is counted under not_yet_fetched / not_in_upstox, never filled in.")
 
 
 def log(*a):
@@ -125,11 +129,11 @@ class Upstox:
 
     def get(self, path):
         """Returns (json, None) or (None, short error text). Never prints headers."""
-        if self.calls >= MAX_CALLS_PER_RUN:
-            return None, "call limit for this run reached"
         url = API_BASE + "/" + path
         err = "unknown error"
         for attempt in range(RETRIES):
+            if self.calls >= MAX_CALLS_PER_RUN:      # checked before EVERY attempt, so a retry can never take a run past its cap
+                return None, "call limit for this run reached"
             self.calls += 1
             try:
                 r = self.s.get(url, timeout=30)
@@ -163,6 +167,44 @@ def write_json(path, obj):
     tmp.replace(path)
 
 
+def staleness_key(entry):
+    """What order_stalest sorts on: the older of the two fetch dates (never fetched = ""). A stock whose last attempt FAILED counts as if it had been refreshed on the day of that attempt, so a
+    stock Upstox keeps refusing goes to the back of the queue instead of taking the front of every run's budget while thousands of others wait."""
+    e = entry or {}
+    key = min(e.get("profile_fetched") or "", e.get("ratios_fetched") or "")
+    if e.get("last_error") and e.get("last_attempt"):
+        key = max(key, e["last_attempt"])
+    return key
+
+
+def missing_of(ratios):
+    """The metrics a stock's ratios do not hold, in a fixed order. Always explicit: nothing is estimated or carried over from another metric."""
+    r = ratios or {}
+    return [m for m in METRICS if r.get(m) is None]
+
+
+def coverage_of(symbols, stocks, rows, tally, calls, cap, day):
+    """The numbers that tell 'in the universe' apart from 'has all its metrics'. All derived from the rows and cache, never estimated."""
+    published = {r["symbol"] for r in rows}
+    full = sum(1 for r in rows if not r["missing"])
+    none = sum(1 for r in rows if len(r["missing"]) == len(METRICS))
+    in_error = [s for s in symbols if (stocks.get(s) or {}).get("last_error") and (stocks.get(s) or {}).get("last_error") != NOT_FOUND_ERROR]
+    return {
+        "universe": len(symbols),
+        "published": len(rows),
+        "metrics_complete": full,
+        "metrics_partial": len(rows) - full - none,
+        "metrics_none": none,
+        "metric_available": {m: sum(1 for r in rows if r.get(m) is not None) for m in METRICS},
+        "not_yet_fetched": sum(1 for s in symbols if s not in published and (stocks.get(s) or {}).get("last_error") != NOT_FOUND_ERROR),
+        "not_in_upstox": sum(1 for s in symbols if (stocks.get(s) or {}).get("last_error") == NOT_FOUND_ERROR),
+        "with_error": len(in_error),
+        "ratios_older_than_%d_days" % RATIOS_MAX_AGE_DAYS: sum(1 for r in rows if is_stale(r.get("fetched"), RATIOS_MAX_AGE_DAYS)),
+        "last_run": dict(tally, calls=calls, call_cap=cap, date=day),
+        "note": COVERAGE_NOTE,
+    }
+
+
 def main():
     token = os.environ.get("UPSTOX_ANALYTICS_TOKEN", "").strip()
     if not token:
@@ -181,21 +223,28 @@ def main():
     except universe.UniverseError as err:
         fail(str(err))
     # stalest first: a run that stops at its call budget carries on with the rest next time, so the whole universe rotates
-    symbols = universe.order_stalest(symbols, {x: min((stocks.get(x) or {}).get("profile_fetched") or "", (stocks.get(x) or {}).get("ratios_fetched") or "") for x in symbols})
+    symbols = universe.order_stalest(symbols, {x: staleness_key(stocks.get(x)) for x in symbols})
     log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
     pending = 0
+    tally = {"processed": 0, "succeeded": 0, "partial": 0, "failed": 0, "up_to_date": 0, "not_in_upstox": 0, "not_reached": 0}
     for sym in symbols:
-        if api.calls >= MAX_CALLS_PER_RUN:
-            pending += 1                     # not reached this run: not an error, it keeps its previous data and goes first next time
-            continue
-        e = stocks.setdefault(sym, {})
         m = instruments.get(sym)
-        if not m:
-            e["last_error"] = "Symbol not found in Upstox NSE equity instruments"
+        old = stocks.get(sym) or {}
+        if not m:                            # the instrument list is local data: this costs no API call, so it is classified even after the budget is spent
+            stocks.setdefault(sym, {})["last_error"] = NOT_FOUND_ERROR
+            tally["not_in_upstox"] += 1
             log(sym, "- not found")
             continue
+        if old.get("last_error") == NOT_FOUND_ERROR:
+            old["last_error"] = None         # Upstox lists it now: a stale "not found" must not outlive the listing, even if the budget is spent before it is fetched
+        if api.calls >= MAX_CALLS_PER_RUN:
+            if (is_stale(old.get("profile_fetched"), PROFILE_MAX_AGE_DAYS) or is_stale(old.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS)):
+                pending += 1                 # needs work but not reached this run: not an error, it keeps its previous data and goes first next time
+            continue
+        e = stocks.setdefault(sym, {})
         e["isin"], e["company_name"] = m["isin"], m["name"]
         errs = []
+        calls_before, ratios_now = api.calls, False
 
         if is_stale(e.get("profile_fetched"), PROFILE_MAX_AGE_DAYS):
             body, err = api.get(m["isin"] + "/profile")
@@ -215,10 +264,25 @@ def main():
             else:
                 e["ratios"] = parse_ratios(body)
                 e["ratios_fetched"] = today()
+                ratios_now = True
 
         e["last_error"] = "; ".join(errs) or None
+        if api.calls > calls_before:
+            e["last_attempt"] = today()          # drives the back-off in staleness_key(): only a FAILED attempt moves a stock back
+        if errs:
+            tally["failed"] += 1
+        elif is_stale(e.get("profile_fetched"), PROFILE_MAX_AGE_DAYS) or is_stale(e.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS):
+            pending += 1                         # the budget ran out in the middle of this stock
+        elif api.calls == calls_before:
+            tally["up_to_date"] += 1
+        elif ratios_now and missing_of(e.get("ratios")):
+            tally["partial"] += 1
+        else:
+            tally["succeeded"] += 1
         log(sym, "- ok" if not errs else "- problem: " + e["last_error"])
 
+    tally["not_reached"] = pending
+    tally["processed"] = tally["succeeded"] + tally["partial"] + tally["failed"]
     if pending:
         log("Not reached in this run (call budget):", pending, "stock(s)")
     rows, errors, dates = [], [], []
@@ -236,13 +300,20 @@ def main():
             "pe": r.get("pe"), "pb": r.get("pb"), "roa": r.get("roa"), "roe": r.get("roe"),
             "roce": r.get("roce"), "ev_ebitda": r.get("ev_ebitda"),
             "revenue_growth": None, "profit_growth": None,   # not fetched in this version
+            "missing": missing_of(r),                         # the ratio metrics Upstox did not return for this stock (null above); [] = all six present
+            "fetched": e["ratios_fetched"],                   # the day these ratios were read
         })
 
     write_json(CACHE_FILE, cache)
     if not rows:
         fail("No fundamentals could be fetched. The previous out/fundamentals.json (if any) was kept.")
-    write_json(OUT_FILE, {"as_of": max(dates), "source": "Upstox", "stocks": rows, "errors": errors})
+    cov = coverage_of(symbols, stocks, rows, tally, api.calls, MAX_CALLS_PER_RUN, today())
+    write_json(OUT_FILE, {"as_of": max(dates), "source": "Upstox", "stocks": rows, "errors": errors, "coverage": cov})
     log("Wrote", OUT_FILE, "-", len(rows), "stocks,", len(errors), "with problems, API calls:", api.calls)
+    log("Coverage: universe %d | published %d (all metrics %d, some missing %d, none %d) | not yet fetched %d | not in Upstox %d | with error %d" % (
+        cov["universe"], cov["published"], cov["metrics_complete"], cov["metrics_partial"], cov["metrics_none"], cov["not_yet_fetched"], cov["not_in_upstox"], cov["with_error"]))
+    log("This run: processed %d (succeeded %d, partial %d, failed %d) | already fresh %d | not reached (budget) %d | calls %d of %d" % (
+        tally["processed"], tally["succeeded"], tally["partial"], tally["failed"], tally["up_to_date"], tally["not_reached"], api.calls, MAX_CALLS_PER_RUN))
 
 
 if __name__ == "__main__":

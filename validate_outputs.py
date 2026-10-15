@@ -111,6 +111,13 @@ def financial_warnings(doc):
     return w
 
 
+RATIO_METRICS = ("pe", "pb", "roa", "roe", "roce", "ev_ebitda")
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
 def check_fundamentals(doc):
     if not isinstance(doc, dict) or not isinstance(doc.get("stocks"), list):
         return ["fundamentals.json has no stocks list"]
@@ -119,6 +126,28 @@ def check_fundamentals(doc):
         for f in VAL_FIELDS:
             if f in s and not is_num_or_null(s[f]):
                 p.append("%s.%s is not a number or null" % (s.get("symbol"), f))
+        if "missing" in s:                       # explicit gaps: exactly the null ratio metrics, in the fixed order, nothing else
+            want = [m for m in RATIO_METRICS if s.get(m) is None]
+            if s["missing"] != want:
+                p.append("%s.missing does not list exactly the null ratio metrics (%s)" % (s.get("symbol"), ", ".join(want) or "none"))
+    cov = doc.get("coverage")
+    if cov is not None:
+        keys = ("universe", "published", "metrics_complete", "metrics_partial", "metrics_none", "not_yet_fetched", "not_in_upstox", "with_error")
+        if not isinstance(cov, dict) or not all(_count(cov.get(k)) for k in keys):
+            p.append("coverage must hold non-negative whole numbers for " + ", ".join(keys))
+        else:
+            rows = doc["stocks"]
+            if cov["published"] != len(rows):
+                p.append("coverage.published (%d) does not equal the number of stocks (%d)" % (cov["published"], len(rows)))
+            if cov["metrics_complete"] + cov["metrics_partial"] + cov["metrics_none"] != cov["published"]:
+                p.append("coverage: complete + partial + none does not equal published")
+            if cov["metrics_complete"] != sum(1 for s in rows if s.get("missing") == []):
+                p.append("coverage.metrics_complete does not match the rows with nothing missing")
+            if cov["universe"] < cov["published"]:
+                p.append("coverage.universe is smaller than published")
+            ma = cov.get("metric_available")
+            if not isinstance(ma, dict) or any(ma.get(m) != sum(1 for s in rows if s.get(m) is not None) for m in RATIO_METRICS):
+                p.append("coverage.metric_available does not match the rows")
     return p
 
 
