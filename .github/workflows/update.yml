@@ -81,6 +81,7 @@ jobs:
           fi
 
       - name: Restore saved data
+        id: restore
         uses: actions/cache@v4
         with:
           path: |
@@ -90,34 +91,78 @@ jobs:
           restore-keys: nse-data-
 
       # Cache-miss recovery for fundamentals. Without its saved state the fundamentals step would start from nothing and publish only the few stocks one
-      # run can fetch. A missing state is recovered from the published site ONLY when no saved cache exists at all (a genuine miss); if a saved cache
-      # exists but was not restored (a failed restore), or the published file cannot be downloaded or fails validation, the run stops here and the
-      # site stays exactly as it is (the deploy job needs this job). A restored state, even an empty one, is never touched.
+      # run can fetch. The combined actions/cache step above only has a `cache-hit` output (an empty string for "nothing restored" and "false" for a
+      # prefix match look alike), so the cache it resolved to is read with a second, read-only lookup (actions/cache/restore, lookup-only: it downloads
+      # nothing and writes nothing; its `cache-matched-key` is the documented output). With no state in the workspace the run is exactly one of:
+      #   restored state            -> checked, never touched;
+      #   lookup unavailable        -> stop (a missing cache cannot be told apart from a failed restore);
+      #   a cache was resolved      -> stop: it was not restored, or it holds no fundamentals state (another workflow's cache can be the newest one);
+      #   no cache resolved, but the complete cache list (this ref AND the default branch, which is what a restore can read) shows caches, or cannot be
+      #     read completely                                          -> stop;
+      #   no cache resolved and the complete list is empty (a genuine miss) -> recover from the published site, validated before anything is written.
+      # Every stop leaves the site exactly as it is (the deploy job needs this job) and names the condition and a safe remedy. Nothing here deletes a cache.
+      - name: Look up which saved cache the restore resolved to (no download)
+        id: lookup
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-${{ github.run_id }}
+          restore-keys: nse-data-
+          lookup-only: true
+
       - name: Check the restored fundamentals state
         id: fstate
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+          RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          LOOKUP_OUTCOME: ${{ steps.lookup.outcome }}
+          LOOKUP_KEY: ${{ steps.lookup.outputs.cache-matched-key }}
         run: |
           if [ -f data/fundamentals_cache.json ]; then
-            python fundamentals_updater.py check-state || { echo "::error::The restored fundamentals state cannot be used (see above). Stopping: nothing is published."; exit 1; }
+            python fundamentals_updater.py check-state || { echo "::error::The restored fundamentals state cannot be used (see above). A maintainer must decide: re-running restores the same state. Nothing was published and nothing was changed."; exit 1; }
             echo "state=restored" >> "$GITHUB_OUTPUT"; echo "Saved fundamentals state restored."; exit 0
           fi
-          keys=$(gh api --paginate "repos/$REPO/actions/caches?key=nse-data-&ref=$REF&per_page=100" --jq '.actions_caches[] | select(.key | test("^nse-data-[0-9]+$")) | .key') || { echo "::error::The saved caches could not be listed, so a missing fundamentals state cannot be told apart from a failed restore. Stopping: nothing is published."; exit 1; }
-          n=$(printf '%s\n' "$keys" | grep -c . || true)
-          if [ "$n" != "0" ]; then echo "::error::$n saved cache(s) exist but no fundamentals state was restored (a failed restore). Stopping: nothing is published. Re-run later."; exit 1; fi
+          stop() { echo "::error::$1"; shift; for l in "$@"; do echo "$l"; done; echo "Nothing was published and nothing was changed."; exit 1; }
+          if [ "$LOOKUP_OUTCOME" != "success" ]; then
+            stop "The saved caches could not be looked up (lookup step: ${LOOKUP_OUTCOME:-not run}), so a missing fundamentals state cannot be told apart from a failed restore." "Remedy: re-run this workflow once the GitHub cache service responds. No recovery is attempted while this is unknown."
+          fi
+          if [ -n "$LOOKUP_KEY" ]; then
+            if printf '%s\n' "$LOOKUP_KEY" | grep -qE '^nse-data-[0-9]+$'; then
+              stop "The restore resolved to the saved cache $LOOKUP_KEY but no fundamentals state is in the workspace." "Either the restore failed (the 'Restore saved data' step then logs a warning and not 'Cache restored from key: $LOOKUP_KEY'; its cache-hit output was '$RESTORE_HIT') or that cache holds no fundamentals state." "Remedy: re-run once if the restore step shows a failure. If it restored cleanly, a maintainer must decide (an approved manual recovery, or removing that cache): re-running cannot help. This workflow never recovers over an existing cache and never deletes one."
+            fi
+            stop "The newest saved cache this run can see is $LOOKUP_KEY, written by another workflow, and it holds no fundamentals state (it shadows the daily state cache; cache-hit output '$RESTORE_HIT')." "Remedy: a maintainer must decide (remove that cache, or approve a manual recovery). Re-running cannot help. This workflow never deletes a cache."
+          fi
+          # nothing resolved: confirm with the complete cache list of every scope a restore can read (this ref and the default branch)
+          refs="$REF"; [ "refs/heads/$DEFAULT_BRANCH" = "$REF" ] || refs="$REF refs/heads/$DEFAULT_BRANCH"
+          found=0
+          for ref in $refs; do
+            list=$(gh api --paginate "repos/$REPO/actions/caches?key=nse-data-&ref=$ref&per_page=100" --jq '"total=" + (.total_count | tostring), (.actions_caches[] | "key=" + .key)') || stop "The saved caches of $ref could not be listed, so a missing fundamentals state cannot be told apart from a failed restore." "Remedy: re-run this workflow once the GitHub API responds. No recovery is attempted while this is unknown."
+            totals=$(printf '%s\n' "$list" | sed -n 's/^total=//p' | sort -u)
+            n=$(printf '%s\n' "$list" | grep -c '^key=' || true)
+            case "$totals" in ''|*[!0-9]*) stop "The cache list of $ref is unusable (no single total), so it cannot prove that no cache exists." "Remedy: re-run this workflow once the GitHub API responds. No recovery is attempted while this is unknown." ;; esac
+            if [ "$n" != "$totals" ]; then stop "The cache list of $ref is incomplete ($n of $totals caches read), so it cannot prove that no cache exists." "Remedy: re-run this workflow once the GitHub API responds. No recovery is attempted while this is unknown."; fi
+            found=$((found + n))
+          done
+          if [ "$found" != "0" ]; then
+            stop "$found saved cache(s) with the prefix nse-data- exist (checked: $refs) but the restore resolved none of them and no fundamentals state is in the workspace (cache-hit output '$RESTORE_HIT')." "Remedy: re-run once in case the restore failed. If it repeats, a maintainer must decide (an approved manual recovery, or removing the caches): this workflow never recovers over an existing cache and never deletes one."
+          fi
           echo "state=miss" >> "$GITHUB_OUTPUT"
-          echo "::warning::No saved cache exists (a cache miss): the fundamentals state is recovered from the published site."
+          echo "::warning::No saved cache exists in $refs (a genuine cache miss): the fundamentals state is recovered from the published site."
 
       - name: Recover the fundamentals state from the published site (cache miss only)
         if: steps.fstate.outputs.state == 'miss'
         env:
-          OWNER: ${{ github.repository_owner }}
-          NAME: ${{ github.event.repository.name }}
+          REPO: ${{ github.repository }}
         run: |
-          url="https://${OWNER,,}.github.io/${NAME}/out/fundamentals.json"
-          curl -fsSL --retry 3 --max-time 120 "$url" -o recovery_fundamentals.json || { echo "::error::$url could not be downloaded. Stopping: nothing is published."; exit 1; }
+          owner="${REPO%%/*}"; name="${REPO#*/}"
+          url="https://${owner,,}.github.io/${name}/out/fundamentals.json"
+          curl -fsSL --retry 3 --max-time 120 "$url" -o recovery_fundamentals.json || { echo "::error::$url could not be downloaded. Remedy: re-run once the site responds; nothing is recovered from anything else. Nothing was published and nothing was changed."; exit 1; }
           python fundamentals_updater.py seed recovery_fundamentals.json
 
       - run: python nse_updater.py

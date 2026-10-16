@@ -111,6 +111,7 @@ jobs:
 
       # The same saved-data cache as "Update data and publish site" (it holds data/fundamentals_cache.json, where batches and their checkpoints live).
       - name: Restore saved data
+        id: restore
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -119,12 +120,19 @@ jobs:
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
 
-      # A batch never starts from an empty state: after a cache miss the next scheduled "Update data and publish site" run recovers it from the
-      # published site first. Without this, a batch would save a small new state that the next publish would restore and show as the whole universe.
+      # A batch never starts from an empty state. Only the scheduled "Update data and publish site" run recovers a missing state (from the published
+      # site, and only after a genuine cache miss); a batch never does, and it never starts without a usable state. Without this a batch would save a small
+      # new state that the next publish would restore and show as the whole universe.
       - name: Require the saved fundamentals state
         if: inputs.mode != 'audit'
+        env:
+          MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
         run: |
-          if [ ! -f data/fundamentals_cache.json ]; then echo "::error::No saved fundamentals state was restored. Run (or wait for) the scheduled update first; it recovers the state from the published site. Nothing was changed."; exit 1; fi
+          if [ ! -f data/fundamentals_cache.json ]; then
+            echo "::error::No saved fundamentals state was restored (the restore resolved: '${MATCHED:-no cache}')."
+            echo "A batch never recovers the state. If no cache exists at all, the next scheduled 'Update data and publish site' run recovers it from the published site; if a cache was restored without the state, or the restore failed, that run stops with an explanation and a maintainer must decide (see its 'Check the restored fundamentals state' step)."
+            echo "Nothing was changed."; exit 1
+          fi
           python fundamentals_updater.py check-state --require-records
 
       - name: Merge the durable processing state (if the data branch has one)

@@ -1,6 +1,7 @@
 """Recovery of the fundamentals state after a cache miss (fundamentals_updater.py seed, and the steps of update.yml / fundamentals_batch.yml that use it).
-The workflow steps' own shell scripts are executed here with stub `gh` and `curl` commands (the real `jq` filter is applied), so the decisions
-restored / miss / failed restore and the stop-instead-of-publish paths are exercised offline. No network, no provider call.
+The workflow steps' own shell scripts are executed here with stub `gh` and `curl` commands (the real `jq` filter is applied to each stubbed page), so the
+five conditions without a usable state (a restored state, a cache restored without the state, no cache at all, an unusable cache list, a cache that exists
+but was not restored) and the stop-instead-of-publish paths are exercised offline. No network, no provider call, no real GitHub Actions cache.
 Run: python3 -m unittest test_fundamentals_cache_recovery"""
 import contextlib
 import copy
@@ -23,7 +24,8 @@ from test_fundamentals_full_universe import FakeDate, Harness, Resp
 
 HERE = Path(__file__).resolve().parent
 D = __import__("datetime").timedelta(days=1)
-BASE = __import__("datetime").date(2026, 10, 10)   # the published state is built on a past day: the seed step runs as a real process on the real date
+BASE = __import__("datetime").date.today() - 2 * D   # the published state is built a little in the past: the seed step runs as a real process on the real date,
+#                                                      and it refuses a file older than RATIOS_MAX_AGE_DAYS
 
 
 def step(workflow, name):
@@ -35,11 +37,37 @@ def step(workflow, name):
     raise AssertionError("no step %r in %s" % (name, workflow))
 
 
+GH_STUB = r"""#!/usr/bin/env python3
+import json, os, subprocess, sys
+cfg = json.load(open(os.environ["GH_STUB_CONFIG"]))
+args = sys.argv[1:]
+open(cfg["log"], "a").write("gh " + " ".join(args) + "\n")
+jq = args[args.index("--jq") + 1]
+url = next(a for a in args if a.startswith("repos/"))
+ref = [q.split("=", 1)[1] for q in url.split("?")[1].split("&") if q.startswith("ref=")][0]
+if cfg["fail_all"] or ref in cfg["fail_refs"]:
+    sys.exit(1)
+pages = cfg["refs"].get(ref, cfg["default"]) or [{"total_count": 0, "actions_caches": []}]
+for pg in pages:
+    r = subprocess.run(["jq", "-r", jq], input=json.dumps(pg), text=True, capture_output=True)
+    sys.stdout.write(r.stdout)
+    if r.returncode:
+        sys.exit(r.returncode)
+"""
+
+
+def pages_of(keys, total=None, size=100):
+    """The pages the caches API would return for these keys (total_count = the number of caches that match, on every page)."""
+    total = len(keys) if total is None else total
+    chunks = [keys[i:i + size] for i in range(0, len(keys), size)] or [[]]
+    return [{"total_count": total, "actions_caches": [{"key": k, "ref": "refs/heads/main"} for k in c]} for c in chunks]
+
+
 class Site:
     """A published site, a runner workspace and a universe: everything the recovery reads, in one temporary folder."""
-    def __init__(self, test, n=40, letters="ABE", missing_from_upstox=("A0004",)):
+    def __init__(self, test, n=40, letters="ABE", missing_from_upstox=("A0004",), base=None):
         self.h = Harness(test, n, letters=letters, missing_from_upstox=missing_from_upstox, cap=10 ** 6)
-        self.h.run(day=BASE)                                                    # a normal published state (complete, partial, failed, not listed)
+        self.h.run(day=base or BASE)                                            # a normal published state (complete, partial, failed, not listed)
         self.t = self.h.t
         self.published_bytes = (self.t / "out" / "fundamentals.json").read_bytes()
         self.published = json.loads(self.published_bytes)
@@ -49,11 +77,13 @@ class Site:
         self.bin = self.ws / "bin"; self.bin.mkdir()
         self.calls = self.ws / "stub_calls.log"
 
-    def stub(self, caches_json=None, gh_fails=False, curl_fails=False, curl_payload=None):
+    def stub(self, refs=None, default=None, fail_all=False, fail_refs=(), curl_fails=False, curl_payload=None):
+        """gh: the cache list. refs = {ref: [page, page, ...]} (each page the JSON the API returns); default = the pages of any other ref; fail_refs = refs
+        whose listing fails (fail_all: every listing). curl: serves the published file (or fails)."""
         if curl_payload is not None:
             (self.ws / "site.json").write_bytes(curl_payload)
-        (self.bin / "gh").write_text("#!/bin/bash\necho \"gh $*\" >> %s\n%s\njq=''; while [ $# -gt 0 ]; do [ \"$1\" = --jq ] && { jq=\"$2\"; shift; }; shift; done\n"
-                                     "echo '%s' | jq -r \"$jq\"\n" % (self.calls, "exit 1" if gh_fails else "", json.dumps(caches_json or {"total_count": 0, "actions_caches": []})))
+        (self.ws / "gh_stub.json").write_text(json.dumps({"log": str(self.calls), "refs": refs or {}, "default": default or [], "fail_all": fail_all, "fail_refs": list(fail_refs)}))
+        (self.bin / "gh").write_text(GH_STUB)
         (self.bin / "curl").write_text("#!/bin/bash\necho \"curl $*\" >> %s\n%s\nout=''; while [ $# -gt 0 ]; do [ \"$1\" = -o ] && { out=\"$2\"; shift; }; shift; done\ncp %s \"$out\"\n"
                                        % (self.calls, "exit 22" if curl_fails else "", self.ws / "site.json"))
         for f in ("gh", "curl"):
@@ -67,7 +97,8 @@ class Site:
         env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN",)}
         env.update({"PATH": "%s:%s" % (self.bin, os.environ["PATH"]), "GITHUB_OUTPUT": str(out_file), "PYTHONPATH": str(HERE), "PYTHONDONTWRITEBYTECODE": "1",
                     "DATA_DIR": str(self.ws), "STOCKLENS_UNIVERSE_FILE": str(self.t / "u.json"),
-                    "GH_TOKEN": "x", "REPO": "o/r", "REF": "refs/heads/main", "OWNER": "Arnavdev11", "NAME": "stock"})
+                    "GH_TOKEN": "x", "REPO": "Arnavdev11/stock", "REF": "refs/heads/main", "DEFAULT_BRANCH": "main", "GH_STUB_CONFIG": str(self.ws / "gh_stub.json"),
+                    "LOOKUP_OUTCOME": "success", "LOOKUP_KEY": "", "RESTORE_HIT": ""})
         env.update(extra_env or {})
         script = s["run"].replace("${{ inputs.mode }}", "run")
         (self.ws / "fundamentals_updater.py").unlink(missing_ok=True)
@@ -102,9 +133,23 @@ class Site:
 
 
 CHECK, RECOVER, REQUIRE = "Check the restored fundamentals state", "Recover the fundamentals state from the published site (cache miss only)", "Require the saved fundamentals state"
+LOOKUP = "Look up which saved cache the restore resolved to (no download)"
 
 
-class Classification(unittest.TestCase):
+def put_state(site, drop=0, keep_output=True):
+    """The workspace as a restore leaves it: the saved state (optionally without its first `drop` records) next to the published output."""
+    (site.ws / "data").mkdir(exist_ok=True); (site.ws / "out").mkdir(exist_ok=True)
+    cache = json.loads((site.t / "data" / "c.json").read_text())
+    for k in list(cache["stocks"])[:drop]:
+        del cache["stocks"][k]
+    (site.ws / "data" / "fundamentals_cache.json").write_text(json.dumps(cache))
+    if keep_output:
+        (site.ws / "out" / "fundamentals.json").write_bytes(site.published_bytes)
+    return cache
+
+
+class RestoredState(unittest.TestCase):
+    """Condition 1: a usable state was restored (and conditions that make a restored state unusable)."""
     def test_a_restored_state_is_never_touched_even_an_empty_one(self):
         s = Site(self); s.stub()
         (s.ws / "data").mkdir(); (s.ws / "data" / "fundamentals_cache.json").write_text('{"stocks": {}}')
@@ -112,6 +157,14 @@ class Classification(unittest.TestCase):
         self.assertEqual((rc, outs.get("state")), (0, "restored"), log)
         self.assertEqual(s.stub_calls(), [])                                   # no cache listing, no download
         self.assertEqual((s.ws / "data" / "fundamentals_cache.json").read_text(), '{"stocks": {}}')
+
+    def test_a_complete_restored_state_next_to_its_output_is_accepted_unchanged(self):
+        s = Site(self); s.stub(); put_state(s)
+        before = (s.ws / "data" / "fundamentals_cache.json").read_bytes()
+        rc, outs, log = s.run_step("update.yml", CHECK)
+        self.assertEqual((rc, outs.get("state")), (0, "restored"), log)
+        self.assertEqual(s.stub_calls(), [])
+        self.assertEqual((s.ws / "data" / "fundamentals_cache.json").read_bytes(), before)
 
     def test_an_empty_state_next_to_published_rows_is_not_a_valid_empty_cache(self):
         s = Site(self); s.stub()
@@ -131,36 +184,192 @@ class Classification(unittest.TestCase):
         self.assertIn("not valid JSON", log)
         self.assertNotIn("state", outs)
 
-    def test_a_long_cache_list_is_read_completely(self):
-        s = Site(self)
-        caches = [{"key": "nse-data-hist-%d" % i} for i in range(150)] + [{"key": "nse-data-998877"}]   # the publishing run's cache comes last
-        s.stub(caches_json={"total_count": len(caches), "actions_caches": caches})
-        rc, outs, log = s.run_step("update.yml", CHECK)
+    def test_a_partial_state_next_to_a_larger_output_stops_the_run(self):
+        """The state lost records its own output still lists: the next publish would silently drop those stocks (the reduced-universe failure)."""
+        n_rows = None
+        for drop in (1, 5, 30):                                           # one record, a few, most of them: no threshold, the exact rule
+            with self.subTest(drop=drop):
+                s = Site(self); s.stub(); cache = put_state(s, drop=drop)
+                n_rows = len(s.published["stocks"])
+                before = (s.ws / "data" / "fundamentals_cache.json").read_bytes()
+                rc, outs, log = s.run_step("update.yml", CHECK)
+                self.assertEqual(rc, 1, log)
+                self.assertIn("have no usable saved record", log)
+                self.assertIn("a partial saved state", log)
+                self.assertNotIn("state", outs)
+                self.assertEqual(s.stub_calls(), [])                      # nothing recovered, nothing listed
+                self.assertEqual((s.ws / "data" / "fundamentals_cache.json").read_bytes(), before)
+        self.assertGreater(n_rows, 5)
+
+    def test_a_state_with_more_records_than_rows_is_legitimate(self):
+        """Failed, not-listed and held records are in the state but not in the output: that difference is normal, not a partial state."""
+        s = Site(self); s.stub(); cache = put_state(s)
+        self.assertGreater(len(cache["stocks"]), len(s.published["stocks"]))
+        self.assertEqual(s.run_step("update.yml", CHECK)[0], 0)
+
+    def test_a_row_whose_record_cannot_be_published_again_counts_as_lost(self):
+        s = Site(self); s.stub(); cache = put_state(s)
+        sym = s.published["stocks"][0]["symbol"]
+        cache["stocks"][sym]["ratios_fetched"] = None                    # build_rows never publishes a stock without its date
+        (s.ws / "data" / "fundamentals_cache.json").write_text(json.dumps(cache))
+        rc, _, log = s.run_step("update.yml", CHECK)
         self.assertEqual(rc, 1, log)
-        self.assertIn("1 saved cache(s) exist", log)
+        self.assertIn(sym, log)
+
+
+def lookup(**env):
+    return dict({"LOOKUP_OUTCOME": "success", "LOOKUP_KEY": "", "RESTORE_HIT": ""}, **env)
+
+
+class NoStateInTheWorkspace(unittest.TestCase):
+    """Conditions 2-5: no state was restored. The run recovers only after a genuine miss; every other case stops and says what it is."""
+    def stops(self, s, env=None, ref_env=None):
+        rc, outs, log = s.run_step("update.yml", CHECK, extra_env=dict(env or {}, **(ref_env or {})))
+        self.assertEqual(rc, 1, log)
+        self.assertNotIn("state", outs)                                    # no output: the recover step (if: state == 'miss') cannot run
+        self.assertEqual(s.written(), [])
+        self.assertIn("Nothing was published and nothing was changed", log)
+        self.assertFalse(any(c.startswith("curl") for c in s.stub_calls()))   # the published file is not even downloaded
+        return log
+
+    def test_a_cache_without_the_state_stops_and_says_so(self):
+        """Condition 2 (the shadowing case): the newest cache the restore can see belongs to another workflow and holds no state."""
+        s = Site(self); s.stub(default=pages_of(["nse-data-shp-77", "nse-data-123456"]))
+        log = self.stops(s, lookup(LOOKUP_KEY="nse-data-shp-77", RESTORE_HIT="false"))
+        self.assertIn("nse-data-shp-77", log)
+        self.assertIn("another workflow", log)
+        self.assertIn("shadows the daily state cache", log)
+        self.assertIn("Re-running cannot help", log)                       # not the old "re-run later"
+        self.assertNotIn("Re-run later", log)
+        self.assertEqual(s.stub_calls(), [])                               # decided by the lookup, no listing needed
+
+    def test_a_resolved_state_cache_that_was_not_restored_stops_and_names_both_possibilities(self):
+        """Condition 5: the restore resolved to a daily state cache but the workspace has no state (a failed restore, or an empty cache)."""
+        s = Site(self); s.stub()
+        log = self.stops(s, lookup(LOOKUP_KEY="nse-data-123456"))
+        self.assertIn("resolved to the saved cache nse-data-123456", log)
+        self.assertIn("the restore failed", log)
+        self.assertIn("holds no fundamentals state", log)
+        self.assertIn("never recovers over an existing cache and never deletes one", log)
+        self.assertNotIn("Re-run later", log)
+
+    def test_no_cache_resolved_but_caches_listed_stops(self):
+        """Condition 5 again: nothing was resolved yet the complete list shows caches (the restore failed, or could not see them)."""
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(["nse-data-123456"])})
+        log = self.stops(s, lookup())
+        self.assertIn("1 saved cache(s) with the prefix nse-data- exist", log)
+        self.assertIn("a maintainer must decide", log)
+
+    def test_a_genuine_miss_is_recognised_only_when_the_complete_list_is_empty(self):
+        """Condition 3: nothing resolved and nothing listed in any scope a restore can read."""
+        s = Site(self); s.stub()
+        rc, outs, log = s.run_step("update.yml", CHECK, extra_env=lookup())
+        self.assertEqual((rc, outs.get("state")), (0, "miss"), log)
+        calls = s.stub_calls()
+        self.assertTrue(all("--paginate" in c and "key=nse-data-" in c and "per_page=100" in c for c in calls), calls)
+        self.assertEqual(len(calls), 1)                                    # ref == default branch: one scope, listed once
+        self.assertIn("a genuine cache miss", log)
+
+    def test_the_lookup_not_succeeding_never_counts_as_a_miss(self):
+        """Condition 4a: the lookup step failed, was cancelled or skipped: absence of a matched key proves nothing."""
+        for outcome in ("failure", "cancelled", "skipped", ""):
+            with self.subTest(outcome=outcome):
+                s = Site(self); s.stub()
+                log = self.stops(s, lookup(LOOKUP_OUTCOME=outcome))
+                self.assertIn("could not be looked up", log)
+                self.assertIn("re-run this workflow once the GitHub cache service responds", log)
+                self.assertEqual(s.stub_calls(), [])
+
+    def test_a_failed_cache_listing_never_counts_as_a_miss(self):
+        """Condition 4b: the listing fails (the old test: only 'gh failed' was covered, and only for one scope)."""
+        s = Site(self); s.stub(fail_all=True)
+        log = self.stops(s, lookup())
+        self.assertIn("could not be listed", log)
+        self.assertIn("cannot be told apart from a failed restore", log)
+
+    def test_an_incomplete_cache_listing_never_counts_as_a_miss(self):
+        """Condition 4c: fewer caches were read than the API says exist (a page missing), or the total is unusable."""
+        keys = ["nse-data-hist-%d" % i for i in range(250)]
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys)[:2]})            # the third page never arrived
+        log = self.stops(s, lookup())
+        self.assertIn("incomplete (200 of 250 caches read)", log)
+        s = Site(self); s.stub(refs={"refs/heads/main": [{"total_count": 0, "actions_caches": [{"key": "nse-data-1"}]}]})   # more read than counted
+        self.assertIn("incomplete (1 of 0 caches read)", self.stops(s, lookup()))
+        s = Site(self); s.stub(refs={"refs/heads/main": [{"total_count": 2, "actions_caches": [{"key": "nse-data-1"}]}, {"total_count": 3, "actions_caches": [{"key": "nse-data-2"}]}]})
+        self.assertIn("unusable (no single total)", self.stops(s, lookup()))            # the total changed while paging
+
+    def test_a_long_cache_list_is_read_completely_across_pages(self):
+        keys = ["nse-data-hist-%d" % i for i in range(250)] + ["nse-data-998877"]       # the daily cache is on the last page
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys)})
+        log = self.stops(s, lookup())
+        self.assertIn("251 saved cache(s) with the prefix nse-data- exist", log)
         self.assertTrue(any("--paginate" in c for c in s.stub_calls()))
 
-    def test_a_genuine_miss_is_recognised(self):
-        s = Site(self)
-        s.stub(caches_json={"total_count": 3, "actions_caches": [{"key": "nse-data-hist-5"}, {"key": "side-historical-6"}, {"key": "nse-data-shp-7"}]})
-        rc, outs, log = s.run_step("update.yml", CHECK)                        # only caches of other shapes exist: none of the publishing run's own
+    def test_a_dispatch_from_another_branch_lists_its_own_and_the_default_branch(self):
+        """The restore reads this ref's caches and the default branch's: the list covers both, so a default-branch cache is never mistaken for a miss."""
+        other = {"REF": "refs/heads/feature", "DEFAULT_BRANCH": "main"}
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(["nse-data-123456"])})
+        log = self.stops(s, lookup(**other))
+        self.assertIn("(checked: refs/heads/feature refs/heads/main)", log)
+        self.assertTrue(any("ref=refs/heads/feature" in c for c in s.stub_calls()) and any("ref=refs/heads/main" in c for c in s.stub_calls()))
+        s = Site(self); s.stub()                                                         # nothing on either: a genuine miss from a branch too
+        rc, outs, log = s.run_step("update.yml", CHECK, extra_env=lookup(**other))
         self.assertEqual((rc, outs.get("state")), (0, "miss"), log)
-        self.assertTrue(any("ref=refs/heads/main" in c for c in s.stub_calls()))
+        self.assertEqual(len(s.stub_calls()), 2)
+        s = Site(self); s.stub(fail_refs=["refs/heads/main"])                          # the default branch's list fails: not a miss
+        self.assertIn("refs/heads/main could not be listed", self.stops(s, lookup(**other)))
 
-    def test_a_failed_restore_stops_the_run(self):
-        s = Site(self); s.stub(caches_json={"total_count": 1, "actions_caches": [{"key": "nse-data-123456"}]})
-        rc, outs, log = s.run_step("update.yml", CHECK)
-        self.assertEqual(rc, 1)
-        self.assertIn("a failed restore", log)
-        self.assertNotIn("state", outs)
-        self.assertEqual(s.written(), [])
+    def test_no_call_changes_anything(self):
+        """Only GET listings: no -X, no DELETE, no cache removal, whatever the outcome."""
+        for refs in ({}, {"refs/heads/main": pages_of(["nse-data-1"])}):
+            s = Site(self); s.stub(refs=refs)
+            s.run_step("update.yml", CHECK, extra_env=lookup())
+            for c in s.stub_calls():
+                self.assertNotRegex(c, r"-X|--method|DELETE|-f |-F |--input")
+        text = (HERE / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8")
+        self.assertNotIn("actions/cache/save", text)
+        self.assertNotRegex(text, r"gh (api|cache)[^\n]*(-X|--method|delete)")
 
-    def test_an_unlistable_cache_store_stops_the_run(self):
-        s = Site(self); s.stub(gh_fails=True)
-        rc, outs, log = s.run_step("update.yml", CHECK)
-        self.assertEqual(rc, 1)
-        self.assertIn("cannot be told apart from a failed restore", log)
-        self.assertEqual(s.written(), [])
+
+class WorkflowWiring(unittest.TestCase):
+    def test_the_restore_is_identified_and_the_lookup_reads_the_same_caches_without_downloading(self):
+        w = yaml.safe_load((HERE / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8"))
+        steps = w["jobs"]["build"]["steps"]
+        names = [x.get("name") or x.get("run") for x in steps]
+        r, lk = step("update.yml", "Restore saved data"), step("update.yml", LOOKUP)
+        self.assertEqual((r["uses"], r["id"]), ("actions/cache@v4", "restore"))
+        self.assertEqual(lk["uses"], "actions/cache/restore@v4")                                      # the action that has the documented cache-matched-key output
+        self.assertIs(lk["with"].pop("lookup-only"), True)                                           # nothing is downloaded or written
+        self.assertEqual(lk["with"], r["with"])                                                      # the same path, key and restore-keys: the same resolution
+        self.assertIs(lk["continue-on-error"], True)                                                 # its failure is classified, not hidden by a bare failure
+        i = names.index("Restore saved data")
+        self.assertEqual(names[i:i + 4], ["Restore saved data", LOOKUP, CHECK, RECOVER])
+        env = step("update.yml", CHECK)["env"]
+        self.assertEqual(env["LOOKUP_KEY"], "${{ steps.lookup.outputs.cache-matched-key }}")
+        self.assertEqual(env["LOOKUP_OUTCOME"], "${{ steps.lookup.outcome }}")
+        self.assertEqual(env["RESTORE_HIT"], "${{ steps.restore.outputs.cache-hit }}")
+        self.assertEqual(env["REF"], "${{ github.ref }}")
+        self.assertIn("default_branch", env["DEFAULT_BRANCH"])
+        self.assertEqual(env["GH_TOKEN"], "${{ github.token }}")                                    # the token only reaches this step, as an env var
+        for x in steps:
+            if x.get("name") != CHECK:
+                self.assertNotIn("github.token", str(x.get("env", "")) + str(x.get("with", "")))
+        for n in (CHECK, RECOVER):                                                                  # no expression is interpolated into a script
+            self.assertNotIn("${{", step("update.yml", n)["run"])
+        self.assertEqual(step("update.yml", RECOVER)["if"], "steps.fstate.outputs.state == 'miss'")
+
+    def test_the_schedule_the_budget_and_the_permissions_are_unchanged(self):
+        text = (HERE / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8")
+        base = subprocess.run(["git", "show", "b6c058b:.github/workflows/update.yml"], cwd=str(HERE), capture_output=True, text=True)
+        if base.returncode != 0:
+            self.skipTest("the base commit is not available")
+        w, b = yaml.safe_load(text), yaml.safe_load(base.stdout)
+        on = lambda d: d.get("on", d.get(True))
+        self.assertEqual(on(w)["schedule"], on(b)["schedule"])
+        self.assertEqual(on(w)["schedule"], [{"cron": "15 15 * * 1-5"}, {"cron": "30 4 * * 2-6"}])
+        self.assertEqual(step("update.yml", "Update fundamentals")["env"]["FUNDAMENTALS_MAX_CALLS"], "${{ inputs.fundamentals_calls || '150' }}")
+        self.assertEqual(w["permissions"], {"contents": "read", "actions": "read"})                  # read-only, and only the one addition
+        self.assertEqual(w["concurrency"], b["concurrency"])
 
 
 class Recovery(unittest.TestCase):
@@ -252,6 +461,11 @@ class StopsInsteadOfPublishingLess(unittest.TestCase):
             "missing list wrong": mut(lambda d: d["stocks"][0].update(missing=["pe"])),
             "metric as text": mut(lambda d: (d["stocks"][0].update(pe="12"))),
             "coverage inconsistent": mut(lambda d: d["coverage"].update(published=1)),
+            "no coverage block": mut(lambda d: d.pop("coverage")),
+            "rows dropped, coverage kept": mut(lambda d: d.update(stocks=d["stocks"][: len(d["stocks"]) // 2])),   # a reduced file that still describes the full run
+            "as_of is not the newest row date": mut(lambda d: d.update(as_of=(BASE - D).isoformat())),
+            "stale: every row older than the ratio age": mut(lambda d: (d.update(as_of=(BASE - 9 * D).isoformat()), [r.update(fetched=(BASE - 9 * D).isoformat()) for r in d["stocks"]])),
+            "an error entry without text": mut(lambda d: d.update(errors=[{"symbol": "A0001", "error": ""}])),
         }
 
     def test_an_unavailable_or_invalid_published_file_stops_without_writing_anything(self):
@@ -264,11 +478,36 @@ class StopsInsteadOfPublishingLess(unittest.TestCase):
                 self.assertEqual(rc, 1, (name, log))
                 self.assertEqual(s.written(), [], name)                                              # no state, no output: the job stops, nothing is deployed
 
+    def test_published_symbols_outside_the_universe_keep_the_safe_stop(self):
+        """A published stock that is no longer in the universe is not recovered automatically (it would be dropped or kept on a guess): stop, write nothing."""
+        s = Site(self)
+        d = copy.deepcopy(s.published); d["stocks"][0]["symbol"] = "ZZ9999"; d["stocks"][1]["symbol"] = "ZZ9998"
+        s.stub(curl_payload=json.dumps(d).encode())
+        rc, _, log = s.run_step("update.yml", RECOVER)
+        self.assertEqual(rc, 1, log)
+        self.assertIn("stocks outside the universe: ZZ9998, ZZ9999", log)
+        self.assertIn("Nothing was changed", log)
+        self.assertEqual(s.written(), [])
+
+    def test_a_stale_published_file_is_not_recovered_but_a_week_boundary_file_is_judged_by_the_project_rule(self):
+        """RATIOS_MAX_AGE_DAYS (7) is the project's own definition of stale ratios: a file whose newest row is that old is stale throughout."""
+        s = Site(self, base=BASE)                                      # newest row 2 days old: current
+        s.stub(); self.assertEqual(s.run_step("update.yml", RECOVER)[0], 0)
+        old = __import__("datetime").date.today() - fu.RATIOS_MAX_AGE_DAYS * D
+        s = Site(self, base=old)                                       # exactly 7 days old: stale by is_stale
+        s.stub(); rc, _, log = s.run_step("update.yml", RECOVER)
+        self.assertEqual(rc, 1, log)
+        self.assertIn("days old (RATIOS_MAX_AGE_DAYS)", log)
+        self.assertEqual(s.written(), [])
+        s = Site(self, base=old + D)                                   # 6 days: still current
+        s.stub(); self.assertEqual(s.run_step("update.yml", RECOVER)[0], 0)
+
     def test_the_build_stops_before_deploying_when_recovery_fails(self):
         w = yaml.safe_load((HERE / ".github" / "workflows" / "update.yml").read_text(encoding="utf-8"))
         names = [s.get("name") or s.get("run") for s in w["jobs"]["build"]["steps"]]
-        i_restore, i_check, i_recover = names.index("Restore saved data"), names.index(CHECK), names.index(RECOVER)
-        self.assertEqual((i_check, i_recover), (i_restore + 1, i_restore + 2))                       # right after the restore, before any updater
+        i_restore, i_lookup, i_check, i_recover = names.index("Restore saved data"), names.index(LOOKUP), names.index(CHECK), names.index(RECOVER)
+        self.assertEqual((i_lookup, i_check, i_recover), (i_restore + 1, i_restore + 2, i_restore + 3))   # right after the restore, before any updater
+        self.assertLess(i_recover, names.index("python nse_updater.py"))
         for n in (CHECK, RECOVER):
             self.assertNotIn("continue-on-error", step("update.yml", n))                             # a failure fails the build job ...
         self.assertEqual(w["jobs"]["deploy"]["needs"], "build")                                      # ... and the deploy job needs it
@@ -281,7 +520,13 @@ class BatchesNeverStartEmpty(unittest.TestCase):
         s = Site(self)
         rc, _, log = s.run_step("fundamentals_batch.yml", REQUIRE)
         self.assertEqual(rc, 1)
-        self.assertIn("No saved fundamentals state was restored", log)
+        self.assertIn("No saved fundamentals state was restored (the restore resolved: 'no cache')", log)
+        self.assertIn("A batch never recovers the state", log)
+        self.assertNotIn("Run (or wait for) the scheduled update first", log)                        # the old advice: that run can itself stop
+        rc, _, log = s.run_step("fundamentals_batch.yml", REQUIRE, extra_env={"MATCHED": "nse-data-shp-9"})
+        self.assertIn("the restore resolved: 'nse-data-shp-9'", log)                                 # a cache restored without the state is named
+        self.assertEqual(step("fundamentals_batch.yml", REQUIRE)["env"]["MATCHED"], "${{ steps.restore.outputs.cache-matched-key }}")
+        self.assertEqual(step("fundamentals_batch.yml", "Restore saved data")["id"], "restore")
         (s.ws / "data").mkdir(); (s.ws / "data" / "fundamentals_cache.json").write_text('{"stocks": {}}')
         rc, _, log = s.run_step("fundamentals_batch.yml", REQUIRE)                # an empty state is not a valid start for a batch
         self.assertEqual(rc, 1)
