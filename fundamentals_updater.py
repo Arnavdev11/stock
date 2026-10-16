@@ -102,6 +102,53 @@ def parse_ratios(body):
     return out
 
 
+NOT_AVAILABLE = ("", "-", "--", "na", "n/a", "nan", "null", "none")      # the provider's own way of saying "no value" for a metric it lists
+
+
+def read_ratios(body):
+    """(ratios, info) for a key-ratios answer. info: usable (at least one metric with a finite number), explicit (metrics the answer LISTS with an explicit
+    'no value' such as '-' or null), unreadable (metrics listed with a value that is neither a number nor such a marker) and, when not usable, reason.
+    A metric the answer does not list at all is in neither list: its absence is not a statement that it has no value."""
+    data = body.get("data") if isinstance(body, dict) else None
+    info = {"usable": False, "explicit": [], "unreadable": [], "reason": None}
+    ratios = {k: None for k in METRICS}
+    if not isinstance(data, list):
+        info["reason"] = "unusable response (no ratio list)"
+        return ratios, info
+    if not data:
+        info["reason"] = "empty response (no ratios)"
+        return ratios, info
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        key = RATIO_KEYS.get(str(item.get("name", "")).strip())
+        if not key:
+            continue
+        raw = item.get("company_value")
+        v = num(raw)
+        if v is not None:
+            ratios[key] = v
+            if key in info["explicit"]:
+                info["explicit"].remove(key)
+        elif raw is None or (isinstance(raw, str) and raw.strip().lower() in NOT_AVAILABLE):
+            if ratios[key] is None and key not in info["explicit"]:
+                info["explicit"].append(key)
+        elif ratios[key] is None and key not in info["unreadable"]:
+            info["unreadable"].append(key)
+    info["explicit"] = [m for m in METRICS if m in info["explicit"] and ratios[m] is None]
+    info["unreadable"] = [m for m in METRICS if m in info["unreadable"] and ratios[m] is None]
+    info["usable"] = any(v is not None for v in ratios.values())
+    if not info["usable"]:
+        info["reason"] = "unusable response (no metric with a value)"
+    return ratios, info
+
+
+def lost_metrics(before, after, explicit=()):
+    """Metrics that had a value before and have none after, without the provider saying explicitly that they have no value."""
+    b, a = before or {}, after or {}
+    return [m for m in METRICS if b.get(m) is not None and a.get(m) is None and m not in explicit]
+
+
 def load_instruments():
     """symbol -> {isin, name} from the official Upstox NSE instrument JSON."""
     try:
@@ -483,8 +530,16 @@ def open_batch(cache, bid, eligible, day, published_now=()):
         if not eligible:
             log("Batch %s not created: no stock is eligible (nothing missing, stale, invalid or due for a retry)." % bid)
             return None
+        planned = eligible[:MAX_STOCKS_PER_RUN]
+        stocks = cache.get("stocks") or {}
+        baseline = {}                         # the published values of the planned stocks before the batch: validation compares against them
+        for s in planned:
+            e = stocks.get(s) or {}
+            if s in published_now:
+                h = e.get("publish_hold")
+                baseline[s] = {"ratios": dict((h or {}).get("ratios") or e.get("ratios") or {}), "fetched": (h or {}).get("fetched") or e.get("ratios_fetched")}
         b = batches[bid] = {"id": bid, "created": day, "seq": len(batches) + 1, "status": "running", "max_stocks": MAX_STOCKS_PER_RUN, "max_calls": MAX_CALLS_PER_RUN,
-                            "planned": eligible[:MAX_STOCKS_PER_RUN], "outcomes": {}, "runs": [], "published_before": sorted(published_now)}
+                            "planned": planned, "outcomes": {}, "runs": [], "published_before": sorted(published_now), "baseline": baseline}
         log("Batch %s planned: %d stocks (of %d eligible)" % (bid, len(b["planned"]), len(eligible)))
     elif b.get("status") in ("running", "interrupted"):
         low = reconcile_calls(b)
@@ -627,9 +682,22 @@ def main(argv=None):
                 else:
                     errs.append("key-ratios: " + err)
             else:
-                e["ratios"] = parse_ratios(body)
-                e["ratios_fetched"] = day
-                ratios_now = True
+                # A 200 answer replaces the stored ratios only when it is usable and does not silently lose a metric the record had (or that a
+                # publication hold still shows). Otherwise it is a FAILED refresh: the previous ratios and their date stay, and the back-off applies.
+                ratios, info = read_ratios(body)
+                hold = e.get("publish_hold") or {}
+                known = hold.get("ratios") if hold else (e.get("ratios") if e.get("ratios_fetched") and not record_problems(e) else None)
+                lost = lost_metrics(known, ratios, info["explicit"])
+                if not info["usable"]:
+                    errs.append("key-ratios: " + info["reason"])
+                elif lost:
+                    errs.append("key-ratios: answer drops previously available metric(s) %s without saying they have no value" % ", ".join(lost))
+                else:
+                    e["ratios"] = ratios
+                    e["ratios_fetched"] = day
+                    e["explicit_unavailable"] = info["explicit"]    # metrics the provider said have no value (validation accepts these as understood changes)
+                    e.pop("publish_hold", None)                     # a sound refresh supersedes a publication hold
+                    ratios_now = True
 
         # An invalid record that could not be refetched stays as it was: build_rows never publishes it (record_problems), and nothing is deleted.
         if errs:
@@ -709,8 +777,12 @@ def build_rows(symbols, stocks):
             errors.append({"symbol": sym, "error": e["last_error"]})
         if not e.get("isin") or not e.get("ratios_fetched") or record_problems(e):
             continue                       # never publish a stock we have no real (or no sound) ratios for
-        r = e.get("ratios") or {}
-        dates.append(e["ratios_fetched"])
+        hold = e.get("publish_hold")
+        if hold:                           # a batch that failed validation for lost metrics: the site keeps the values from before it, with their own date
+            r, fetched = hold.get("ratios") or {}, hold.get("fetched") or e["ratios_fetched"]
+        else:
+            r, fetched = e.get("ratios") or {}, e["ratios_fetched"]
+        dates.append(fetched)
         rows.append({
             "symbol": sym, "isin": e["isin"], "company_name": e.get("company_name"),
             "sector": e.get("sector") if sym in universe.TEST_SYMBOLS else None,   # sector stays private for the wider universe until the sector approval gate is opened
@@ -718,7 +790,7 @@ def build_rows(symbols, stocks):
             "roce": r.get("roce"), "ev_ebitda": r.get("ev_ebitda"),
             "revenue_growth": None, "profit_growth": None,   # not fetched in this version
             "missing": missing_of(r),                         # the ratio metrics Upstox did not return for this stock (null above); [] = all six present
-            "fetched": e["ratios_fetched"],                   # the day these ratios were read
+            "fetched": fetched,                               # the day these ratios were read
         })
     return rows, errors, dates
 
@@ -908,7 +980,9 @@ def validate_batch(cache, batch, out_doc, previous_out=None, symbols=None, failu
     rows = {r.get("symbol"): r for r in row_list}
     for s, r in rows.items():
         e = stocks.get(s) or {}
-        if r.get("fetched") != e.get("ratios_fetched") or any(r.get(m) != (e.get("ratios") or {}).get(m) for m in METRICS):
+        h = e.get("publish_hold")
+        want_r, want_f = ((h.get("ratios") or {}), h.get("fetched")) if h else ((e.get("ratios") or {}), e.get("ratios_fetched"))
+        if r.get("fetched") != want_f or any(r.get(m) != want_r.get(m) for m in METRICS):
             p.append("%s: the published row does not match the cache" % s)
         if r.get("isin") != e.get("isin"):
             p.append("%s: published under ISIN %s but the cache holds %s" % (s, r.get("isin"), e.get("isin")))
@@ -928,12 +1002,71 @@ def validate_batch(cache, batch, out_doc, previous_out=None, symbols=None, failu
     gone = sorted(before - set(rows) - held)
     if gone:
         p.append("%d stock(s) published before are gone: %s" % (len(gone), ", ".join(gone[:10])))
+    for s, v in sorted(metric_losses(batch, stocks, out_doc, previous_out).items()):
+        p.append("%s: metric(s) %s disappeared from the published row without the provider saying they have no value" % (s, ", ".join(v["lost"])))
     counts = logged_calls() if call_counts is None else call_counts
     reconcile_calls(batch, counts)
     for i, r in enumerate(batch.get("runs") or [], 1):
         if r.get("calls", 0) > r.get("cap", batch.get("max_calls", MAX_CALLS_PER_RUN)):
             p.append("run %d of the batch used %d calls, more than its cap of %d" % (i, r.get("calls", 0), r.get("cap", 0)))
     return p
+
+
+def metric_losses(batch, stocks, out_doc, previous_out=None):
+    """{symbol: {lost, ratios, fetched}} for published rows that lost a metric compared with the values before the batch (the batch's own baseline,
+    else the previously published file). A metric the provider explicitly listed as having no value in a refresh made after the baseline is an
+    understood change and is not counted; neither is a metric that was already null."""
+    base = {s: dict(v) for s, v in (batch.get("baseline") or {}).items()}
+    if isinstance(previous_out, dict):
+        for r in previous_out.get("stocks") or []:
+            sym = r.get("symbol")
+            if sym and sym not in base:
+                base[sym] = {"ratios": {m: r.get(m) for m in METRICS}, "fetched": r.get("fetched")}
+    rows = {r.get("symbol"): r for r in (out_doc or {}).get("stocks") or [] if isinstance(r, dict)}
+    out = {}
+    for sym, b in base.items():
+        r = rows.get(sym)
+        if r is None:
+            continue                         # a disappearance is checked separately
+        e = stocks.get(sym) or {}
+        explicit = (e.get("explicit_unavailable") or []) if (e.get("ratios_fetched") or "") > (b.get("fetched") or "") else []
+        lost = lost_metrics(b.get("ratios"), {m: r.get(m) for m in METRICS}, explicit)
+        if lost:
+            out[sym] = {"lost": lost, "ratios": dict(b.get("ratios") or {}), "fetched": b.get("fetched")}
+    return out
+
+
+def rebuild_output(symbols, stocks, out_doc):
+    """Rewrites out/fundamentals.json from the cache (publication holds applied), keeping the last run's counts. No API call."""
+    rows, errors, dates = build_rows(symbols, stocks)
+    prev = (out_doc or {}).get("coverage") or {}
+    lr = prev.get("last_run") or {}
+    tally = {k: v for k, v in lr.items() if k not in ("calls", "call_cap", "date")}
+    cov = coverage_of(symbols, stocks, rows, tally, lr.get("calls", 0), lr.get("call_cap", MAX_CALLS_PER_RUN), lr.get("date", today()))
+    if "states" in prev:
+        cov["states"] = prev["states"]
+    write_json(OUT_FILE, {"as_of": max(dates) if dates else (out_doc or {}).get("as_of"), "source": (out_doc or {}).get("source", "Upstox"),
+                          "stocks": rows, "errors": errors, "coverage": cov})
+
+
+def set_holds(stocks, bid, losses, day):
+    """Failed validation: the stocks that lost metrics are published with their values from before the batch. Returns True when anything changed."""
+    changed = False
+    for sym, v in losses.items():
+        e = stocks.get(sym)
+        if e is not None and v.get("fetched"):
+            e["publish_hold"] = {"batch": bid, "since": day, "lost": v["lost"], "ratios": v["ratios"], "fetched": v["fetched"]}
+            changed = True
+    return changed
+
+
+def clear_holds(stocks, bid):
+    changed = False
+    for e in stocks.values():
+        if (e.get("publish_hold") or {}).get("batch") == bid:
+            e.pop("publish_hold", None)
+            changed = True
+    return changed
 
 
 def _universe_isins():
@@ -964,6 +1097,9 @@ def validate_main(argv):
     batch = (cache.get("batches") or {}).get(bid)
     if not batch:
         fail("batch %s does not exist" % bid)
+    if batch.get("status") in GATE_PASSED:     # already decided (e.g. the same id was dispatched again and refused): its record is left exactly as it is
+        log("Batch %s is already %s; nothing to validate and nothing changed." % (bid, batch["status"]))
+        return 0
     try:
         out_doc = json.loads(OUT_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -981,7 +1117,14 @@ def validate_main(argv):
                            "notices": {"held_isin_change": sorted(notices["held_isin_change"]), "isin_differs_from_universe": sorted(notices["isin_differs_from_universe"])}}
     if batch.get("status") in ("completed", "failed_validation"):
         batch["status"] = "validated" if not problems else "failed_validation"
+    losses = metric_losses(batch, stocks, out_doc, previous)
+    changed = set_holds(stocks, bid, losses, today()) if problems else clear_holds(stocks, bid)
+    if losses and problems:
+        batch["validation"]["publish_holds"] = sorted(losses)
     write_json(CACHE_FILE, cache)
+    if changed and isinstance(out_doc, dict):
+        rebuild_output(symbols, stocks, out_doc)    # the next publish shows the values from before the batch for those stocks
+        log("Published values from before the batch kept for %d stock(s) that lost metrics: %s" % (len(losses), ", ".join(sorted(losses)[:20])))
     rep = write_report(symbols, stocks, None, dt.date.today(), batch)
     print(report_markdown(rep))
     for x in problems[:30]:
@@ -1024,7 +1167,13 @@ def accept_main(argv):
         fail("batch %s does not exist" % bid)
     reconcile_calls(batch)
     a = accept_batch(batch, o.get("by"), o.get("reason"), today())
+    released = clear_holds(stocks, bid)       # the accepted values replace the held ones on the next publish
     write_json(CACHE_FILE, cache)
+    if released:
+        try:
+            rebuild_output(symbols, stocks, json.loads(OUT_FILE.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
     log("Batch %s accepted by %s (was %s; validation %s with %s problem(s)): %s" % (bid, a["by"], a["status_before"], a["validation_result"], a["validation_problem_count"], a["reason"]))
     print("::warning::fundamentals batch %s was accepted without passing validation, by %s: %s" % (bid, a["by"], a["reason"]))
     write_report(symbols, stocks, None, dt.date.today(), batch)

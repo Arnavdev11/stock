@@ -197,15 +197,15 @@ class CoverageAccounting(unittest.TestCase):
         out = h.run()
         cov, rows = out["coverage"], {r["symbol"]: r for r in out["stocks"]}
         self.assertEqual(cov["universe"], 40)
-        # 40 symbols: letters cycle A,B,C,E -> 10 each; E (404) never publishes; two removed from Upstox
+        # 40 symbols: letters cycle A,B,C,E -> 10 each; E (404) and C (an empty 200 answer: a failed read, not data) never publish; two removed from Upstox
         self.assertEqual(cov["not_in_upstox"], 2)
-        self.assertEqual(cov["with_error"], 10)                                         # the ten HTTP 404 stocks
-        self.assertEqual(cov["published"], 28)                                          # 10 A + 10 B + 10 C minus the two not served
-        self.assertEqual((cov["metrics_complete"], cov["metrics_partial"], cov["metrics_none"]), (9, 9, 10))
+        self.assertEqual(cov["with_error"], 20)                                         # the ten HTTP 404 stocks and the ten empty answers
+        self.assertEqual(cov["published"], 18)                                          # 10 A + 10 B minus the two not served
+        self.assertEqual((cov["metrics_complete"], cov["metrics_partial"], cov["metrics_none"]), (9, 9, 0))
         self.assertEqual(cov["metric_available"], {"pe": 18, "pb": 18, "roa": 18, "roe": 18, "roce": 9, "ev_ebitda": 9})
-        self.assertEqual(cov["not_yet_fetched"], 10)                                    # the 404 stocks: in the universe, no row, still pending
+        self.assertEqual(cov["not_yet_fetched"], 20)                                    # the 404 and empty-answer stocks: in the universe, no row, still pending
         run = cov["last_run"]
-        self.assertEqual((run["succeeded"], run["partial"], run["failed"], run["not_reached"]), (9, 19, 10, 0))
+        self.assertEqual((run["succeeded"], run["partial"], run["failed"], run["not_reached"]), (9, 9, 20, 0))
         self.assertEqual(run["processed"], 38)
         self.assertEqual(vo.check_fundamentals(out), [])
         self.assertFalse(any(s in rows for s in missing))
@@ -213,12 +213,11 @@ class CoverageAccounting(unittest.TestCase):
     def test_a_missing_metric_stays_null_and_is_listed_never_filled_in(self):
         out = self.h.run()
         rows = {r["symbol"]: r for r in out["stocks"]}
-        ok, bank, empty = rows["A0000"], rows["B0001"], rows["C0002"]
+        ok, bank = rows["A0000"], rows["B0001"]
         self.assertEqual((ok["missing"], ok["pe"], ok["roce"], ok["ev_ebitda"]), ([], 12.5, 21.4, 9.9))
         self.assertEqual((bank["missing"], bank["roce"], bank["ev_ebitda"], bank["pe"]), (["roce", "ev_ebitda"], None, None, 12.5))
-        self.assertEqual(empty["missing"], ["pe", "pb", "roa", "roe", "roce", "ev_ebitda"])
-        for k in ("pe", "pb", "roa", "roe", "roce", "ev_ebitda"):
-            self.assertIsNone(empty[k], k)
+        self.assertNotIn("C0002", rows)                                                 # an empty answer is a failed read: no all-null row is invented
+        self.assertIn({"symbol": "C0002", "error": "key-ratios: empty response (no ratios)"}, out["errors"])
         for r in out["stocks"]:
             self.assertIsNone(r["revenue_growth"])                                      # still not fetched: null, not invented
             self.assertIsNone(r["profit_growth"])
@@ -228,10 +227,11 @@ class CoverageAccounting(unittest.TestCase):
         out = self.h.run()
         self.assertEqual(self.h.rc, 0, self.h.log)
         bad = {e["symbol"] for e in out["errors"]}
-        self.assertEqual(len(bad), 10)
-        self.assertTrue(all(s.startswith("E") for s in bad))
+        self.assertEqual(len(bad), 20)
+        self.assertTrue(all(s[0] in "CE" for s in bad))
         self.assertTrue(any(r["symbol"].startswith("A") for r in out["stocks"]))
-        self.assertTrue(all("HTTP 404" in e["error"] for e in out["errors"]))
+        self.assertTrue(all("HTTP 404" in e["error"] for e in out["errors"] if e["symbol"][0] == "E"))
+        self.assertTrue(all("empty response" in e["error"] for e in out["errors"] if e["symbol"][0] == "C"))
 
     def test_the_sector_gate_is_unchanged_for_stocks_outside_the_development_set(self):
         out = self.h.run()
@@ -240,8 +240,8 @@ class CoverageAccounting(unittest.TestCase):
 
     def test_a_run_log_reports_the_counts(self):
         self.h.run()
-        self.assertRegex(self.h.log, r"Coverage: universe 40 \| published 30 \(all metrics 10, some missing 10, none 10\)")
-        self.assertRegex(self.h.log, r"This run: processed 40 \(succeeded 10, partial 20, failed 10\)")
+        self.assertRegex(self.h.log, r"Coverage: universe 40 \| published 20 \(all metrics 10, some missing 10, none 0\)")
+        self.assertRegex(self.h.log, r"This run: processed 40 \(succeeded 10, partial 10, failed 20\)")
 
 
 class Backoff(unittest.TestCase):
