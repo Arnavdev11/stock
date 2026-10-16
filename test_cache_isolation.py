@@ -12,6 +12,7 @@ import yaml
 HERE = Path(__file__).resolve().parent
 WF = HERE / ".github" / "workflows"
 LEDGER = "stocklens-ledger"
+PRE_FIX = "4eb39f7e6ab7a81f81055d8e9081ff17d2f41a8f"     # the last commit before the side-* cache prefixes (the baseline the rollback test compares with)
 
 
 def caches(doc):
@@ -64,7 +65,7 @@ def violations(all_caches):
     return bad
 
 
-def replay(all_caches, side):
+def replay(all_caches, side, match_paths=True):
     """A batch saves its progress while a run of the side workflow (another concurrency group) is in flight and saves after it. Which saved data does
     the next publishing run restore? GitHub restores the newest cache whose key starts with the restore prefix AND whose path set is the same (the
     cache version is derived from the paths), so a side cache with a different path set is never picked."""
@@ -76,7 +77,7 @@ def replay(all_caches, side):
     (k0, p0), (k1, p1), (k2, p2) = saved("update.yml"), saved("fundamentals_batch.yml"), saved(side)
     store = [(0, k0 + "100", p0, "before-batch"), (2, k1 + "101", p1, "batch-progress"), (3, k2 + "102", p2, "side-run (restored before the batch saved)")]
     (prefix, paths), = publishing_restores(all_caches)
-    return max(c for c in store if c[1].startswith(prefix) and c[2] == paths)[3]
+    return max(c for c in store if c[1].startswith(prefix) and (c[2] == paths or not match_paths))[3]
 
 
 class Isolation(unittest.TestCase):
@@ -102,18 +103,22 @@ class Isolation(unittest.TestCase):
                 continue
             self.assertEqual(replay(self.now, side), "batch-progress", side)
 
-    def test_the_committed_workflows_show_the_rollback_this_prevents(self):
-        def at_head(n):
-            r = subprocess.run(["git", "show", "HEAD:.github/workflows/" + n], cwd=str(HERE), capture_output=True, text=True)
-            return r.stdout if r.returncode == 0 else None
-        head = load_all(at_head)
-        if "update.yml" not in head:
-            self.skipTest("not a git checkout")
-        head["fundamentals_batch.yml"] = self.now["fundamentals_batch.yml"]      # the batch as it would run on top of the committed workflows
-        self.assertEqual([(v[0], v[2]) for v in violations(head)], [("market_data.yml", "nse-data-market-${{ github.run_id }}")])
-        self.assertEqual(replay(head, "market_data.yml"), "side-run (restored before the batch saved)")   # the batch's progress would be lost
-        self.assertEqual(replay(head, "historical.yml"), "batch-progress")     # its path set (it excludes out/by_symbol/historical) never matches
+    def test_the_side_prefixes_protect_the_batch_even_without_the_path_rule(self):
+        for side in ("historical.yml", "market_data.yml"):                     # GitHub documents the prefix rule; the path-set rule is only implied
+            self.assertEqual(replay(self.now, side, match_paths=False), "batch-progress", side)
 
+    def test_the_workflows_before_the_fix_show_the_rollback_it_prevents(self):
+        def before_fix(n):
+            r = subprocess.run(["git", "show", PRE_FIX + ":.github/workflows/" + n], cwd=str(HERE), capture_output=True, text=True)
+            return r.stdout if r.returncode == 0 else None
+        old = load_all(before_fix)
+        if "update.yml" not in old:
+            self.skipTest("commit %s is not available in this checkout" % PRE_FIX[:7])
+        old["fundamentals_batch.yml"] = self.now["fundamentals_batch.yml"]        # the batch as it would have run on top of the old workflows
+        self.assertEqual([(v[0], v[2]) for v in violations(old)], [("market_data.yml", "nse-data-market-${{ github.run_id }}")])
+        self.assertEqual(replay(old, "market_data.yml"), "side-run (restored before the batch saved)")   # the batch's progress would be lost
+        self.assertEqual(replay(old, "historical.yml", match_paths=False), "side-run (restored before the batch saved)")  # unless the path rule saves it
+        self.assertEqual(replay(self.now, "market_data.yml"), "batch-progress")  # and the current workflows keep it
 
 if __name__ == "__main__":
     unittest.main()

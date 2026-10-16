@@ -311,8 +311,8 @@ class EveryAttemptPersisted(unittest.TestCase):
 
 class PreservesExistingRecords(unittest.TestCase):
     def test_records_outside_the_batch_are_published_unchanged(self):
-        h = BatchHarness(self, 60, letters="ABC")
-        base = h.go(cap=10 ** 6)                             # 60 published (complete, partial, empty)
+        h = BatchHarness(self, 60, letters="AB")
+        base = h.go(cap=10 ** 6)                             # 60 published (complete and partial)
         c = h.cache()
         for s in sorted(c["stocks"])[:20]:
             c["stocks"][s]["ratios_fetched"] = (START - 10 * D).isoformat()   # 20 stale

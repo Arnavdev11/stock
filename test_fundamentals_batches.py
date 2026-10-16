@@ -215,15 +215,15 @@ class HonestOutcomes(unittest.TestCase):
         out = h.go(batch="1")
         rows = {r["symbol"]: r for r in out["stocks"]}
         b = next(r for s, r in rows.items() if s[0] == "B")
-        cc = next(r for s, r in rows.items() if s[0] == "C")
         self.assertEqual((b["roce"], b["ev_ebitda"], b["missing"]), (None, None, ["roce", "ev_ebitda"]))
-        self.assertEqual(cc["missing"], list(fu.METRICS)); self.assertTrue(all(cc[m] is None for m in fu.METRICS))
+        self.assertFalse(any(s[0] == "C" for s in rows))                             # an empty answer is a failed read: never an invented all-null row
         oc = h.batch("1")["outcomes"]
-        self.assertEqual({oc[s] for s in oc if s[0] == "B"}, {"partial"}); self.assertEqual({oc[s] for s in oc if s[0] == "C"}, {"no_data"})
-        self.assertEqual(h.validate("1"), 0, h.offline_log)
+        self.assertEqual({oc[s] for s in oc if s[0] == "B"}, {"partial"}); self.assertEqual({oc[s] for s in oc if s[0] == "C"}, {"failed"})
+        self.assertEqual(h.validate("1"), 1)                                         # 10 of 30 failed: above the default 10%
+        self.assertEqual(h.validate("1", rate=0.4), 0, h.offline_log)
         rep = h.report()
-        self.assertEqual(rep["quality"], {"complete": 10, "partial": 10, "none": 10})
-        self.assertEqual(len(rep["lists"]["metric_missing"]["roce"]), 20)
+        self.assertEqual(rep["quality"], {"complete": 10, "partial": 10, "none": 0})
+        self.assertEqual(len(rep["lists"]["metric_missing"]["roce"]), 10)
         self.assertNotIn(0, [r[m] for r in out["stocks"] for m in fu.METRICS if r[m] is not None and r["symbol"][0] == "C"])
 
 
