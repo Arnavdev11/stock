@@ -97,7 +97,8 @@ jobs:
             data
             out
             !out/by_symbol/historical
-          key: nse-data-hist-${{ github.run_id }}
+          # saved under its own prefix: "Update data and publish site" restores only nse-data-*, so this run's snapshot (older updater caches) can never be restored over its newer data
+          key: side-historical-${{ github.run_id }}
           restore-keys: nse-data-
 
       - name: Merge the saved history into out/ (no day is ever dropped)

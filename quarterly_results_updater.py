@@ -46,6 +46,7 @@ import json
 import os
 import sys
 
+import run_status
 import shards
 import stock_directory
 import universe
@@ -60,6 +61,9 @@ DIRECTORY_FILE = ROOT / "out" / "stock_directory.json"
 SHARD_KIND = "quarterly_results"
 SOURCE = "Upstox fundamentals API (income statement, quarterly)"
 DEFAULT_MAX_CALLS = 120
+MAX_ALLOWED_CALLS = 330        # the workflow step has a 15-minute timeout; at the measured ~2.3 s per call 330 calls take about 12.7 minutes
+RECHECK_SHARE = 0.5            # share of a run's calls reserved for re-checking stocks that already have results (see run_batch)
+MAX_RETRY_DAYS = 30            # a stock whose requests keep failing is retried at most this rarely (see retry_days)
 PENDING_FROM_DAYS = 10
 PENDING_FOR_DAYS = 90
 PENDING_EVERY_DAYS = 2
@@ -262,8 +266,34 @@ def merge_quarters(record, parsed, basis, day):
     return changed
 
 
+def retry_days(failures):
+    """Back-off after failed requests: 1, 2, 4, 8, 16, then 30 days. A stock whose requests keep failing no longer goes first in every run."""
+    n = max(1, int(failures or 1))
+    return min(2 ** (n - 1), MAX_RETRY_DAYS)
+
+
+def in_backoff(record, day):
+    """True while a stock whose last request FAILED (network, HTTP or provider error; not 'no data') waits for its retry date."""
+    if not record or not record.get("failures"):
+        return False
+    last = _date(record.get("last_attempt"))
+    return last is not None and (day - last).days < retry_days(record["failures"])
+
+
+def results_pending(record, day):
+    """True inside the window in which the next quarter's result is expected (from PENDING_FROM_DAYS after the end of the quarter that
+    follows the newest stored one, for PENDING_FOR_DAYS)."""
+    ends = sorted(k for k in ((record or {}).get("quarters") or {}) if _date(k))
+    if not ends:
+        return False
+    start = add_months(_date(ends[-1]), 3) + dt.timedelta(days=PENDING_FROM_DAYS)
+    return start <= day <= start + dt.timedelta(days=PENDING_FOR_DAYS)
+
+
 def needs_refresh(record, day):
     """Whether a stock is due. day: a date."""
+    if in_backoff(record, day):
+        return False
     if not record or not record.get("last_checked"):
         return True
     last = _date(record["last_checked"])
@@ -352,31 +382,53 @@ def check_stock_doc(doc, entry=None):
 
 
 # ---------------------------------------------------------------- one run
-def run_batch(entries, cache, fetch, day, max_calls, priority=()):
+def run_batch(entries, cache, fetch, day, max_calls, priority=(), recheck_share=None):
     """entries: {symbol: {symbol, isin, name}}. cache: {symbol: record} (changed in place). fetch(isin, basis) -> (body, error_text).
-    Returns a summary dict. Never raises for a bad response; a failed fetch leaves the stock's data untouched."""
+    Returns a summary dict. Never raises for a bad response; a failed fetch leaves the stock's data untouched.
+
+    Order (so a big never-checked backlog cannot starve the stocks that already have results, and vice versa):
+      1. due RE-CHECKS of stocks that already have stored quarters (a result expected now first, then the stalest), up to recheck_share of the budget;
+      2. NEVER-CHECKED stocks (alphabetical, failed ones backed off), with what is left of the budget;
+      3. any remaining due re-checks, if budget is still left.
+    The priority symbols (the coverage universe) go first inside each group. A stock whose request failed waits for its retry date (in_backoff)."""
+    share = RECHECK_SHARE if recheck_share is None else recheck_share
     due = [s for s, e in entries.items() if needs_refresh(cache.get(s), day)]
-    last = {s: ((cache.get(s) or {}).get("last_checked")) for s in due}
-    order = universe.order_stalest(due, last)
-    if priority:                                              # the coverage universe (stocks the site has detail pages for) goes first; the rest of the directory follows (stable: keeps the stalest-first order)
-        first = set(priority)
-        order = [x for x in order if x in first] + [x for x in order if x not in first]
-    calls = 0
-    summary = {"due": len(due), "checked": 0, "stored": 0, "no_data": 0, "rejected": {}, "errors": 0, "skipped_by_call_cap": 0, "quarters_added_or_changed": 0}
-    for sym in order:
+    first = set(priority or ())
+
+    def has_quarters(s):
+        return bool((cache.get(s) or {}).get("quarters"))
+
+    def ordered(group, key):
+        order = universe.order_stalest(group, key)
+        return [x for x in order if x in first] + [x for x in order if x not in first] if first else order
+
+    rechecks = [s for s in due if has_quarters(s)]
+    fresh = [s for s in due if not has_quarters(s)]
+    pend = {s for s in rechecks if results_pending(cache.get(s), day)}
+    rechecks = ordered([s for s in rechecks if s in pend], {s: cache[s].get("last_checked") for s in rechecks}) + \
+        ordered([s for s in rechecks if s not in pend], {s: cache[s].get("last_checked") for s in rechecks})
+    fresh = ordered(fresh, {s: ((cache.get(s) or {}).get("last_checked") or ((cache.get(s) or {}).get("last_attempt") if (cache.get(s) or {}).get("failures") else None)) for s in fresh})
+
+    state = {"calls": 0}
+    summary = {"due": len(due), "due_rechecks": len(rechecks), "due_never_checked": len(fresh), "checked": 0, "rechecked": 0, "stored": 0, "no_data": 0,
+               "rejected": {}, "errors": 0, "skipped_by_call_cap": 0, "quarters_added_or_changed": 0}
+    done = set()
+
+    def one(sym, cap):
         e = entries[sym]
         rec = cache.setdefault(sym, empty_record())
-        if not e.get("isin"):
-            continue
+        if not e.get("isin") or state["calls"] >= cap:
+            return False
         got = None
         for basis in BASES:
-            if calls >= max_calls:
+            if state["calls"] >= cap:
                 break
-            calls += 1
+            state["calls"] += 1
             body, err = fetch(e["isin"], basis)
             rec["last_attempt"] = day.isoformat()
             if err or body is None:
                 summary["errors"] += 1
+                rec["failures"] = int(rec.get("failures") or 0) + 1      # back off (in_backoff); the stored quarters stay as they are
                 got = "error"
                 break
             parsed = parse_quarterly(body)
@@ -384,25 +436,45 @@ def run_batch(entries, cache, fetch, day, max_calls, priority=()):
                 n = merge_quarters(rec, parsed, basis, day.isoformat())
                 summary["quarters_added_or_changed"] += n
                 rec["last_checked"] = rec["last_success"] = day.isoformat()
-                rec["problem"] = None
+                rec["problem"], rec["failures"] = None, 0
                 summary["stored"] += 1
                 got = "ok"
                 break
             rec["problem"] = parsed["problem"]
             if parsed["problem"] != "no_data":
                 summary["rejected"][parsed["problem"]] = summary["rejected"].get(parsed["problem"], 0) + 1
-                rec["last_checked"] = day.isoformat()
+                rec["last_checked"], rec["failures"] = day.isoformat(), 0
                 got = "rejected"
                 break
             got = "no_data"                                   # nothing usable on this basis: try the next one
         if got == "no_data":
-            rec["last_checked"] = day.isoformat()
+            rec["last_checked"], rec["failures"] = day.isoformat(), 0
             summary["no_data"] += 1
         if got is not None:
             summary["checked"] += 1
-        elif calls >= max_calls:
-            summary["skipped_by_call_cap"] += 1
-    summary["calls"] = calls
+            done.add(sym)
+            return True
+        return False
+
+    recheck_cap = int(max_calls * share) if fresh else max_calls
+    for sym in rechecks:                                      # 1. re-checks, within their share
+        if state["calls"] >= recheck_cap:
+            break
+        if one(sym, recheck_cap):
+            summary["rechecked"] += 1
+    for sym in fresh:                                         # 2. never-checked stocks
+        if state["calls"] >= max_calls:
+            break
+        one(sym, max_calls)
+    for sym in rechecks:                                      # 3. remaining re-checks with any budget left
+        if state["calls"] >= max_calls:
+            break
+        if sym not in done and one(sym, max_calls):
+            summary["rechecked"] += 1
+    today_ = day.isoformat()
+    summary["skipped_by_call_cap"] = sum(1 for s in rechecks + fresh                 # due, requestable, and not even attempted in this run
+                                         if s not in done and entries[s].get("isin") and (cache.get(s) or {}).get("last_attempt") != today_)
+    summary["calls"] = state["calls"]
     return summary
 
 
@@ -496,7 +568,11 @@ def main(argv=None):
         cache = json.loads(CACHE_FILE.read_text(encoding="utf-8")).get("stocks", {})
     except (OSError, ValueError):
         cache = {}
-    api = Upstox(token, universe.budget("QUARTERLY_MAX_CALLS", DEFAULT_MAX_CALLS))
+    cap = universe.budget("QUARTERLY_MAX_CALLS_OVERRIDE", universe.budget("QUARTERLY_MAX_CALLS", DEFAULT_MAX_CALLS))   # a hand-set run budget (workflow input) wins
+    if cap > MAX_ALLOWED_CALLS:
+        log("::warning::QUARTERLY_MAX_CALLS=%d is above the %d calls that fit the step's 15-minute timeout; %d is used." % (cap, MAX_ALLOWED_CALLS, MAX_ALLOWED_CALLS))
+        cap = MAX_ALLOWED_CALLS
+    api = Upstox(token, cap)
 
     raw_dir = os.environ.get("QUARTERLY_SAVE_RAW")           # test batches: keep each raw response (no credential is ever in it) so its real shape can be reviewed
 
@@ -517,6 +593,9 @@ def main(argv=None):
     write_json(CACHE_FILE, {"schema_version": SCHEMA_VERSION, "kind": "quarterly_cache", "stocks": cache})
     write_outputs(ROOT, docs, meta)
     log("quarterly results:", json.dumps(summary, sort_keys=True), "published", len(docs))
+    run_status.write("quarterly_results", {"processed": summary["checked"], "succeeded": summary["stored"] + summary["no_data"], "stored": summary["stored"],
+                                           "errors": summary["errors"], "skipped_by_call_cap": summary["skipped_by_call_cap"]},
+                     calls=summary["calls"], call_cap=api.max_calls, published=len(docs))
     return 0
 
 

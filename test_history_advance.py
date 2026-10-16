@@ -273,7 +273,8 @@ class Untouched(unittest.TestCase):
         r = subprocess.run(["git", "diff", "--name-only", "HEAD"], cwd=str(ROOT), capture_output=True, text=True)
         if r.returncode != 0:
             self.skipTest("not a git checkout")
-        changed = set(r.stdout.split())
+        import guard_update_yml
+        changed = {f for f in r.stdout.split() if not guard_update_yml.is_approved(ROOT, f)}      # a later approved change (tests/approved_workflow_changes.json) is not part of this fix
         for protected in (".gitignore", ".github/workflows/market_data.yml", "render.yaml", "live_public/__main__.py", "live_public/config.py", "index_data_updater.py",
                           "quarterly_results_updater.py", "sensex_publish.py", "sector_publish.py", "nse_updater.py"):
             self.assertNotIn(protected, changed, protected)

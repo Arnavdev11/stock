@@ -36,6 +36,7 @@ from pathlib import Path
 
 import ledger_storage
 import research_test_batch
+import run_status
 import shards
 import universe
 from financials_updater import capex_class, norm
@@ -51,6 +52,10 @@ OFFICIAL_FILE = ROOT / "official_financial_records.json"       # committed, hand
 OFFICIAL_PROVIDER = "Official annual report"
 PROVIDERS = ("Upstox", OFFICIAL_PROVIDER)
 REFRESH_DAYS = 30
+# Sector words that mean a financial-style income statement (Upstox gives Total Revenue / total income, no separate Revenue line).
+# "invest" and "brok" cover Investment, Stock Broking and Stock/ Commodity Brokers; "asset manag" and "wealth" cover asset managers.
+FINANCIAL_SECTOR_WORDS = ("financ", "bank", "insur", "nbfc", "invest", "brok", "asset manag", "wealth", "capital market")
+STALE_BASIS_LAG_YEARS = 1     # a basis whose newest fiscal year is older than (current year - this) is treated as stale: the other basis is checked once
 DEFAULT_MAX_CALLS = 120
 DIFF_TOLERANCE = 0.01
 MAX_OTHER_LINES = 40
@@ -120,7 +125,14 @@ def classify_layout(sector):
     if not isinstance(sector, str) or not sector.strip():
         return "unclassified"
     s = sector.lower()
-    return "financial" if any(w in s for w in ("financ", "bank", "insur", "nbfc")) else "standard"
+    return "financial" if any(w in s for w in FINANCIAL_SECTOR_WORDS) else "standard"
+
+
+def public_sector(symbol, sector):
+    """The sector label that may be stored in the ledger and published. The ledger lives on the public data branch and is published per stock,
+    so the wider universe's sector stays private until the sector approval gate opens - the same rule as fundamentals_updater.py. The layout
+    (statement_layout) is still derived from the private label; only the label itself is withheld."""
+    return sector if symbol in universe.TEST_SYMBOLS else None
 
 
 def entries(history):
@@ -249,7 +261,7 @@ def parse_cashflow(body, fy_month=None):
 
 # ---------------------------------------------------------------- the ledger
 def new_stock(symbol, isin, name, sector):
-    return {"symbol": symbol, "isin": isin, "company_name": name, "sector": sector, "statement_layout": classify_layout(sector),
+    return {"symbol": symbol, "isin": isin, "company_name": name, "sector": public_sector(symbol, sector), "statement_layout": classify_layout(sector),
             "fiscal_year_end_month": None, "years": [], "gaps": {}, "fetch_state": {}}
 
 
@@ -356,6 +368,18 @@ def upsert(stock, years, statement, basis, endpoint, fetched, today_, month=None
 
 
 # ---------------------------------------------------------------- fetching one stock
+def needs_basis_check(stock, statement, today_):
+    """True once for a statement whose stored basis is consolidated and stale (newest fiscal year too old) and whose standalone basis has not
+    been checked since: the next run checks standalone instead of waiting up to REFRESH_DAYS. Recorded as fetch_state[statement].standalone_checked."""
+    st = (stock.get("fetch_state") or {}).get(statement) or {}
+    if st.get("basis") != "consolidated" or st.get("standalone_checked") == today_:
+        return False
+    if st.get("standalone_checked"):
+        return False
+    fys = [r["fy"] for r in stock.get("years") or [] if r.get("basis") == "consolidated" and isinstance(r.get("fy"), int)]
+    return bool(fys) and basis_is_stale(max(fys), today_)
+
+
 def is_fresh(state, today_):
     try:
         return (dt.date.fromisoformat(today_) - dt.date.fromisoformat((state or {}).get("fetched"))).days < REFRESH_DAYS
@@ -363,11 +387,36 @@ def is_fresh(state, today_):
         return False
 
 
-def fetch_statement(api, isin, statement, layout, fy_month):
-    """(parsed, basis, endpoint, error). Consolidated first; standalone only when consolidated has no usable data."""
+def newest_fy(parsed):
+    years = (parsed or {}).get("years") or {}
+    return max(years) if years else None
+
+
+def basis_is_stale(fy, today_):
+    try:
+        return fy is not None and fy < dt.date.fromisoformat(today_).year - STALE_BASIS_LAG_YEARS
+    except (TypeError, ValueError):
+        return False
+
+
+def fetch_statement(api, isin, statement, layout, fy_month, today_=None):
+    """(parsed, basis, endpoint, error). Consolidated first; standalone when consolidated has no usable data.
+    With today_: when consolidated's newest fiscal year is stale (basis_is_stale), standalone is requested once as well and is used if it has a
+    NEWER fiscal year (some companies stopped filing consolidated statements years ago). A failed or older standalone keeps the consolidated result."""
+    got = fetch_statement_basis(api, isin, statement, layout, fy_month)
+    parsed, basis, endpoint, err = got
+    if err or basis != "consolidated" or not basis_is_stale(newest_fy(parsed), today_):
+        return got
+    alt = fetch_statement_basis(api, isin, statement, layout, fy_month, only="standalone")
+    if not alt[3] and alt[1] == "standalone" and (newest_fy(alt[0]) or 0) > (newest_fy(parsed) or 0):
+        return alt
+    return got
+
+
+def fetch_statement_basis(api, isin, statement, layout, fy_month, only=None):
     path = STATEMENTS[statement][0]
     reasons = []
-    for basis in BASES:
+    for basis in ((only,) if only else BASES):
         params = {"type": basis, "time_period": "yearly", "fs": "true"} if statement == "income" else {"type": basis, "fs": "true"}
         body, err = api.get(isin + "/" + path, params)
         if err:
@@ -387,9 +436,9 @@ def process_stock(api, stock, today_):
     """Fetch (when stale) and merge both statements for one stock. Returns a list of problem strings; the ledger is never damaged by a failure."""
     problems, state = [], stock.setdefault("fetch_state", {})
     for statement in ("income", "cash_flow"):
-        if is_fresh(state.get(statement), today_):
+        if is_fresh(state.get(statement), today_) and not needs_basis_check(stock, statement, today_):
             continue
-        parsed, basis, endpoint, err = fetch_statement(api, stock["isin"], statement, stock.get("statement_layout", "standard"), stock.get("fiscal_year_end_month"))
+        parsed, basis, endpoint, err = fetch_statement(api, stock["isin"], statement, stock.get("statement_layout", "standard"), stock.get("fiscal_year_end_month"), today_)
         old = state.get(statement) or {}
         if err:
             state[statement] = {"fetched": old.get("fetched"), "basis": old.get("basis"), "error": err}
@@ -401,6 +450,8 @@ def process_stock(api, stock, today_):
             problems.append("%s: %s" % (statement, stats["refused"]))
             continue
         state[statement] = {"fetched": today_, "basis": basis, "error": None}
+        if basis == "standalone" or basis_is_stale(newest_fy(parsed), today_):
+            state[statement]["standalone_checked"] = today_          # the stale-basis check has been made; it is not repeated every run
     return problems
 
 
@@ -448,6 +499,7 @@ def build_output(ledger, errors, warnings, today_):
         if s.get("years"):
             c = copy.deepcopy(s)
             c.pop("fetch_state", None)
+            c["sector"] = public_sector(sym, c.get("sector"))         # never publish the wider universe's sector
             stocks[sym] = c
     return {"schema": SCHEMA_VERSION, "as_of": today_, "source": "Upstox (API) and official company annual reports - the provider is stated on every record", "interval": "annual", "notes": NOTES,
             "stocks": stocks, "errors": errors, "warnings": warnings}
@@ -706,7 +758,13 @@ def read_json(path):
 
 
 def normalise_ledger(ledger):
-    """Re-derive verification from stored values/checks (older ledgers used 'check_failed'). Values, revisions and other_lines are untouched."""
+    """Re-derive verification from stored values/checks (older ledgers used 'check_failed'). Values, revisions and other_lines are untouched.
+    Also: re-derives statement_layout from a stored sector label (FINANCIAL_SECTOR_WORDS may have grown), then withholds that label for the wider
+    universe (public_sector), so a sector that an older run stored is never published again."""
+    for sym, st in (ledger.get("stocks") or {}).items():
+        if isinstance(st, dict) and isinstance(st.get("sector"), str) and st["sector"].strip():
+            st["statement_layout"] = classify_layout(st["sector"])
+            st["sector"] = public_sector(sym, st["sector"])
     for st in (ledger.get("stocks") or {}).values():
         for r in (st or {}).get("years") or []:
             if isinstance(r, dict) and isinstance(r.get("verification"), dict) and isinstance(r["verification"].get("checks"), dict) and isinstance(r.get("values"), dict):
@@ -752,7 +810,7 @@ def main():
         s = ledger["stocks"].setdefault(sym, new_stock(sym, meta["isin"], meta["name"], sectors.get(sym)))
         s["isin"], s["company_name"] = meta["isin"], meta["name"]
         if sectors.get(sym):
-            s["sector"], s["statement_layout"] = sectors[sym], classify_layout(sectors[sym])
+            s["sector"], s["statement_layout"] = public_sector(sym, sectors[sym]), classify_layout(sectors[sym])
         problems = [x for x in process_stock(api, s, day) if "call limit" not in x]      # running out of budget mid-stock is not a data problem
         if problems:
             errors.append({"symbol": sym, "error": "; ".join(problems)})
@@ -795,6 +853,9 @@ def main():
         log("Not reached in this run (call budget):", pending, "stock(s)")
     log("Wrote", OUT_FILE, "(core) and", nshards, "per-stock files; stocks with data:", len(doc["stocks"]), "| ")
     log("Details:", len(doc["stocks"]), "stocks,", len(errors), "with problems,", len(warnings), "consistency warnings, API calls:", api.calls)
+    data_errors = [e for e in errors if "not found" not in e.get("error", "")]
+    run_status.write("financial_history", {"failed": len(data_errors), "not_in_upstox": len(errors) - len(data_errors), "not_reached": pending,
+                                           "succeeded": len(doc["stocks"])}, calls=api.calls, call_cap=api.max_calls)
     for w in warnings[:30]:
         log("WARNING", w.get("symbol", ""), w["type"], w.get("statement", ""), w.get("period", ""), w.get("basis", ""), w.get("field", ""))
 

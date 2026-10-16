@@ -43,7 +43,8 @@ jobs:
           path: |
             data
             out
-          key: nse-data-market-${{ github.run_id }}
+          # saved under its own prefix: "Update data and publish site" restores only nse-data-*, so this run's snapshot (older updater caches) can never be restored over its newer data
+          key: side-market-${{ github.run_id }}
           restore-keys: nse-data-
 
       - name: Check that the saved NSE files exist

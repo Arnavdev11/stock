@@ -78,7 +78,7 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   eq([tile(d, "Total assets"), tile(d, "Total liabilities"), tile(d, "Total equity"), tile(d, "Liabilities / Equity"), tile(d, "Debt / Equity")], ["5,000", "3,000", "2,000", "1.50", "N/A"]);
   // cash flow: FCF is N/A and never operating + investing (400 - 300 = 100)
   eq([tile(d, "Operating cash flow"), tile(d, "Investing cash flow"), tile(d, "Financing cash flow"), tile(d, "Free cash flow")], ["400", "-300", "-50", "N/A"]);
-  re(d, /Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks\./);
+  re(d, /Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for this stock\./);   // per-stock wording (approved change)
   re(d, /Liabilities \/ Equity is not Debt \/ Equity/);
   re(d, /Historical Price Chart — Coming in Phase 3 Step 2/);
   no(d, /operating profit/i); for (const bad of ["NaN", "undefined", "null", "Infinity"]) no(d, new RegExp(bad));

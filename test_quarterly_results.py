@@ -305,11 +305,14 @@ class RunTests(unittest.TestCase):
         table = {(ENTRIES["BBB"]["isin"], "consolidated"): (GOOD, None)}
         s = q.run_batch(ENTRIES, cache, self.fetcher(table, log), D(2026, 8, 1), 2)
         self.assertEqual(s["calls"], 2)
-        self.assertEqual([c[0] for c in log], [ENTRIES["BBB"]["isin"], ENTRIES["CCC"]["isin"]])      # never-checked ones first, alphabetical
+        # AAA already has results and a result is due (re-check share: 1 of the 2 calls); then the never-checked ones, alphabetical
+        self.assertEqual([c[0] for c in log], [ENTRIES["AAA"]["isin"], ENTRIES["BBB"]["isin"]])
         self.assertEqual(s["stored"], 1)
         self.assertEqual(s["errors"], 1)
-        self.assertIsNone(cache["CCC"]["last_checked"])         # a failed call is retried next time
+        self.assertEqual(cache["AAA"]["last_checked"], "2026-01-01")   # a failed call does not count as a check
+        self.assertEqual(cache["AAA"]["failures"], 1)                  # ... and backs the stock off
         self.assertEqual(cache["AAA"]["quarters"]["2026-03-31"]["values"]["revenue"], 1.0)
+        self.assertNotIn("CCC", [c[0] for c in log])
         self.assertTrue(s["skipped_by_call_cap"] >= 1)
 
     def test_standalone_is_tried_only_when_consolidated_has_nothing(self):

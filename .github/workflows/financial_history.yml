@@ -83,7 +83,8 @@ jobs:
           path: |
             data
             out
-          key: nse-data-fhist-${{ github.run_id }}
+          # saved under its own prefix: "Update data and publish site" restores only nse-data-*, so this run's snapshot (older updater caches) can never be restored over its newer data
+          key: side-financial-history-${{ github.run_id }}
           restore-keys: nse-data-
 
       - name: Update the financial history ledger
