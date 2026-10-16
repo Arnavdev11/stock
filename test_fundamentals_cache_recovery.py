@@ -8,6 +8,7 @@ import copy
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -48,7 +49,9 @@ ref = [q.split("=", 1)[1] for q in url.split("?")[1].split("&") if q.startswith(
 if cfg["fail_all"] or ref in cfg["fail_refs"]:
     sys.exit(1)
 pages = cfg["refs"].get(ref, cfg["default"]) or [{"total_count": 0, "actions_caches": []}]
-for pg in pages:
+for i, pg in enumerate(pages):
+    if cfg.get("fail_after") is not None and i >= cfg["fail_after"]:
+        sys.exit(1)
     r = subprocess.run(["jq", "-r", jq], input=json.dumps(pg), text=True, capture_output=True)
     sys.stdout.write(r.stdout)
     if r.returncode:
@@ -77,12 +80,12 @@ class Site:
         self.bin = self.ws / "bin"; self.bin.mkdir()
         self.calls = self.ws / "stub_calls.log"
 
-    def stub(self, refs=None, default=None, fail_all=False, fail_refs=(), curl_fails=False, curl_payload=None):
+    def stub(self, refs=None, default=None, fail_all=False, fail_refs=(), fail_after=None, curl_fails=False, curl_payload=None):
         """gh: the cache list. refs = {ref: [page, page, ...]} (each page the JSON the API returns); default = the pages of any other ref; fail_refs = refs
-        whose listing fails (fail_all: every listing). curl: serves the published file (or fails)."""
+        whose listing fails (fail_all: every listing; fail_after=N: the listing breaks after N pages, like a failing second request of --paginate). curl: serves the published file (or fails)."""
         if curl_payload is not None:
             (self.ws / "site.json").write_bytes(curl_payload)
-        (self.ws / "gh_stub.json").write_text(json.dumps({"log": str(self.calls), "refs": refs or {}, "default": default or [], "fail_all": fail_all, "fail_refs": list(fail_refs)}))
+        (self.ws / "gh_stub.json").write_text(json.dumps({"log": str(self.calls), "refs": refs or {}, "default": default or [], "fail_all": fail_all, "fail_refs": list(fail_refs), "fail_after": fail_after}))
         (self.bin / "gh").write_text(GH_STUB)
         (self.bin / "curl").write_text("#!/bin/bash\necho \"curl $*\" >> %s\n%s\nout=''; while [ $# -gt 0 ]; do [ \"$1\" = -o ] && { out=\"$2\"; shift; }; shift; done\ncp %s \"$out\"\n"
                                        % (self.calls, "exit 22" if curl_fails else "", self.ws / "site.json"))
@@ -266,7 +269,8 @@ class NoStateInTheWorkspace(unittest.TestCase):
         rc, outs, log = s.run_step("update.yml", CHECK, extra_env=lookup())
         self.assertEqual((rc, outs.get("state")), (0, "miss"), log)
         calls = s.stub_calls()
-        self.assertTrue(all("--paginate" in c and "key=nse-data-" in c and "per_page=100" in c for c in calls), calls)
+        self.assertTrue(all("--paginate" in c and "per_page=100" in c and "ref=refs/heads/main" in c for c in calls), calls)
+        self.assertFalse(any(re.search(r"[?&]key=", c) for c in calls), calls)            # no `key` filter: its exact-vs-prefix meaning is not documented
         self.assertEqual(len(calls), 1)                                    # ref == default branch: one scope, listed once
         self.assertIn("a genuine cache miss", log)
 
@@ -297,6 +301,66 @@ class NoStateInTheWorkspace(unittest.TestCase):
         self.assertIn("incomplete (1 of 0 caches read)", self.stops(s, lookup()))
         s = Site(self); s.stub(refs={"refs/heads/main": [{"total_count": 2, "actions_caches": [{"key": "nse-data-1"}]}, {"total_count": 3, "actions_caches": [{"key": "nse-data-2"}]}]})
         self.assertIn("unusable (no single total)", self.stops(s, lookup()))            # the total changed while paging
+
+    def test_the_prefix_is_filtered_client_side_exactly(self):
+        """Only keys that start with 'nse-data-' count; every other cache is read (for the total) but never proves anything."""
+        others = ["side-historical-1", "side-financial-history-2", "sector-private-5", "nse-data", "xnse-data-3", "NSE-DATA-4", "sensex-history-7", "nse_data-8"]
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(others)})
+        rc, outs, log = s.run_step("update.yml", CHECK, extra_env=lookup())
+        self.assertEqual((rc, outs.get("state")), (0, "miss"), log)             # caches exist, none in the restore family: a genuine miss
+        for key in ("nse-data-shp-9", "nse-data-123456", "nse-data-"):
+            with self.subTest(key=key):
+                s = Site(self); s.stub(refs={"refs/heads/main": pages_of(others + [key])})
+                log = self.stops(s, lookup())
+                self.assertIn("1 saved cache(s) with the prefix nse-data- exist", log)
+
+    def test_a_miss_is_proven_across_every_page_of_other_caches(self):
+        keys = ["side-historical-%d" % i for i in range(250)]                    # three pages, none of them in the restore family
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys)})
+        rc, outs, log = s.run_step("update.yml", CHECK, extra_env=lookup())
+        self.assertEqual((rc, outs.get("state")), (0, "miss"), log)
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys[:200] + ["nse-data-shp-1"])})   # the cache is on the 3rd page
+        self.assertIn("1 saved cache(s) with the prefix nse-data- exist", self.stops(s, lookup()))
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys + ["nse-data-9"])[:2]})                       # ... but only two pages were read
+        self.assertIn("incomplete (200 of 251 caches read)", self.stops(s, lookup()))
+
+    def test_completeness_counts_every_cache_not_only_the_prefix_ones(self):
+        """total_count covers all caches of the ref, so the check compares it with everything that was read: a page of other caches missing is incomplete."""
+        keys = ["side-market-%d" % i for i in range(150)]
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys)[:1]})
+        self.assertIn("incomplete (100 of 150 caches read)", self.stops(s, lookup()))
+
+    def test_a_total_that_counts_pages_is_unusable_not_a_miss(self):
+        """If total_count were the size of each page (not documented either way), a long list shows several totals: never a miss."""
+        pages = [{"total_count": 100, "actions_caches": [{"key": "side-x-%d" % i} for i in range(100)]},
+                 {"total_count": 100, "actions_caches": [{"key": "side-y-%d" % i} for i in range(100)]},
+                 {"total_count": 50, "actions_caches": [{"key": "side-z-%d" % i} for i in range(50)]}]
+        s = Site(self); s.stub(refs={"refs/heads/main": pages})
+        self.assertIn("unusable (no single total)", self.stops(s, lookup()))
+
+    def test_a_listing_that_breaks_while_paging_is_never_a_miss(self):
+        keys = ["side-historical-%d" % i for i in range(250)]
+        s = Site(self); s.stub(refs={"refs/heads/main": pages_of(keys)}, fail_after=1)       # the second request fails after a good first page
+        log = self.stops(s, lookup())
+        self.assertIn("could not be listed", log)
+
+    def test_every_scope_is_filtered_and_judged_separately(self):
+        other = {"REF": "refs/heads/feature", "DEFAULT_BRANCH": "main"}
+        plain = pages_of(["side-historical-1", "sector-private-2"])
+        for name, refs, stop in (("only the dispatch branch has a daily cache", {"refs/heads/feature": pages_of(["nse-data-5"]), "refs/heads/main": plain}, True),
+                                 ("only the default branch has a daily cache", {"refs/heads/feature": plain, "refs/heads/main": pages_of(["nse-data-shp-5"])}, True),
+                                 ("neither has one", {"refs/heads/feature": plain, "refs/heads/main": plain}, False)):
+            with self.subTest(name):
+                s = Site(self); s.stub(refs=refs)
+                if stop:
+                    self.assertIn("saved cache(s) with the prefix nse-data- exist", self.stops(s, lookup(**other)))
+                else:
+                    rc, outs, log = s.run_step("update.yml", CHECK, extra_env=lookup(**other))
+                    self.assertEqual((rc, outs.get("state")), (0, "miss"), log)
+        s = Site(self); s.stub(refs={"refs/heads/feature": plain, "refs/heads/main": [{"total_count": 5, "actions_caches": [{"key": "side-a"}]}]})   # incomplete on the second scope
+        self.assertIn("The cache list of refs/heads/main is incomplete (1 of 5", self.stops(s, lookup(**other)))
+        s = Site(self); s.stub(refs={"refs/heads/main": plain}, fail_refs=["refs/heads/feature"])                                                   # failing on the first scope
+        self.assertIn("refs/heads/feature could not be listed", self.stops(s, lookup(**other)))
 
     def test_a_long_cache_list_is_read_completely_across_pages(self):
         keys = ["nse-data-hist-%d" % i for i in range(250)] + ["nse-data-998877"]       # the daily cache is on the last page

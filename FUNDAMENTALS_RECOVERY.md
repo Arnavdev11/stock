@@ -13,8 +13,8 @@ nothing downloaded or written) reports the cache the restore resolves to.
 |---|---|---|
 | 1. A state was restored | `data/fundamentals_cache.json` exists | `check-state`: usable, or stop. Never touched, never recovered over. |
 | 2. A cache was restored but holds no state | the lookup resolved a key (for example `nse-data-shp-…` of another workflow) | stop; names the key; a maintainer decides |
-| 3. No cache at all | lookup resolved nothing **and** the complete cache list of this ref and the default branch is empty | recover from the published site (below) |
-| 4. Cache store unreadable | lookup step did not succeed, a list call failed, a list is incomplete (fewer keys than `total_count`) or its total changes while paging | stop; re-run when the service answers; never a miss |
+| 3. No cache at all | lookup resolved nothing **and** the complete cache list of this ref and the default branch holds no `nse-data-` key (all caches are read and filtered with `startswith` in `jq`; the API's `key` filter is not used) | recover from the published site (below) |
+| 4. Cache store unreadable | lookup step did not succeed, a list call failed, a list is incomplete (fewer caches read than `total_count`) or its total changes while paging | stop; re-run when the service answers; never a miss |
 | 5. A cache exists but was not restored | the lookup resolved a daily key without a state, or nothing resolved but caches are listed | stop; names the condition; a re-run is advised only where it can help |
 
 Every stop leaves the site as it is (the deploy job needs the build job) and nothing is deleted or changed: the workflow only lists caches (`actions: read`) and never
