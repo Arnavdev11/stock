@@ -246,7 +246,7 @@ function routeSymbol(){
 function loadData(){
   if(DATA)return DATA;
   var j=function(u){return fetch(u,{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null})};
-  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});
+  DATA=Promise.all([j("out/fundamentals.json"),j("out/financials.json"),j("out/historical.json"),j("out/shareholding.json"),j("out/market_dma.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3],eod:a[4]}});
   return DATA}
 
 function findStock(doc,s){return doc&&Array.isArray(doc.stocks)?(doc.stocks.filter(function(x){return x&&x.symbol===s})[0]||null):null}
@@ -264,6 +264,55 @@ function priceFor(prices,s){
   out.price=last.close;out.date=last.date;
   if(prev.close>0)out.change=(last.close/prev.close-1)*100;
   return out}
+
+/* Last close for EVERY NSE EQ stock: out/market_dma.json (written by market_data_updater.py from NSE's daily full-universe bhavcopy). Its stocks[] carry the close of the
+   document's own as_of date (the latest trading day in the file). Used only when the document, the date and the stock's entry are all valid: kind "market_dma", as_of a real
+   YYYY-MM-DD not in the future, symbol matched EXACTLY (no case folding, no guessing), close a finite number above zero, and the symbol listed once (a repeated symbol with
+   different closes is ambiguous, so none is used). Anything else gives null; a missing close is never turned into zero. This is an end-of-day close, never a live price. */
+var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
+function realDay(t){   /* "2026-10-15" -> {y,m,d,ms} only for a real calendar day */
+  if(typeof t!=="string"||!DATE_RE.test(t))return null;
+  var y=+t.slice(0,4),m=+t.slice(5,7),d=+t.slice(8,10),x=new Date(Date.UTC(y,m-1,d));
+  return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?{y:y,m:m,d:d,ms:x.getTime()}:null}
+var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function dayLabel(t){var x=realDay(t);return x?(x.d<10?"0":"")+x.d+" "+MON[x.m-1]+" "+x.y:null}   /* the SOURCE date, never today's date */
+var STALE_DAYS=5;   /* a long weekend plus a holiday is at most 4-5 calendar days; older than this is flagged */
+var EODX=null,EODDOC=null;
+function eodIndex(doc){
+  if(EODX&&EODDOC===doc)return EODX;
+  var ix={ok:false,map:Object.create(null),dup:Object.create(null),date:null};
+  if(doc&&typeof doc==="object"&&doc.kind==="market_dma"&&Array.isArray(doc.stocks)){
+    var day=realDay(doc.as_of);
+    if(day&&day.ms<=Date.now()+864e5){   /* not after tomorrow (time-zone slack): a future date is invalid, never "fresh" */
+      ix.ok=true;ix.date=doc.as_of;
+      doc.stocks.forEach(function(x){
+        if(!x||typeof x!=="object"||typeof x.symbol!=="string")return;
+        var k=x.symbol;
+        if(Object.prototype.hasOwnProperty.call(ix.map,k)){if(ix.map[k]!==x.close)ix.dup[k]=true}
+        else ix.map[k]=x.close})}}
+  EODDOC=doc;EODX=ix;return ix}
+function eodClose(doc,s){
+  var ix=eodIndex(doc);
+  if(!ix.ok||ix.dup[s]||!Object.prototype.hasOwnProperty.call(ix.map,s))return null;
+  var c=ix.map[s];
+  return isn(c)&&c>0?{price:c,date:ix.date}:null}
+/* The price shown on the page. The NSE end-of-day close when valid; the older historical-candle rule above stays as the fallback. The newer date wins; on the same date the NSE
+   close is shown. The day change needs the previous close, which only the daily candles hold: it is shown only when the last candle is on the SAME date and its close agrees with
+   the NSE close (to the paisa), otherwise "-". Nothing is ever shown as 0 for a missing value. */
+function lastClose(d,s){
+  var h=priceFor(d.prices,s),e=eodClose(d.eod,s),out={price:null,change:null,date:null,source:null};
+  if(e&&(h.price===null||e.date>=h.date)){
+    out.price=e.price;out.date=e.date;out.source="nse_eod";
+    if(h.price!==null&&h.date===e.date&&Math.abs(h.price-e.price)<=0.005)out.change=h.change;
+    return out}
+  if(h.price!==null){out.price=h.price;out.change=h.change;out.date=h.date;out.source="historical"}
+  return out}
+function closeAgeDays(date){var x=realDay(date);return x?Math.floor((Date.now()-x.ms)/864e5):null}
+function closeNote(p){
+  if(p.price===null)return"Last close — Unavailable: no valid end-of-day close is on file for this stock (NSE EQ series only). Nothing is estimated or shown as zero.";
+  var age=closeAgeDays(p.date),src=p.source==="nse_eod"?"NSE end-of-day data":"daily candle in the historical data";
+  return"Last close — "+esc(dayLabel(p.date)||p.date)+" · "+src+" · not a live price."+(age!==null&&age>STALE_DAYS?" This close is "+age+" days old and may be out of date.":"")
+    +(p.change===null?" Day change shows \"-\" because the previous close is not on file for this date.":"")}
 
 /* Market capitalisation for the header = the last close above x the NSE-filed share count of the NEWEST available shareholding quarter (diagnostics.share_basis_total:
    total shares less the shares underlying depository receipts), in rupees crore. It is shown only when BOTH are real numbers above zero; otherwise "-". Nothing is estimated,
@@ -283,13 +332,13 @@ function per(g){return g&&g.period?esc(g.period)+(g.basis==="standalone"?" · st
 
 function view(s,d){
   var v=findStock(d.val,s)||{},f=findStock(d.fin,s)||{},inc=f.income||{},bal=f.balance_sheet||{},cf=f.cash_flow||{};
-  var p=priceFor(d.prices,s),has=!!(findStock(d.val,s)||findStock(d.fin,s));
+  var p=lastClose(d,s),has=!!(findStock(d.val,s)||findStock(d.fin,s));
   var company=v.company_name||f.company_name,mc=marketCap(d.sh,s,p.price);
   var h='<p><button class="lk" id="detailBack" type="button">← Back to StockLens</button></p>';
   h+='<h2 style="margin-top:.6em">Stock Detail: '+esc(s)+'</h2>';
   if(!has)h+='<p class="note" style="padding-left:0">No fundamentals or financial statements were found for '+esc(s)+' in the current data. Missing values show "-".</p>';
-  h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Market Cap (₹ crore)",cr(mc.cap))+tile("Latest Price (last close, ₹)",r2(p.price))+tile("Day change vs previous close",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
-  h+='<p class="note" style="padding-left:0">Latest price and day change are the last daily close in the historical data'+(p.date?", as of "+esc(p.date):"")+' (not a live price). They show "-" when the stock has fewer than two valid daily candles. '+(mc.cap!==null?"Market Cap = last close × "+esc(N0.format(mc.shares))+" shares (NSE shareholding filing, quarter ended "+esc(mc.quarter)+"), not a live value.":'Market Cap shows "-" unless both a last close and an NSE-filed share count are on file.')+'</p>';
+  h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Market Cap (₹ crore)",mc.cap!==null?cr(mc.cap):"Unavailable")+tile("Latest Price (last close, ₹)",p.price!==null?r2(p.price):"Unavailable")+tile("Day change vs previous close",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
+  h+='<p class="note" style="padding-left:0" data-last-close="'+(p.price!==null?"1":"0")+'"'+(p.price!==null?' data-close-date="'+esc(p.date)+'"':"")+'>'+closeNote(p)+' '+(mc.cap!==null?"Market Cap = last close × "+esc(N0.format(mc.shares))+" shares (NSE shareholding filing, quarter ended "+esc(mc.quarter)+"), not a live value.":'Market Cap is Unavailable unless both a valid last close and an NSE-filed share count are on file.')+'</p>';
   h+='<h3 style="margin:1.4em 0 .4em">Overview</h3><div class="tiles">'+tile("P/E",r2(v.pe))+tile("P/B",r2(v.pb))+tile("ROE %",r2(v.roe))+tile("ROCE %",r2(v.roce))+tile("ROA %",r2(v.roa))+tile("EV/EBITDA",r2(v.ev_ebitda))+'</div>';
   h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of):"Fundamentals not loaded yet.")+'</p>';
   h+='<h3 style="margin:1.4em 0 .4em">Financial Health <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
@@ -2978,6 +3027,7 @@ window.SLMarket={activityOf:activityOf,perfOf:perfOf,cleanCandles:cleanCandles,i
 var LOOPBACK={"127.0.0.1":1,"localhost":1,"[::1]":1};
 var CFG={maxAge:20000,skew:5000,minCoverage:0.9,stall:15000,poll:60000,pollTest:5000,noTrade:60000,staleKeep:900000,timeout:4000,maxBytes:65536,defaultPort:8765,pollPublic:10000,clockTol:60000};
 var PAGE_HOST="arnavdev11.github.io",PATH_LIVE="/v1/live/snapshot.json",PUBLIC_TEST_ORIGIN="https://stocklens-live.onrender.com";
+var LAST=null,ACTIVE=false;      /* the newest answer of the ONE poll below, for the stock-page strip (stocklens-stocklive); nothing here makes a request */
 var PUBLIC_LIVE={enabled:false,url:""};      /* the production switch: shipped OFF. Turning it on is a separate, reviewed change that names the deployed service address. */
 var UNIVERSES=["nse_eq_all","nifty500","test_set"],MARKET=["open","pre_open","closed","unknown"];
 var TOP=["schema","kind","seq","generated_at","server_ts_ms","market","scope","indices","breadth","gainers","losers","prices","quality","source"];
@@ -3264,7 +3314,9 @@ function poll(url){
     var cl=r.headers.get("Content-Length");if(cl&&+cl>CFG.maxBytes)return{status:200,text:"x".repeat(CFG.maxBytes+1)};
     var dh=r.headers.get("Date"),dms=dh?Date.parse(dh):NaN;
     return readCapped(r).then(function(t){return t===null?{status:200,text:"x".repeat(CFG.maxBytes+1)}:{status:200,text:t,dateMs:isFinite(dms)?dms:null}})}).then(done,function(){return done({error:"request failed"})})}
+function announce(){if(typeof window.dispatchEvent==="function"&&typeof CustomEvent==="function")window.dispatchEvent(new CustomEvent("stocklens-live-view"))}
 function start(g,env){
+  ACTIVE=true;
   var ctl=new Controller({privateTest:g.privateTest===true,pub:g.pub===true}),ui=new Ui(env.document,g.privateTest===true,g.pub===true),busy=false;
   function next(){env.setTimeout(tick,g.pub===true?CFG.pollPublic:g.privateTest===true?CFG.pollTest:CFG.poll)}
   /* one request at a time: a call while another is still in flight does nothing */
@@ -3272,7 +3324,7 @@ function start(g,env){
     if(busy)return false;
     busy=true;
     poll(g.url).then(function(res){
-      try{ui.update(ctl.ingest(res,Date.now()))}catch(e){try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}}}).then(function(){busy=false},function(){busy=false});
+      try{var v=ctl.ingest(res,Date.now());LAST={view:v,at:Date.now(),dateMs:isNum(res.dateMs)?res.dateMs:null};ui.update(v);announce()}catch(e){LAST=null;try{ui.update({state:"unavailable",reason:"error"})}catch(e2){}try{announce()}catch(e3){}}}).then(function(){busy=false},function(){busy=false});
     return true}
   function tick(){if(env.document.visibilityState!=="hidden")refresh();next()}
   /* the page's own index tabs choose which index the live panel shows; the click only redraws what was already received */
@@ -3280,9 +3332,97 @@ function start(g,env){
     var t=e&&e.target,b=t&&typeof t.closest==="function"?t.closest("[data-mk-tabs] [data-tab]"):null;
     if(b&&typeof b.getAttribute==="function"&&b.parentNode&&b.parentNode.getAttribute("data-mk-tabs")==="index")ui.select(b.getAttribute("data-tab"))});
   ui.mount();refresh();next();return{ui:ui,controller:ctl,refresh:refresh}}
-window.SLLive={gate:gate,publicGate:publicGate,publicTestGate:publicTestGate,PUBLIC_TEST_ORIGIN:PUBLIC_TEST_ORIGIN,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
+window.SLLive={gate:gate,publicGate:publicGate,publicTestGate:publicTestGate,PUBLIC_TEST_ORIGIN:PUBLIC_TEST_ORIGIN,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf,last:function(){return LAST},active:function(){return ACTIVE}};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
+})();
+</script>
+<script type="module" id="stocklens-stocklive">
+/* Stock Detail live strip (read-only, opt-in, NEVER a replacement for the dated close).
+   It makes NO request, holds no address, no token and no key. It only reads the newest answer of the page's one existing live poll (window.SLLive.last()), and that poll exists only
+   when the existing gate says so (?live=public_test, or PUBLIC_LIVE once someone turns it on in a reviewed change). Without the gate window.SLLive.active() is false and this module
+   does nothing at all: the page is exactly the dated-close page. The existing checks are not repeated or loosened: the answer already passed the service-clock check, the schema check,
+   quality.ok, market open, freshness and the refusal of a test_set snapshot unless the explicit test gate is on. This module adds the per-stock checks the schema does not make:
+   the symbol must be present in prices; ltp a finite number above zero; cp absent or above zero; change_pct equal to the one recomputed from ltp and cp (0.01); ltt a real
+   timestamp on the snapshot's own session date, not after the snapshot; the move within 40% of cp. Anything else, and every symbol that is not in the snapshot, shows LAST CLOSE.
+   LIVE = a live answer, this stock traded within 2 minutes of the snapshot, and the snapshot is not older than 20 s by the clock of the service plus the time since it arrived.
+   STALE = a valid older answer (at most 15 minutes), shown with its own trade time and never as current. LAST CLOSE = everything else; the dated close above is the price.
+   Everything is drawn with textContent. Pure functions are exposed as window.SLStockLive for the tests. */
+(function(){
+"use strict";
+var DEF={maxAge:20000,skew:5000,staleKeep:900000},TRADE_MAX=120000,EXTREME=40,PLAUS_TICK=5000;
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var isObj=function(v){return v!==null&&typeof v==="object"&&!Array.isArray(v)};
+var own=function(o,k){return Object.prototype.hasOwnProperty.call(o,k)};
+var LTT=/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d{1,3})?\+05:30$/;
+function cfg(){var L=window.SLLive;return L&&isObj(L.CFG)?{maxAge:isn(L.CFG.maxAge)?L.CFG.maxAge:DEF.maxAge,skew:isn(L.CFG.skew)?L.CFG.skew:DEF.skew,staleKeep:isn(L.CFG.staleKeep)?L.CFG.staleKeep:DEF.staleKeep}:DEF}
+/* one price entry of a snapshot -> a clean quote, or {why} */
+function quoteOf(e,doc,c){
+  if(!isObj(e))return{why:"the live entry for this stock is not valid"};
+  if(!isn(e.ltp)||e.ltp<=0)return{why:"the live price is not a valid number"};
+  var cp=null;
+  if(e.cp!==null&&e.cp!==undefined){if(!isn(e.cp)||e.cp<=0)return{why:"the previous close in the live entry is not valid"};cp=e.cp}
+  var pct=null;
+  if(cp!==null){
+    var calc=(e.ltp/cp-1)*100;
+    if(!isn(e.change_pct)||Math.abs(e.change_pct-calc)>0.01)return{why:"the live change does not match its own price and previous close"};
+    if(Math.abs(calc)>EXTREME)return{why:"the live move is implausibly large"};
+    pct=e.change_pct}
+  if(typeof e.ltt!=="string")return{why:"the live entry has no trade time"};
+  var m=LTT.exec(e.ltt),ms=m?Date.parse(e.ltt):NaN;
+  if(!m||!isn(ms))return{why:"the live trade time is not valid"};
+  if(!isObj(doc.market)||typeof doc.market.session_date!=="string"||doc.market.session_date!==m[1])return{why:"the live trade time is not from the snapshot's trading day"};
+  if(ms>doc.server_ts_ms+c.skew)return{why:"the live trade time is later than the snapshot"};
+  return{ltp:e.ltp,cp:cp,pct:pct,lttMs:ms,time:m[2],tradeAge:doc.server_ts_ms-ms}}
+/* last = window.SLLive.last() = {view,at,dateMs}; now = this device's clock (ms) -> {state:"live"|"stale"|"last_close", reason, quote, ageMs} */
+function assess(last,sym,now){
+  var c=cfg(),lc=function(why,extra){var o={state:"last_close",reason:why,quote:null,ageMs:null};if(extra)for(var k in extra)o[k]=extra[k];return o};
+  if(typeof sym!=="string"||!sym)return lc("no symbol");
+  if(!isObj(last)||!isObj(last.view)||!isn(last.at)||!isn(now))return lc("no live answer yet");
+  var v=last.view,doc=null,mode=null;
+  if(v.state==="live"&&v.kind==="live"&&isObj(v.doc)){doc=v.doc;mode="live"}
+  else if(v.kind==="stale"&&isObj(v.last)){doc=v.last;mode="stale"}
+  else return lc(typeof v.reason==="string"&&v.reason?v.reason:"live prices are not available",{closed:v.kind==="closed"});
+  if(!isn(doc.server_ts_ms)||!isObj(doc.prices))return lc("the live snapshot is not valid");
+  if(!own(doc.prices,sym))return lc("this stock is not in the live set",{notInSet:true});
+  var q=quoteOf(doc.prices[sym],doc,c);
+  if(q.why)return lc(q.why);
+  var base=isn(last.dateMs)?last.dateMs:last.at,since=Math.max(0,now-last.at),age=base-doc.server_ts_ms+since;
+  if(age<-c.skew)return lc("the live snapshot is from the future");
+  if(mode==="live"&&age<=c.maxAge&&q.tradeAge<=TRADE_MAX)return{state:"live",reason:"",quote:q,ageMs:Math.max(0,age)};
+  if(age<=c.staleKeep)return{state:"stale",reason:mode==="live"&&age<=c.maxAge?"this stock has not traded in the last 2 minutes":"the live feed is not current",quote:q,ageMs:Math.max(0,age)};
+  return lc("the last live price is too old")}
+var N2=new Intl.NumberFormat("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+function secs(ms){return ms<90000?Math.round(ms/1000)+" s":Math.round(ms/60000)+" min"}
+/* the words shown; closeDate = the dated close already on the page (YYYY-MM-DD) or null */
+function words(a,closeDate){
+  if(a.state==="live"){var q=a.quote;return"LIVE · ₹"+N2.format(q.ltp)+(q.pct!==null?" · "+(q.pct>0?"+":"")+N2.format(q.pct)+"% vs previous close":"")+" · last trade "+q.time+" IST · snapshot "+secs(a.ageMs)+" old · limited test feed"}
+  if(a.state==="stale"){var s=a.quote;return"STALE · not current · last live ₹"+N2.format(s.ltp)+" at "+s.time+" IST ("+secs(a.ageMs)+" ago) · "+a.reason+" · the dated close above is the price of record"}
+  return"LAST CLOSE"+(closeDate?" — "+closeDate:"")+" · no live price: "+(a.reason||"unavailable")+" · the dated close above is not a live price"}
+var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function dayLabel(t){var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof t==="string"?t:"");if(!m||+m[2]<1||+m[2]>12)return null;return m[3]+" "+MON[+m[2]-1]+" "+m[1]}
+function routeSym(){var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location&&window.location.hash||"");if(!m)return null;var s;try{s=decodeURIComponent(m[1])}catch(e){return null}s=s.trim().toUpperCase();return/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/.test(s)?s:null}
+var BUSY=false;
+function refresh(){
+  if(BUSY)return;BUSY=true;
+  try{
+    var L=window.SLLive;
+    if(!L||typeof L.active!=="function"||!L.active()||typeof L.last!=="function")return;      /* not opted in: do nothing at all */
+    var sym=routeSym(),box=document.getElementById("detail");
+    if(!sym||!box||typeof box.querySelector!=="function")return;
+    var note=box.querySelector("[data-last-close]");
+    if(!note||!note.parentNode)return;
+    var a=assess(L.last(),sym,Date.now()),cd=note.getAttribute?note.getAttribute("data-close-date"):null,txt=words(a,cd?dayLabel(cd):null);
+    var strip=box.querySelector("[data-live-strip]");
+    if(!strip){strip=document.createElement("p");strip.className="note";strip.setAttribute("data-live-strip",sym);strip.setAttribute("style","padding-left:0;font-weight:600");note.parentNode.insertBefore(strip,note.nextSibling||null)}
+    if(strip.getAttribute("data-live-state")!==a.state)strip.setAttribute("data-live-state",a.state);
+    if(strip.textContent!==txt)strip.textContent=txt}
+  catch(e){}
+  finally{BUSY=false}}
+window.SLStockLive={assess:assess,quoteOf:quoteOf,words:words,refresh:refresh,TRADE_MAX:TRADE_MAX};
+if(typeof window.addEventListener==="function"){window.addEventListener("hashchange",function(){setTimeout(refresh,0)});window.addEventListener("stocklens-live-view",refresh)}
+if(typeof MutationObserver==="function"&&document.getElementById("detail"))new MutationObserver(refresh).observe(document.getElementById("detail"),{childList:true,subtree:true});
+if(typeof setInterval==="function")setInterval(refresh,5000);
 })();
 </script>
 <script>

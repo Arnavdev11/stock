@@ -10,9 +10,17 @@ function legacy(h) {
   let s = String(h);
   /* Stage 1 coverage: the per-stock-file layer (a classic script with its own id) is an addition; the older pins see the page without it */
   s = s.replace(/<script type="module" id="stocklens-live">[\s\S]*?<\/script>\n/, "");
+  /* the Stock Detail live strip (own module id; reads the live layer's newest answer, makes no request): an addition, so the older pins see the page without it */
+  s = s.replace(/<script type="module" id="stocklens-stocklive">[\s\S]*?<\/script>\n/, "");
   s = s.replace(/<script id="stocklens-shards">[\s\S]*?<\/script>\n/, "");
   /* Quarterly Results: a read-only section module (its own id) is an addition; the older pins see the page without it */
   s = s.replace(/<script type="module" id="stocklens-quarterly">[\s\S]*?<\/script>\n/, "");
+  /* All-stock dated last close (out/market_dma.json): put back the five-file loader, the historical-only price call, the plain price/Market Cap tiles and their note, so the older pins see the Stock Detail block as it was before it */
+  s = s.replace('j("out/shareholding.json"),j("out/market_dma.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3],eod:a[4]}});', () => 'j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});');
+  s = s.replace(/\/\* Last close for EVERY NSE EQ stock[\s\S]*?(?=\/\* Market capitalisation for the header = )/, "");
+  s = s.replace("var p=lastClose(d,s),has=", () => "var p=priceFor(d.prices,s),has=");
+  s = s.replace('tile("Market Cap (₹ crore)",mc.cap!==null?cr(mc.cap):"Unavailable")+tile("Latest Price (last close, ₹)",p.price!==null?r2(p.price):"Unavailable")', () => 'tile("Market Cap (₹ crore)",cr(mc.cap))+tile("Latest Price (last close, ₹)",r2(p.price))');
+  s = s.replace(/  h\+='<p class="note" style="padding-left:0" data-last-close=[^\n]*\n/, () => "  h+='<p class=\"note\" style=\"padding-left:0\">Latest price and day change are the last daily close in the historical data'+(p.date?\", as of \"+esc(p.date):\"\")+' (not a live price). They show \"-\" when the stock has fewer than two valid daily candles. '+(mc.cap!==null?\"Market Cap = last close × \"+esc(N0.format(mc.shares))+\" shares (NSE shareholding filing, quarter ended \"+esc(mc.quarter)+\"), not a live value.\":'Market Cap shows \"-\" unless both a last close and an NSE-filed share count are on file.')+'</p>';\n");
   /* Market Cap in the Stock Detail header (replaces the Sector tile there): put back the loader's three-file Promise.all, the Sector tile, its variables and its note */
   s = s.replace(/\/\* Market capitalisation for the header = [\s\S]*?return out\}\n\n/, "");
   s = s.replace('j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});', () => 'j("out/historical.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2]}});');

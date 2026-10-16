@@ -278,7 +278,7 @@ class Isolation(unittest.TestCase):
         self.assertNotIn('data-mk-tabs="index"', G.without_market_cap(now))                # ... and reversing them restores the single-card panel
         self.assertNotEqual(G.without_market_cap(now + "<!-- x -->"), G.without_market_cap(old))      # and any other edit is still seen
         self.assertNotEqual(G.without_market_cap(now.replace("Overview", "Overview2", 1)), G.without_market_cap(old))
-        self.assertIn('tile("Market Cap (\u20b9 crore)",cr(mc.cap))', now)               # the edit is in the page ...
+        self.assertIn('tile("Market Cap (\u20b9 crore)",mc.cap!==null?cr(mc.cap):"Unavailable")', now)      # the edit is in the page (Unavailable when there is no valid price or share count) ...
         self.assertNotIn('tile("Sector",sector', now)                                       # ... and the header Sector tile is gone
         self.assertEqual(now.count('tile("Sector"'), 0)
         self.assertIn('Sector', now)                                                        # the Business-section Sector, the table column and the checklist row are untouched

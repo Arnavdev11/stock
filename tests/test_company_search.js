@@ -277,7 +277,7 @@ const ADVICE = /\b(buy|sell|hold|strong|bullish|bearish|score|scores|rating|rate
     const x = load({ files: UF(), detail: true }); await x.focus(40); await x.type("zq0300"); x.click("ZQ0300"); x.win.hashchange(); await sleep(80);
     ok(x.classes.has("detail-mode"), "Stock Detail opened for a stock with no fundamentals, financials or prices"); re(x.box.innerHTML, /Stock Detail: ZQ0300/, "for that symbol");
     re(x.box.innerHTML, /No fundamentals or financial statements were found for ZQ0300 in the current data\. Missing values show "-"\./, "and it says plainly that the data is missing");
-    re(x.box.innerHTML, /<b[^>]*>-<\/b><span>P\/E<\/span>/, "P/E shows '-', not a made-up number"); re(x.box.innerHTML, /<b[^>]*>-<\/b><span>Latest Price/, "so does the latest price"); no(x.box.innerHTML, /undefined|NaN|null/, "no undefined, NaN or null text"); }
+    re(x.box.innerHTML, /<b[^>]*>-<\/b><span>P\/E<\/span>/, "P/E shows '-', not a made-up number"); re(x.box.innerHTML, /<b[^>]*>Unavailable<\/b><span>Latest Price/, "the latest price says Unavailable"); no(x.box.innerHTML, /undefined|NaN|null/, "no undefined, NaN or null text"); }
   { // a universe list never overrides what the other files say, and never supplies a sector
     const uni = { schema_version: 1, kind: "stock_directory", count: 3, symbols: [{ symbol: "TCS", isin: null, name: "Universe Name For Tcs" }, { symbol: "SECT", isin: null, name: "Sector Carrier Limited", sector: "Should Never Show" }, { symbol: "OKAY", name: "Okay Corp" }] };
     const x = load({ files: FILES({ "stock_directory.json": uni }) }); await x.focus(40);

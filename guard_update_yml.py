@@ -46,11 +46,29 @@ def is_approved(root, path):
     return False
 
 
+# ---------------------------------------------------------------- index.html: the approved all-stock dated last close on the Stock Detail page (out/market_dma.json)
+OLD_PRICE_NOTE = '  h+=\'<p class="note" style="padding-left:0">Latest price and day change are the last daily close in the historical data\'+(p.date?", as of "+esc(p.date):"")+\' (not a live price). They show "-" when the stock has fewer than two valid daily candles. \'+(mc.cap!==null?"Market Cap = last close × "+esc(N0.format(mc.shares))+" shares (NSE shareholding filing, quarter ended "+esc(mc.quarter)+"), not a live value.":\'Market Cap shows "-" unless both a last close and an NSE-filed share count are on file.\')+\'</p>\';\n'
+
+
+def without_last_close(html):
+    """index.html with exactly the approved all-stock dated last close reversed (the loader's fifth request, the market_dma helpers, the price call, the Unavailable tiles and their note).
+    A page that does not carry the edit comes back unchanged, so the guards can apply this to both the working file and HEAD and compare them byte for byte."""
+    html = re.sub(r'<script type="module" id="stocklens-stocklive">[\s\S]*?</script>\n', "", html, count=1)      # the Stock Detail live strip: its own module, reads the live layer, makes no request
+    s = html.replace('j("out/shareholding.json"),j("out/market_dma.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3],eod:a[4]}});',
+                     'j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});', 1)
+    s = re.sub(r"/\* Last close for EVERY NSE EQ stock[\s\S]*?(?=/\* Market capitalisation for the header = )", "", s, count=1)
+    s = s.replace("var p=lastClose(d,s),has=", "var p=priceFor(d.prices,s),has=", 1)
+    s = s.replace('tile("Market Cap (\u20b9 crore)",mc.cap!==null?cr(mc.cap):"Unavailable")+tile("Latest Price (last close, \u20b9)",p.price!==null?r2(p.price):"Unavailable")',
+                  'tile("Market Cap (\u20b9 crore)",cr(mc.cap))+tile("Latest Price (last close, \u20b9)",r2(p.price))', 1)
+    return re.sub(r"  h\+='<p class=\"note\" style=\"padding-left:0\" data-last-close=[^\n]*\n", lambda _m: OLD_PRICE_NOTE, s, count=1)
+
+
 # ---------------------------------------------------------------- index.html: the one approved edit to the Stock Detail header (Market Cap replaces the Sector tile)
 def without_market_cap(html):
     """index.html with exactly the approved header edit reversed (the loader's fourth request, the marketCap() helper, the Market Cap tile, its variable and its note).
     A page that does not carry the edit comes back unchanged, so the guards can apply this to both the working file and HEAD and then compare them byte for byte:
     any OTHER difference in index.html is still a difference."""
+    html = without_last_close(html)                                                                              # the approved all-stock dated last close is reversed first
     html = re.sub(r'<script type="module" id="stocklens-quarterly">[\s\S]*?</script>\n', "", html, count=1)      # the read-only Quarterly Results section module is an addition with its own tests (tests/test_quarterly_ui.js)
     s = re.sub(r"/\* Market capitalisation for the header = [\s\S]*?return out\}\n\n", "", html, count=1)
     s = s.replace('j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});',

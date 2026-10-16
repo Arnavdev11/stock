@@ -60,15 +60,15 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   t = await boot("#stock=TCS");
   ok(t.classes.has("detail-mode")); let d = t.detail();
   re(d, /Stock Detail: TCS/); re(d, /← Back to StockLens/);
-  eq(["out/fundamentals.json", "out/financials.json", "out/historical.json", "out/shareholding.json"].every((u) => t.fetched.includes(u)), true, "reads fundamentals, financials, historical and shareholding (the share count behind Market Cap)");
-  eq(t.fetched.length, 4, "four requests: the three it always made plus the already-published shareholding file"); ok(!t.fetched.some((u) => u.includes("scans")), "scans.json is not requested");
+  eq(["out/fundamentals.json", "out/financials.json", "out/historical.json", "out/shareholding.json", "out/market_dma.json"].every((u) => t.fetched.includes(u)), true, "reads fundamentals, financials, historical, shareholding (the share count behind Market Cap) and market_dma (the all-stock last close)");
+  eq(t.fetched.length, 5, "five requests: the three it always made, the shareholding file and the all-stock last close file"); ok(!t.fetched.some((u) => u.includes("scans")), "scans.json is not requested");
   // header
   eq(tile(d, "Symbol"), "TCS"); eq(tile(d, "Company"), "TCS LIMITED"); eq(tile(d, "Sector"), "NOT FOUND", "the header no longer has a Sector tile");
   eq(tile(d, "Market Cap (₹ crore)"), "14,47,415.91", "4000.5 x 3,618,087,518 / 10^7: the newest AVAILABLE quarter (Jun 2026), not the unavailable Sep or the older Mar one");
   re(d, /Market Cap = last close × 3,61,80,87,518 shares \(NSE shareholding filing, quarter ended 2026-06-30\), not a live value\./, "the note names the quarter and says it is not live"); no(d, /estimate/i);
   eq(tile(d, "Latest Price (last close, ₹)"), "4,000.50", "latest valid close, from historical.json (not the 1 in scans.json)"); eq(tile(d, "Day change vs previous close"), "+1.28%", "(4000.5 / 3950 - 1) * 100");
   eq(tile(d, "LTP (last close, ₹)"), "NOT FOUND", "old label gone"); eq(tile(d, "Today's change"), "NOT FOUND", "old label gone");
-  re(d, /last daily close in the historical data, as of 2026-10-01 \(not a live price\)/, "the candle date is shown and the note says it is not live");
+  re(d, /Last close — 01 Oct 2026 · daily candle in the historical data · not a live price\./, "the candle date is shown as the source date and the note says it is not live");
   no(d, /live LTP|latest end-of-day scan/i, "no live-price wording, no scan wording");
   // overview
   eq([tile(d, "P/E"), tile(d, "P/B"), tile(d, "ROE %"), tile(d, "ROCE %"), tile(d, "ROA %"), tile(d, "EV/EBITDA")], ["25.50", "12.00", "45.00", "55.00", "20.00", "18.00"]);
@@ -86,14 +86,14 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   // --- missing values show "-": INFY has no sector, revenue, PBT/PAT, EPS, P/E, ROCE, EV/EBITDA, financing; only one valid candle
   await t.nav("#stock=INFY"); d = t.detail(); re(d, /Stock Detail: INFY/);
   eq([tile(d, "Market Cap (₹ crore)"), tile(d, "Revenue"), tile(d, "Profit before tax"), tile(d, "EPS basic (₹)"), tile(d, "P/E"), tile(d, "ROCE %"), tile(d, "EV/EBITDA"), tile(d, "Financing cash flow")],
-     ["-", "-", "-", "-", "-", "-", "-", "-"]);
-  eq([tile(d, "Latest Price (last close, ₹)"), tile(d, "Day change vs previous close"), tile(d, "Free cash flow"), tile(d, "Debt / Equity")], ["-", "-", "N/A", "N/A"], "one valid candle: no price, no change (scans.json price 2 is ignored)");
+     ["Unavailable", "-", "-", "-", "-", "-", "-", "-"]);
+  eq([tile(d, "Latest Price (last close, ₹)"), tile(d, "Day change vs previous close"), tile(d, "Free cash flow"), tile(d, "Debt / Equity")], ["Unavailable", "-", "N/A", "N/A"], "one valid candle: no price, no change (scans.json price 2 is ignored)");
   no(d, /as of 20/, "and no date is claimed");
   re(d, /Mar 2025 · standalone/, "standalone is labelled");
 
   // --- a symbol with no data at all
   await t.nav("#stock=XYZ"); d = t.detail(); re(d, /Stock Detail: XYZ/); re(d, /No fundamentals or financial statements were found for XYZ/);
-  eq([tile(d, "Company"), tile(d, "Latest Price (last close, ₹)"), tile(d, "P/E"), tile(d, "Total assets")], ["-", "-", "-", "-"], "a stock missing from historical.json: dashes, even though scans.json has a price for it");
+  eq([tile(d, "Company"), tile(d, "Latest Price (last close, ₹)"), tile(d, "P/E"), tile(d, "Total assets")], ["-", "Unavailable", "-", "-"], "a stock missing from historical.json: Unavailable price, dashes elsewhere, even though scans.json has a price for it");
 
   // --- navigation: clicking a symbol in a table sets the hash; Enter works; other cells and tables are ignored
   await t.nav("");
@@ -132,40 +132,40 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
     return { dd, m: tile(dd, "Market Cap (₹ crore)") }; };
   const shOf = (quarters, stock = "TCS") => ({ schema: 1, stocks: { [stock]: { symbol: stock, quarters } } });
   let mc = await cap(SH); eq(mc.m, "14,47,415.91", "valid close and share count");
-  mc = await cap(undefined); eq(mc.m, "-", "no shareholding.json"); re(mc.dd, /Market Cap shows "-" unless both a last close and an NSE-filed share count are on file\./, "and the note says why");
-  mc = await cap(shOf([Q("2026-06-30", "available", 3618087518)]), { stocks: { TCS: { candles: [C("2026-10-01", 110)] } } }); eq(mc.m, "-", "one valid candle: no price, so no Market Cap");
-  mc = await cap(shOf([Q("2026-09-30", "available"), Q("2026-06-30", "available", 3618087518)])); eq(mc.m, "-", "the newest available quarter has no share count: the older quarter's count is NOT borrowed");
-  mc = await cap(shOf([Q("2026-09-30", "unavailable", 5), Q("2026-06-30", "unavailable", 5)])); eq(mc.m, "-", "no available quarter");
-  for (const bad of [0, -5, "3618087518", null, NaN, Infinity]) { mc = await cap(shOf([Q("2026-06-30", "available", bad)])); eq(mc.m, "-", "unusable share count " + String(bad)); }
-  mc = await cap(shOf([Q("2026-06-30", "available", 3618087518)], "INFY")); eq(mc.m, "-", "another stock's share count is not used");
-  mc = await cap({ schema: 1, stocks: [] }); eq(mc.m, "-", "stocks as an array is not a stock map");
-  mc = await cap(shOf([{ quarter_end: "bad", status: "available", diagnostics: { share_basis_total: 5 } }])); eq(mc.m, "-", "a quarter without a valid date is ignored");
+  mc = await cap(undefined); eq(mc.m, "Unavailable", "no shareholding.json"); re(mc.dd, /Market Cap is Unavailable unless both a valid last close and an NSE-filed share count are on file\./, "and the note says why");
+  mc = await cap(shOf([Q("2026-06-30", "available", 3618087518)]), { stocks: { TCS: { candles: [C("2026-10-01", 110)] } } }); eq(mc.m, "Unavailable", "one valid candle: no price, so no Market Cap");
+  mc = await cap(shOf([Q("2026-09-30", "available"), Q("2026-06-30", "available", 3618087518)])); eq(mc.m, "Unavailable", "the newest available quarter has no share count: the older quarter's count is NOT borrowed");
+  mc = await cap(shOf([Q("2026-09-30", "unavailable", 5), Q("2026-06-30", "unavailable", 5)])); eq(mc.m, "Unavailable", "no available quarter");
+  for (const bad of [0, -5, "3618087518", null, NaN, Infinity]) { mc = await cap(shOf([Q("2026-06-30", "available", bad)])); eq(mc.m, "Unavailable", "unusable share count " + String(bad)); }
+  mc = await cap(shOf([Q("2026-06-30", "available", 3618087518)], "INFY")); eq(mc.m, "Unavailable", "another stock's share count is not used");
+  mc = await cap({ schema: 1, stocks: [] }); eq(mc.m, "Unavailable", "stocks as an array is not a stock map");
+  mc = await cap(shOf([{ quarter_end: "bad", status: "available", diagnostics: { share_basis_total: 5 } }])); eq(mc.m, "Unavailable", "a quarter without a valid date is ignored");
   mc = await cap(shOf([Q("2026-03-31", "available", 3618087518), Q("2026-06-30", "available", 1000000000)]) ); eq(mc.m, "4,00,050", "quarters are ordered by date, not by position: 4000.5 x 1,000,000,000 / 10^7");
   for (const m of ["NaN", "undefined", "null", "Infinity"]) no(mc.dd, new RegExp(m));
 
   // --- a failed data file does not break the page
   t = await boot("#stock=TCS", { "fundamentals.json": VAL }); d = t.detail();
-  eq([tile(d, "P/E"), tile(d, "Total assets"), tile(d, "Latest Price (last close, ₹)"), tile(d, "Debt / Equity")], ["25.50", "-", "-", "N/A"]);
+  eq([tile(d, "P/E"), tile(d, "Total assets"), tile(d, "Latest Price (last close, ₹)"), tile(d, "Debt / Equity")], ["25.50", "-", "Unavailable", "N/A"]);
   re(d, /Financial statements not loaded yet/);
 
   // --- Phase 5D.1: the price tiles in detail
   const price = async (stock, hist, extra = {}) => { const tt = await boot("#stock=" + stock, Object.assign({ "fundamentals.json": VAL, "financials.json": FIN, "historical.json": hist }, extra)), dd = tt.detail();
     return { dd, p: tile(dd, "Latest Price (last close, ₹)"), c: tile(dd, "Day change vs previous close"), f: tt.fetched }; };
   const H = (stocks) => ({ stocks }); const cls = (h) => (h.match(/<b style="font-size:1.1rem" class="([^"]*)">[^<]*<\/b><span>Day change vs previous close/) || [])[1];
-  let r = await price("TCS", H({ TCS: { candles: [C("2026-10-01", 110), C("2026-09-30", 100)] } })); eq([r.p, r.c], ["110.00", "+10.00%"], "latest and previous close"); eq(cls(r.dd), "up", "a rise is styled as a rise"); re(r.dd, /as of 2026-10-01/, "date shown");
+  let r = await price("TCS", H({ TCS: { candles: [C("2026-10-01", 110), C("2026-09-30", 100)] } })); eq([r.p, r.c], ["110.00", "+10.00%"], "latest and previous close"); eq(cls(r.dd), "up", "a rise is styled as a rise"); re(r.dd, /Last close — 01 Oct 2026/, "date shown");
   r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 90)] } })); eq([r.p, r.c], ["90.00", "-10.00%"], "a fall is signed -"); eq(cls(r.dd), " dn", "a fall is styled as a fall");
   r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 100)] } })); eq([r.p, r.c], ["100.00", "0.00%"], "no change is 0.00%"); eq(cls(r.dd), "", "and is not styled as a rise or a fall");
-  r = await price("TCS", H({ TCS: { candles: [C("2026-10-01", 103), C("2026-09-30", 100), C("2026-09-29", 1), C("2026-10-02", 107), C("2026-10-03", 120)].reverse() } })); eq([r.p, r.c], ["120.00", "+12.15%"], "unsorted: ordered by date, not by position (107 -> 120)"); re(r.dd, /as of 2026-10-03/, "the date is the latest candle's");
-  r = await price("TCS", H({ TCS: { candles: [C("2026-10-01", 110)] } })); eq([r.p, r.c], ["-", "-"], "one valid candle: both dashes"); no(r.dd, /as of 2026/, "no date");
-  r = await price("TCS", H({ TCS: { candles: [] } })); eq([r.p, r.c], ["-", "-"], "no candles");
-  r = await price("TCS", H({ TCS: {} })); eq([r.p, r.c], ["-", "-"], "no candles array");
-  r = await price("TCS", H({})); eq([r.p, r.c], ["-", "-"], "stock missing from historical.json");
-  r = await price("TCS", H({ INFY: { candles: [C("2026-10-01", 5), C("2026-09-30", 4)] } })); eq([r.p, r.c], ["-", "-"], "another stock's candles are not used");
-  for (const bad of [null, [], "x", 5]) { r = await price("TCS", { stocks: bad }); eq([r.p, r.c], ["-", "-"], "stocks container " + JSON.stringify(bad)); }
-  r = await price("TCS", null); eq([r.p, r.c], ["-", "-"], "historical.json not loaded");
-  r = await price("TCS", H({ TCS: { candles: "nope" } })); eq([r.p, r.c], ["-", "-"], "candles not an array");
+  r = await price("TCS", H({ TCS: { candles: [C("2026-10-01", 103), C("2026-09-30", 100), C("2026-09-29", 1), C("2026-10-02", 107), C("2026-10-03", 120)].reverse() } })); eq([r.p, r.c], ["120.00", "+12.15%"], "unsorted: ordered by date, not by position (107 -> 120)"); re(r.dd, /Last close — 03 Oct 2026/, "the date is the latest candle's");
+  r = await price("TCS", H({ TCS: { candles: [C("2026-10-01", 110)] } })); eq([r.p, r.c], ["Unavailable", "-"], "one valid candle: both dashes"); no(r.dd, /as of 2026/, "no date");
+  r = await price("TCS", H({ TCS: { candles: [] } })); eq([r.p, r.c], ["Unavailable", "-"], "no candles");
+  r = await price("TCS", H({ TCS: {} })); eq([r.p, r.c], ["Unavailable", "-"], "no candles array");
+  r = await price("TCS", H({})); eq([r.p, r.c], ["Unavailable", "-"], "stock missing from historical.json");
+  r = await price("TCS", H({ INFY: { candles: [C("2026-10-01", 5), C("2026-09-30", 4)] } })); eq([r.p, r.c], ["Unavailable", "-"], "another stock's candles are not used");
+  for (const bad of [null, [], "x", 5]) { r = await price("TCS", { stocks: bad }); eq([r.p, r.c], ["Unavailable", "-"], "stocks container " + JSON.stringify(bad)); }
+  r = await price("TCS", null); eq([r.p, r.c], ["Unavailable", "-"], "historical.json not loaded");
+  r = await price("TCS", H({ TCS: { candles: "nope" } })); eq([r.p, r.c], ["Unavailable", "-"], "candles not an array");
   // malformed dates are ignored before ordering: they must not become 'latest'
-  for (const bad of ["bad-date", "2026-1-5", "20261005", "2026-10-05T00:00:00Z", "", " 2026-10-05", null, 20261005, {}, []]) { r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 110), C(bad, 5000)] } })); eq([r.p, r.c], ["110.00", "+10.00%"], "malformed date " + JSON.stringify(bad) + " ignored"); re(r.dd, /as of 2026-10-01/); }
+  for (const bad of ["bad-date", "2026-1-5", "20261005", "2026-10-05T00:00:00Z", "", " 2026-10-05", null, 20261005, {}, []]) { r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 110), C(bad, 5000)] } })); eq([r.p, r.c], ["110.00", "+10.00%"], "malformed date " + JSON.stringify(bad) + " ignored"); re(r.dd, /Last close — 01 Oct 2026/); }
   // non-numeric closes are ignored too
   for (const bad of ["110", "Infinity", "", null, undefined, true, {}, [], NaN]) { r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 110), { date: "2026-10-05", close: bad }, { date: "2026-10-04", close: bad }] } })); eq([r.p, r.c], ["110.00", "+10.00%"], "close " + String(bad) + " ignored: the previous valid day stays the latest"); }
   r = await price("TCS", H({ TCS: { candles: [C("2026-09-29", 100), { date: "2026-09-30", close: "bad" }, C("2026-10-01", 110)] } })); eq([r.p, r.c], ["110.00", "+10.00%"], "an invalid close in the middle is skipped: the previous VALID close is used");
@@ -179,11 +179,11 @@ const cell = (sym, first = true) => { const td = { textContent: sym };
   r = await price("XYZ", H({ XYZ: { candles: [C("2026-09-30", 200), C("2026-10-01", 210)] } })); eq([r.p, r.c], ["210.00", "+5.00%"], "a stock in neither fundamentals nor financials still shows its price"); re(r.dd, /No fundamentals or financial statements were found for XYZ/);
   r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 110)] } }), { "scans.json": { as_of: "x", gainers: [{ symbol: "TCS", price: 7, change_pct: 7 }] } }); eq([r.p, r.c], ["110.00", "+10.00%"], "scans.json values never win");
   ok(!/scans/.test(code.replace(/\/\*[\s\S]*?\*\//g, "").slice(code.indexOf("function loadData"), code.indexOf("function view"))), "the detail data loader names no scans file");
-  for (const k of ["gainers", "losers", "volume_gainers", "high_52w", "delivery", "dma", "change_pct"]) no(code.slice(code.indexOf("function loadData"), code.indexOf("function view")), new RegExp(k), "detail price code does not read scan list " + k);
+  for (const k of ["gainers", "losers", "volume_gainers", "high_52w", "delivery", "dma", "change_pct"]) no(code.slice(code.indexOf("function loadData"), code.indexOf("function view")).replace(/market_dma/g, ""), new RegExp(k), "detail price code does not read scan list " + k);
   // wording
   r = await price("TCS", H({ TCS: { candles: [C("2026-09-30", 100), C("2026-10-01", 110)] } }));
   no(text(r.dd), /\b(buy|sell|strong|bullish|bearish|score|rating|winner|target|signal|recommend|outperform|underperform)\b/i, "no advisory wording");
-  re(r.dd, /\(not a live price\)/, "says it is not live"); no(r.dd, /live LTP/i, "never called live LTP");
+  re(r.dd, /not a live price\./, "says it is not live"); no(r.dd, /live LTP/i, "never called live LTP");
 
   console.log("Detail view tests passed (" + checks + " checks)");
 })().catch((x) => { console.error("DETAIL TEST FAILED:", x.message); process.exit(1); });
