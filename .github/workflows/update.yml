@@ -16,6 +16,10 @@ name: Update data and publish site
         description: "Upstox call budget for financial statements. Empty = 120. A big first fill of the wider universe can use up to about 1500 (50 min)."
         required: false
         default: ""
+      quarterly_calls:
+        description: "Upstox call budget for quarterly results. Empty = 100. At most 330 (the step has a 15-minute timeout); a larger value is lowered to 330."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -29,9 +33,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    env:
+      RUN_STATUS_DIR: run-status        # each updater writes a small run record here (counts only; run_status.py); never published
     outputs:
       ledger_ready: ${{ steps.ledgerout.outputs.ready }}
       shareholding_ready: ${{ steps.shpout.outputs.ready }}
+      data_ok: ${{ steps.datastatus.outputs.data_ok }}
+      data_status: ${{ steps.datastatus.outputs.data_status }}
 
     steps:
       - uses: actions/checkout@v4
@@ -81,8 +89,10 @@ jobs:
           restore-keys: nse-data-
 
       - run: python nse_updater.py
+        id: nse
 
       - name: Update fundamentals
+        id: fundamentals
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -90,6 +100,7 @@ jobs:
         run: python fundamentals_updater.py
 
       - name: Update financial statements (Upstox)
+        id: financials
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -97,6 +108,7 @@ jobs:
         run: python financials_updater.py
 
       - name: Update financial history (Upstox)
+        id: financial_history
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -128,6 +140,7 @@ jobs:
       # It never initialises a ledger (no init flag is passed) and never creates the data branch. If it fails, nothing is saved and the
       # previously published out/shareholding.json (from the saved-data cache) is left as it was.
       - name: Update shareholding pattern (NSE/XBRL)
+        id: shareholding
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -165,6 +178,7 @@ jobs:
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           QUARTERLY_MAX_CALLS: "100"
+          QUARTERLY_MAX_CALLS_OVERRIDE: ${{ inputs.quarterly_calls }}      # empty unless set by hand; the updater caps it at 330 (the step's 15-minute timeout)
         run: |
           cp ledger-branch/stock_directory.json out/stock_directory.json
           python quarterly_results_updater.py
@@ -176,6 +190,7 @@ jobs:
         run: echo "::warning::The quarterly results update failed or timed out. The quarterly results published on the site are from the last successful run."
 
       - name: Validate outputs
+        id: validate
         continue-on-error: true
         run: python validate_outputs.py
 
@@ -183,6 +198,7 @@ jobs:
       # If either command fails, the four derived files are removed (so nothing old or unchecked is published) and the step fails; the site still publishes
       # (the page shows "not available" for those blocks).
       - name: Derive and validate market activity data
+        id: market
         continue-on-error: true
         run: |
           if python market_data_updater.py && python validate_market_outputs.py; then
@@ -219,6 +235,35 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+      # continue-on-error hides a failed data step from the job's own result. This table (run summary) and the "data-status" job below report it.
+      - name: Report the data steps
+        id: datastatus
+        if: always()
+        env:
+          OUTCOME_NSE: ${{ steps.nse.outcome }}
+          OUTCOME_FUNDAMENTALS: ${{ steps.fundamentals.outcome }}
+          OUTCOME_FINANCIALS: ${{ steps.financials.outcome }}
+          OUTCOME_FINANCIAL_HISTORY: ${{ steps.financial_history.outcome }}
+          OUTCOME_SHAREHOLDING: ${{ steps.shareholding.outcome }}
+          OUTCOME_QUARTERLY: ${{ steps.quarterly.outcome }}
+          OUTCOME_VALIDATE: ${{ steps.validate.outcome }}
+          OUTCOME_MARKET: ${{ steps.market.outcome }}
+        run: python report_run_status.py
+
+  # Fails the run (after the site was published) when a data step failed, so continue-on-error cannot make a failed update look successful.
+  data-status:
+    needs: build
+    if: ${{ always() && needs.build.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the data steps
+        run: |
+          echo "Data steps: ${{ needs.build.outputs.data_status || 'unknown' }}"
+          if [ "${{ needs.build.outputs.data_ok }}" != "true" ]; then
+            echo "::error::A data step failed (see the Data steps table in the build job's summary). The site was published with the previous data for that step."
+            exit 1
+          fi
   deploy:
     needs: build
     runs-on: ubuntu-latest

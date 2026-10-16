@@ -3,7 +3,8 @@
    update.yml may differ from HEAD only by the listed added lines; historical.yml and save_historical.yml must be byte-for-byte the pinned versions. */
 const fs = require("fs"), cp = require("child_process"), crypto = require("crypto");
 const CFG = JSON.parse(fs.readFileSync(__dirname + "/approved_workflow_changes.json", "utf8"));
-const UPD = CFG.update_yml.path, PINNED = CFG.pinned_files, UPDATERS = CFG.updater_changes, files = [UPD].concat(Object.keys(PINNED), Object.keys(UPDATERS));
+const COVERAGE = CFG.coverage_fixes_changes || {};   /* the universe-wide coverage fixes: exact diff per touched file (wins over updater_changes for its paths) */
+const UPD = CFG.update_yml.path, PINNED = CFG.pinned_files, UPDATERS = Object.assign({}, CFG.updater_changes, COVERAGE), files = [UPD].concat(Object.keys(PINNED), Object.keys(UPDATERS));
 function isApproved(root, f) {
   if (f === UPD) {
     const d = cp.execSync("git diff -U0 HEAD -- " + UPD, { cwd: root, encoding: "utf8" }).split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l));

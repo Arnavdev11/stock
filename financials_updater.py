@@ -13,10 +13,12 @@ Calls per stock (3, same as Phase 1):
   /{ISIN}/cash-flow?type=..&fs=true            (no time_period sent)
 """
 import copy
+import datetime as dt
 import json
 import re
 
 import research_test_batch
+import run_status
 import universe
 from upstox_common import (ROOT, SYMBOLS, Upstox, fail, get_token, is_stale, latest, load_instruments,
                            log, num, period_key, today, write_json)
@@ -27,6 +29,8 @@ MAX_CALLS_PER_RUN = universe.budget("FINANCIALS_MAX_CALLS", 120)   # a NIFTY 500
 STATEMENT_MAX_AGE_DAYS = 30
 SCHEMA_VERSION = 2            # cached sections with another version are refetched once
 CASHFLOW_PATH = "cash-flow"   # confirmed: /v2/fundamentals/{ISIN}/cash-flow
+MAX_RETRY_DAYS = 30           # a section that keeps failing is retried at most this rarely (see retry_days)
+NOT_FOUND_ERROR = "Symbol not found in Upstox NSE equity instruments"
 
 NOTES = {
     "units": "INR crore",
@@ -36,9 +40,9 @@ NOTES = {
     "net_profit": "Upstox's summary 'net_profit' category value and change for the same year (kept for the existing page). profit_after_tax is the detail line; checks.summary_net_profit_equals_pat shows whether they agree.",
     "total_equity": "Calculated: total assets minus total liabilities (both from Upstox). checks.equity_capital_equals_derived_equity compares it with Upstox's 'Equity Capital' line, which may include non-controlling interests.",
     "liabilities_to_equity": "Total liabilities divided by total equity (assets minus liabilities). This is NOT Debt/Equity. For banks and financial companies, liabilities are mostly customer deposits, so the ratio is not comparable with other companies. Empty if equity is not positive.",
-    "debt": "Debt/Equity and total debt are unavailable: Upstox returned no clearly identifiable debt or borrowings line for these 10 stocks (debt_lines_found is empty). They are never derived from total liabilities, so total_debt and debt_to_equity are empty.",
+    "debt": "Debt/Equity and total debt are not provided: they would need a clearly identifiable debt or borrowings line, which Upstox has not returned for the stocks checked so far (debt_lines_found lists any borrowing-like labels for review). They are never derived from total liabilities, so total_debt and debt_to_equity stay empty.",
     "diagnostics": "checks, capex_status, capex_candidates, line_items and debt_lines_found are diagnostics that record what Upstox returned. They are not financial metrics.",
-    "free_cash_flow": "Free cash flow is unavailable: the Upstox cash-flow response for these 10 stocks contains only aggregate lines and no unambiguous capital-expenditure line, so free_cash_flow is empty. It is never estimated, never operating cash flow minus investing cash flow, and part-lines (property/plant/equipment only, intangibles, capital work in progress) are never used. capex_status and line_items show what Upstox returned.",
+    "free_cash_flow": "free_cash_flow is filled only when the cash-flow response for that stock has exactly one unambiguous total capital-expenditure line (operating cash flow minus that capex); otherwise it is empty. It is never estimated, never operating cash flow minus investing cash flow, and part-lines (property/plant/equipment only, intangibles, capital work in progress) are never used. capex_status and line_items show what Upstox returned for each stock.",
 }
 
 INCOME_LINES = {"revenue": "revenue", "other income": "other_income", "total revenue": "total_revenue",
@@ -257,8 +261,42 @@ def fetch_section(api, isin, path, extra, parser, fy=None):
     return None, None, last
 
 
-def needs_refresh(sec):
+def retry_days(failures):
+    """Back-off after a failed section: 1, 2, 4, 8, 16, then 30 days (capped). A section that keeps failing is retried less often
+    instead of being fetched first in every run."""
+    n = max(1, int(failures or 1))
+    return min(2 ** (n - 1), MAX_RETRY_DAYS)
+
+
+def in_backoff(sec, day=None):
+    """True while a section that failed last time is still waiting for its retry date (the data it already has is kept)."""
+    if not sec.get("error") or not sec.get("attempted"):
+        return False
+    try:
+        since = (dt.date.fromisoformat(day or today()) - dt.date.fromisoformat(sec["attempted"])).days
+    except ValueError:
+        return False
+    return since < retry_days(sec.get("failures"))
+
+
+def needs_refresh(sec, day=None):
+    if in_backoff(sec, day):
+        return False
     return is_stale(sec.get("fetched"), STATEMENT_MAX_AGE_DAYS) or sec.get("schema") != SCHEMA_VERSION
+
+
+def staleness_key(entry):
+    """What order_stalest sorts on: the oldest section date of the stock. A section whose last attempt FAILED counts as if it had been
+    refreshed on the day of that attempt, so a stock Upstox keeps refusing goes to the back of the queue (same rule as fundamentals_updater)."""
+    e = entry or {}
+    dates = []
+    for name, *_ in SECTIONS:
+        sec = e.get(name) or {}
+        d = sec.get("fetched") or ""
+        if sec.get("error") and sec.get("attempted"):
+            d = max(d, sec["attempted"])
+        dates.append(d)
+    return min(dates)
 
 
 def main():
@@ -272,22 +310,30 @@ def main():
         symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
     except universe.UniverseError as err:
         fail(str(err))
-    # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time
-    symbols = universe.order_stalest(symbols, {x: min([((stocks.get(x) or {}).get(n) or {}).get("fetched") or "" for n, *_ in SECTIONS]) for x in symbols})
+    # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time; a failing section backs off (staleness_key)
+    symbols = universe.order_stalest(symbols, {x: staleness_key(stocks.get(x)) for x in symbols})
     log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
     pending = 0
+    tally = {"processed": 0, "succeeded": 0, "failed": 0, "up_to_date": 0, "in_backoff": 0, "not_in_upstox": 0, "not_reached": 0}
     for sym in symbols:
+        m = instruments.get(sym)
+        if not m:                            # local instrument data, no API call: classified even after the budget is spent
+            stocks.setdefault(sym, {})["last_error"] = NOT_FOUND_ERROR
+            tally["not_in_upstox"] += 1
+            log(sym, "- not found")
+            continue
+        e = stocks.setdefault(sym, {})
+        if e.get("last_error") == NOT_FOUND_ERROR:
+            e["last_error"] = None           # Upstox lists it now: a stale "not found" must not outlive the listing
+        due = [name for name, *_ in SECTIONS if needs_refresh(e.get(name) or {})]
+        if not due:
+            tally["in_backoff" if any(in_backoff(e.get(n) or {}) for n, *_ in SECTIONS) else "up_to_date"] += 1
+            continue
         if api.calls >= MAX_CALLS_PER_RUN:
             pending += 1                     # not reached this run: not an error, keeps its previous data, goes first next time
             continue
-        e = stocks.setdefault(sym, {})
-        m = instruments.get(sym)
-        if not m:
-            e["last_error"] = "Symbol not found in Upstox NSE equity instruments"
-            log(sym, "- not found")
-            continue
         e["isin"], e["company_name"] = m["isin"], m["name"]
-        problems = []
+        problems, calls_before = [], api.calls
         for name, path, extra, parser in SECTIONS:
             sec = e.setdefault(name, {})
             if not needs_refresh(sec):
@@ -296,15 +342,26 @@ def main():
             if err and "call limit" in err:
                 break                         # budget used up in the middle of a stock: keep what it had, retry next run
             if err:
-                sec["error"] = err
+                sec.update({"error": err, "attempted": today(), "failures": int(sec.get("failures") or 0) + 1})
                 problems.append(name + ": " + err)
             else:
-                sec.update({"data": data, "basis": basis, "fetched": today(), "schema": SCHEMA_VERSION, "error": None})
-        e["last_error"] = "; ".join(problems) or None
-        log(sym, "- ok" if not problems else "- problem: " + e["last_error"])
+                sec.update({"data": data, "basis": basis, "fetched": today(), "schema": SCHEMA_VERSION, "error": None,
+                            "attempted": today(), "failures": 0})
+        waiting = [n + ": " + (e.get(n) or {}).get("error") for n, *_ in SECTIONS if n not in [p.split(":")[0] for p in problems]
+                   and (e.get(n) or {}).get("error") and in_backoff(e.get(n) or {})]
+        e["last_error"] = "; ".join(problems + waiting) or None       # a section waiting for its retry keeps reporting its last error
+        if api.calls > calls_before:
+            tally["processed"] += 1
+            tally["failed" if problems else "succeeded"] += 1
+        if any(needs_refresh(e.get(n) or {}) for n, *_ in SECTIONS) and not problems:
+            pending += 1                     # the budget ran out in the middle of this stock
+        log(sym, "- ok" if not problems else "- problem: " + "; ".join(problems))
 
+    tally["not_reached"] = pending
     if pending:
         log("Not reached in this run (call budget):", pending, "stock(s)")
+    log("Run tally:", json.dumps(tally, sort_keys=True))
+    run_status.write("financials", tally, calls=api.calls, call_cap=MAX_CALLS_PER_RUN)
     rows, errors, dates = [], [], []
     for sym in symbols:
         e = stocks.get(sym, {})

@@ -1,0 +1,39 @@
+{
+ "note": "Approved index.html edits of the universe-wide coverage fixes (Stock Detail status labels; Financial History newest basis and Total revenue row). Each entry is the exact new text and the exact text it replaced in 4eb39f7. guard_update_yml.without_coverage_fixes() and tests/legacy_5i.js reverse exactly these edits (every new text must occur exactly once; a page with none of them comes back unchanged; a page with only some of them, or with one twice, is an error), so the older byte-identity pins keep proving that nothing ELSE in the page changed. Changing these edits again means updating this file on purpose.",
+ "base_commit": "4eb39f7",
+ "edits": [
+  {
+   "new": "/* What a file says about ONE stock: its row, or why there is none. \"Not yet fetched\" = the file has no row and no error for the stock;\n   \"Unavailable from source\" = the updater recorded that Upstox does not list it; a recorded request failure is said as such. Nothing is inferred beyond that. */\nvar MLABEL={pe:\"P/E\",pb:\"P/B\",roe:\"ROE\",roce:\"ROCE\",roa:\"ROA\",ev_ebitda:\"EV/EBITDA\"};\nfunction stockStatus(doc,s,row){\n  if(!doc)return null;\n  if(row){var bits=[];if(typeof row.fetched===\"string\"&&/^\\d{4}-\\d{2}-\\d{2}$/.test(row.fetched))bits.push(\"last updated \"+esc(row.fetched));\n    if(Array.isArray(row.missing)&&row.missing.length)bits.push(\"not returned by the source: \"+row.missing.map(function(m){return esc(MLABEL[m]||m)}).join(\", \"));\n    return bits.length?\"this stock: \"+bits.join(\"; \"):null}\n  var e=Array.isArray(doc.errors)?doc.errors.filter(function(x){return x&&x.symbol===s})[0]:null;\n  if(e&&/not found/i.test(String(e.error||\"\")))return\"this stock: unavailable from source (not in the Upstox equity list)\";\n  if(e)return\"this stock: not available (the last request failed)\";\n  return\"this stock: not yet fetched\"}\n",
+   "old": ""
+  },
+  {
+   "new": "  h+='<p class=\"note\" style=\"padding-left:0\">Latest price and day change are the last daily close in the historical data'+(p.date?\", as of \"+esc(p.date):\"\")+' (not a live price). They show \"-\" when the stock has fewer than two valid daily candles'+(p.price===null&&!(d.prices&&d.prices.stocks&&Object.prototype.hasOwnProperty.call(d.prices.stocks,s))?\" (no price history has been fetched for this stock yet)\":\"\")+'. '+(mc.cap!==null?\"Market Cap = last close × \"+esc(N0.format(mc.shares))+\" shares (NSE shareholding filing, quarter ended \"+esc(mc.quarter)+\"), not a live value.\":'Market Cap shows \"-\" unless both a last close and an NSE-filed share count are on file.')+'</p>';\n",
+   "old": "  h+='<p class=\"note\" style=\"padding-left:0\">Latest price and day change are the last daily close in the historical data'+(p.date?\", as of \"+esc(p.date):\"\")+' (not a live price). They show \"-\" when the stock has fewer than two valid daily candles. '+(mc.cap!==null?\"Market Cap = last close × \"+esc(N0.format(mc.shares))+\" shares (NSE shareholding filing, quarter ended \"+esc(mc.quarter)+\"), not a live value.\":'Market Cap shows \"-\" unless both a last close and an NSE-filed share count are on file.')+'</p>';\n"
+  },
+  {
+   "new": "  var vs=stockStatus(d.val,s,findStock(d.val,s));\n  h+='<p class=\"note\" style=\"padding-left:0\">'+(d.val&&d.val.as_of?\"Fundamentals data: \"+esc(d.val.source||\"Upstox\")+\" · Updated: \"+esc(d.val.as_of)+(vs?\" · \"+vs:\"\"):\"Fundamentals not loaded yet.\")+'</p>';\n",
+   "old": "  h+='<p class=\"note\" style=\"padding-left:0\">'+(d.val&&d.val.as_of?\"Fundamentals data: \"+esc(d.val.source||\"Upstox\")+\" · Updated: \"+esc(d.val.as_of):\"Fundamentals not loaded yet.\")+'</p>';\n"
+  },
+  {
+   "new": "  h+='<p class=\"note\" style=\"padding-left:0\">'+(isn(cf.free_cash_flow)?\"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line.\":\"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for this stock.\")+'</p>';\n",
+   "old": "  h+='<p class=\"note\" style=\"padding-left:0\">'+(isn(cf.free_cash_flow)?\"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line.\":\"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.\")+'</p>';\n"
+  },
+  {
+   "new": "  var fs=d.fin&&!findStock(d.fin,s)?stockStatus(d.fin,s,null):null;\n  h+='<p class=\"note\" style=\"padding-left:0\">'+(d.fin&&d.fin.as_of?\"Financial data: \"+esc(d.fin.source||\"Upstox\")+\" · ₹ crore · Updated: \"+esc(d.fin.as_of)+(fs?\" · \"+fs:\"\"):\"Financial statements not loaded yet.\")+'</p>';\n",
+   "old": "  h+='<p class=\"note\" style=\"padding-left:0\">'+(d.fin&&d.fin.as_of?\"Financial data: \"+esc(d.fin.source||\"Upstox\")+\" · ₹ crore · Updated: \"+esc(d.fin.as_of):\"Financial statements not loaded yet.\")+'</p>';\n"
+  },
+  {
+   "new": "  /* bases are never mixed: the basis with the NEWEST fiscal year is shown (consolidated on a tie), so a consolidated history that stopped years ago\n     does not hide a current standalone one */\n  var newest={};recs.forEach(function(r){if(!(r.basis in newest)||r.fy>newest[r.basis])newest[r.basis]=r.fy});\n  var basis=Object.keys(newest).sort(function(a,b){return newest[b]-newest[a]||(a===\"consolidated\"?-1:b===\"consolidated\"?1:0)})[0];\n",
+   "old": "  var basis=recs.some(function(r){return r.basis===\"consolidated\"})?\"consolidated\":recs[0].basis;      /* bases are never mixed */\n"
+  },
+  {
+   "new": "  /* Revenue row: the source's Revenue line. When it is missing in EVERY year shown but Total revenue is there (a broker, investment or holding company\n     whose layout is not classified as financial), the row shows Total revenue under that name - one field for the whole row, never mixed year by year. */\n  var useTotal=bank||(!cols.some(function(c){return isn(c.v.revenue)})&&cols.some(function(c){return isn(c.v.total_revenue)}));\n",
+   "old": ""
+  },
+  {
+   "new": "      {key:useTotal?\"total_revenue\":\"revenue\",label:bank?\"Total income\":useTotal?\"Total revenue\":\"Revenue\",fmt:cr,growth:true},\n",
+   "old": "      {key:bank?\"total_revenue\":\"revenue\",label:bank?\"Total income\":\"Revenue\",fmt:cr,growth:true},\n"
+  }
+ ],
+ "sha256_of_edits": "d33f98e6ea9f896a24fb415f4b305f66d98fc8da097115f5e05f5056e4a35b19"
+}

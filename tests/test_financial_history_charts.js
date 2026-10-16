@@ -73,7 +73,11 @@ eq(keysOf(h), ["total_revenue", "profit_before_tax", "profit_after_tax", "eps_ba
 no(text(h).replace(/Total income/g, ""), /\bRevenue\b/, "the word Revenue never appears for a bank (table or charts)"); no(text(figure(h, "total_revenue")) + (figure(h, "total_revenue").match(/aria-label="[^"]*"|<title>[^<]*<\/title>/g) || []).join(" "), /Revenue/i, "no 'Revenue' in the bank chart's visible text, text alternative or tooltips");
 eq(rects(figure(h, "total_revenue")).length, 4, "bank Total income: four bars");
 h = page("TCS"); no(h, /Total income/, "non-bank never says Total income");
-{ const d = DOC(); d.stocks.TCS.years.forEach((y) => { y.values.revenue = null; }); const hh = page("TCS", d); re(figure(hh, "revenue"), /data-state="unavailable"/, "non-bank with no Revenue: unavailable (total_revenue is never substituted)"); eq(rects(figure(hh, "revenue")).length, 0, "no bars drawn from total_revenue"); }
+{ /* approved change (universe-wide coverage): Revenue missing in every year -> the chart is Total revenue, under that name; with neither line nothing is drawn */
+  const d = DOC(); d.stocks.TCS.years.forEach((y) => { y.values.revenue = null; }); const hh = page("TCS", d); no(hh, /data-chart="revenue"/, "no Revenue chart when no year has Revenue");
+  re(figure(hh, "total_revenue"), /Total revenue \(₹ crore\)/, "the chart is titled Total revenue"); ok(rects(figure(hh, "total_revenue")).length > 0, "bars come from the stored Total revenue");
+  const d2 = DOC(); d2.stocks.TCS.years.forEach((y) => { y.values.revenue = null; y.values.total_revenue = null; }); const h2 = page("TCS", d2);
+  re(figure(h2, "revenue"), /data-state="unavailable"/, "neither line: unavailable"); eq(rects(figure(h2, "revenue")).length, 0, "no bars, never zero bars"); }
 
 // ================= 4. the chart uses the table's values and strings =================
 for (const sym of ["TCS", "ITC", "HDFCBANK", "NEG", "BIGBANK"]) {
@@ -109,7 +113,9 @@ h = page("GAP"); { const f = figure(h, "revenue"), rs = rects(f);
   no(f, /data-fy="2025"/, "no bar for FY2025"); }
 h = page("HOLE"); { const f = figure(h, "revenue"); eq(rects(f).map((r) => r.fy), [2023, 2024, 2026], "HOLE: a null value draws no bar (never zero)"); eq(labels(f)[2025], "-", "null labelled '-'"); eq(rects(figure(h, "profit_before_tax")).length, 4, "other metrics of the same stock are unaffected"); }
 // unavailable states
-for (const [sym, key] of [["SOLO", "revenue"], ["NULLREV", "revenue"]]) { const f = figure(page(sym), key); re(f, /data-state="unavailable"/, sym + ": unavailable state"); re(text(f), /Not enough years on file to chart this \(needs at least two years with a value\)\./, sym + ": clear message"); no(f, /<svg/, sym + ": no misleading chart"); }
+/* NULLREV (Revenue null every year, Total revenue present): since the approved total-revenue fallback it charts Total revenue instead (checked just below) */
+re(figure(page("NULLREV"), "total_revenue"), /<svg/, "NULLREV: Total revenue is charted under its own name"); no(page("NULLREV"), /data-chart="revenue"/, "NULLREV: no empty Revenue chart");
+for (const [sym, key] of [["SOLO", "revenue"]]) { const f = figure(page(sym), key); re(f, /data-state="unavailable"/, sym + ": unavailable state"); re(text(f), /Not enough years on file to chart this \(needs at least two years with a value\)\./, sym + ": clear message"); no(f, /<svg/, sym + ": no misleading chart"); }
 { const f = figure(page("TWO"), "revenue"); eq(rects(f).map((r) => r.fy), [2023, 2026], "two values with a gap between them: drawn, with the two empty slots between"); eq([...f.matchAll(/>FY(\d\d)<\/text>/g)].length, 4, "four slots"); }
 { const d = DOC(); d.stocks.INFY.years.forEach((y) => { y.values.eps_basic = null; }); re(figure(page("INFY", d), "eps_basic"), /data-state="unavailable"/, "a metric with no values at all is unavailable"); eq(keysOf(page("INFY", d)).length, 5, "still five figures (one unavailable)"); }
 { const d = DOC(); d.stocks.INFY.years.forEach((y, i) => { if (i) y.values.eps_basic = null; }); re(figure(page("INFY", d), "eps_basic"), /data-state="unavailable"/, "one value only: unavailable"); }
@@ -160,7 +166,12 @@ let oldHtml = ""; try { oldHtml = cp.execSync("git show 3c07adab51eb82e5258c4971
 if (oldHtml) {
   const O = load(modOf(oldHtml)), N = F, strip = (x) => { const a = x.indexOf('<h5 style="margin:16px 0 4px">Charts</h5>'); if (a < 0) return x; const g = x.indexOf('<div data-charts="1"', a), e = x.indexOf("</div>", g) + 6; return x.slice(0, a) + x.slice(e); };
   const d = DOC();
-  for (const s of Object.keys(d.stocks).concat(["NOPE"])) eq(strip(N.build(s, d)), O.build(s, d), s + ": with the charts removed, the panel (table, change rows, CAGR lines, notes, states) is identical to the committed version");
+  /* approved coverage change (tests/approved_page_edits.json): a non-bank stock with no Revenue in any year but a Total revenue shows a Total revenue row instead of an
+     empty Revenue row. Only such stocks are left out of this parity check (their new output is asserted in section 4 above); every other stock must still match exactly. */
+  const totalRow = (s) => { const st = d.stocks[s]; if (!st || st.statement_layout === "financial") return false; const ys = st.years || [];
+    return !ys.some((y) => typeof (y.values || {}).revenue === "number") && ys.some((y) => typeof (y.values || {}).total_revenue === "number"); };
+  ok(Object.keys(d.stocks).filter(totalRow).length === 1, "exactly one fixture (NULLREV) is affected by the approved Total revenue change");
+  for (const s of Object.keys(d.stocks).concat(["NOPE"]).filter((x) => !totalRow(x))) eq(strip(N.build(s, d)), O.build(s, d), s + ": with the charts removed, the panel (table, change rows, CAGR lines, notes, states) is identical to the committed version");
   for (const bad of [null, {}, { stocks: [] }]) eq(N.build("TCS", bad), O.build("TCS", bad), "unavailable output is identical");
   for (const s of ["TCS", "ITC", "HDFCBANK", "GAP", "NEG"]) { const mn = N.model(d, s), mo = O.model(d, s); eq(JSON.stringify(mn), JSON.stringify(mo.metrics ? mo : mo), s + ": model is identical"); for (const x of mn.metrics) { eq(JSON.stringify(N.cagr(mn, x.key)), JSON.stringify(O.cagr(mo, x.key)), s + " " + x.key + " CAGR identical"); mn.cols.forEach((c, i) => eq(N.change(mn, i, x.key), O.change(mo, i, x.key), s + " " + x.key + " change[" + i + "] identical")); } }
   const hb = oldHtml.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
