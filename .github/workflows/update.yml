@@ -23,6 +23,7 @@ name: Update data and publish site
 
 permissions:
   contents: read
+  actions: read                         # only to list the saved caches when no fundamentals state was restored (cache-miss recovery below)
 
 # One shared group for everything that reads or writes the financial-history ledger or the shareholding ledger (see also financial_history.yml and shareholding.yml). Never cancels a run.
 concurrency:
@@ -87,6 +88,37 @@ jobs:
             out
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
+
+      # Cache-miss recovery for fundamentals. Without its saved state the fundamentals step would start from nothing and publish only the few stocks one
+      # run can fetch. A missing state is recovered from the published site ONLY when no saved cache exists at all (a genuine miss); if a saved cache
+      # exists but was not restored (a failed restore), or the published file cannot be downloaded or fails validation, the run stops here and the
+      # site stays exactly as it is (the deploy job needs this job). A restored state, even an empty one, is never touched.
+      - name: Check the restored fundamentals state
+        id: fstate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -f data/fundamentals_cache.json ]; then
+            python fundamentals_updater.py check-state || { echo "::error::The restored fundamentals state cannot be used (see above). Stopping: nothing is published."; exit 1; }
+            echo "state=restored" >> "$GITHUB_OUTPUT"; echo "Saved fundamentals state restored."; exit 0
+          fi
+          keys=$(gh api --paginate "repos/$REPO/actions/caches?key=nse-data-&ref=$REF&per_page=100" --jq '.actions_caches[] | select(.key | test("^nse-data-[0-9]+$")) | .key') || { echo "::error::The saved caches could not be listed, so a missing fundamentals state cannot be told apart from a failed restore. Stopping: nothing is published."; exit 1; }
+          n=$(printf '%s\n' "$keys" | grep -c . || true)
+          if [ "$n" != "0" ]; then echo "::error::$n saved cache(s) exist but no fundamentals state was restored (a failed restore). Stopping: nothing is published. Re-run later."; exit 1; fi
+          echo "state=miss" >> "$GITHUB_OUTPUT"
+          echo "::warning::No saved cache exists (a cache miss): the fundamentals state is recovered from the published site."
+
+      - name: Recover the fundamentals state from the published site (cache miss only)
+        if: steps.fstate.outputs.state == 'miss'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          NAME: ${{ github.event.repository.name }}
+        run: |
+          url="https://${OWNER,,}.github.io/${NAME}/out/fundamentals.json"
+          curl -fsSL --retry 3 --max-time 120 "$url" -o recovery_fundamentals.json || { echo "::error::$url could not be downloaded. Stopping: nothing is published."; exit 1; }
+          python fundamentals_updater.py seed recovery_fundamentals.json
 
       - run: python nse_updater.py
         id: nse
