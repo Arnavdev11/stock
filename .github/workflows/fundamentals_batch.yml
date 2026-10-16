@@ -146,9 +146,11 @@ jobs:
           FUNDAMENTALS_REPORT_DIR: report
         run: python fundamentals_updater.py
 
+      # Runs whenever the batch step ran, even if it failed or was stopped after writing: a batch whose published output lost metrics must be caught
+      # (and those stocks held at their earlier values) before the next scheduled publish. A batch that was never created simply fails here.
       - name: Validate the batch
         id: validate
-        if: inputs.mode == 'run' && steps.run.outcome == 'success'
+        if: always() && inputs.mode == 'run' && steps.run.outcome != 'skipped'
         continue-on-error: true
         env:
           FUNDAMENTALS_REPORT_DIR: report

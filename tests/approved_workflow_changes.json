@@ -54,7 +54,7 @@
   ".github/workflows/historical.yml": "2bed4ca46e71a16a808eb8bcc09e3c8e6586a53cae18be8762c90b12fd1125b5",
   ".github/workflows/save_historical.yml": "754ed6654f037344e5fc1045c633cc860349a187a4a255574d9f81474f881777",
   ".github/workflows/sensex_data.yml": "d44fecfccde6f06d81fa90b15876ab7e599d6e025a148968abeeeb4b0e7cae28",
-  ".github/workflows/fundamentals_batch.yml": "4ff9194bfc13aea2fbf7f5acbfb511acae94b1ad2ffc6471ba770d4d1e1aa7ac"
+  ".github/workflows/fundamentals_batch.yml": "09319d24deb6d408ae65a462dca023e5d55a9da57b7d2dbb0e15833e48e176a5"
  },
  "updater_changes": {
   "fundamentals_updater.py": [
@@ -288,6 +288,9 @@
    "+    return changed",
    "+",
    "+",
+   "+    if batch.get(\"status\") in GATE_PASSED:     # already decided (e.g. the same id was dispatched again and refused): its record is left exactly as it is",
+   "+        log(\"Batch %s is already %s; nothing to validate and nothing changed.\" % (bid, batch[\"status\"]))",
+   "+        return 0",
    "+    losses = metric_losses(batch, stocks, out_doc, previous)",
    "+    changed = set_holds(stocks, bid, losses, today()) if problems else clear_holds(stocks, bid)",
    "+    if losses and problems:",

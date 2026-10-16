@@ -244,5 +244,71 @@ class BatchValidationOfLostMetrics(unittest.TestCase):
         self.assertIn("no successful update", h.offline_log)
 
 
+class HoldsAcrossScheduledRuns(unittest.TestCase):
+    """The scheduled publishing run (daily mode, restoring the saved cache) after a batch failed validation for lost metrics."""
+    lossy_batch = BatchValidationOfLostMetrics.lossy_batch
+
+    def test_the_next_scheduled_runs_keep_publishing_the_held_values(self):
+        h, before, bad = self.lossy_batch()
+        self.assertEqual(h.validate("1", previous={"stocks": list(before.values())}), 1)
+        out = h.go(cap=150, day=START + 8 * D)                 # stocks are fresh: no call, the hold alone decides what is published
+        self.assertEqual(h.requests_this_run, 0)
+        rows = published(out)
+        for s in bad:
+            self.assertEqual(rows[s], before[s])               # pre-batch values AND their original date
+            self.assertTrue(h.cache()["stocks"][s]["publish_hold"])
+        Scripted(h, lambda isin: Resp(200, {"status": "success", "data": []}))
+        out = h.go(cap=10 ** 6, day=START + 14 * D)            # stale now, and the provider answers empty
+        rows = published(out)
+        for s in bad:
+            self.assertEqual(rows[s], before[s])
+            self.assertTrue(h.cache()["stocks"][s]["publish_hold"])
+        self.assertEqual(vo.check_fundamentals(out), [])
+        h.go(batch="2", day=START + 14 * D)                    # and no new batch starts until batch 1 is accepted or passes
+        self.assertEqual(h.rc, 1)
+
+    def test_validation_after_an_interrupted_run_still_holds_lost_metrics(self):
+        h, before = base(self, 6)
+        h.go(batch="1", day=START + 7 * D, cap=3)              # stopped by its cap: the batch is interrupted, not completed
+        self.assertEqual(h.batch("1")["status"], "interrupted")
+        c, f = h.cache(), h.t / "out" / "fundamentals.json"
+        out = json.loads(f.read_text())
+        done = [s for s in h.batch("1")["planned"] if h.batch("1")["outcomes"].get(s) == "ok"][:1]
+        for s in done:                                         # a defect elsewhere wrote a lost metric for a refreshed stock
+            c["stocks"][s]["ratios"]["roe"] = None
+        for r in out["stocks"]:
+            if r["symbol"] in done:
+                r["roe"], r["missing"] = None, ["roe"]
+        (h.t / "data" / "c.json").write_text(json.dumps(c)); f.write_text(json.dumps(out))
+        self.assertEqual(h.validate("1", previous={"stocks": list(before.values())}), 1)
+        self.assertEqual(h.batch("1")["status"], "interrupted")                   # still resumable
+        self.assertEqual(published(json.loads(f.read_text()))[done[0]], before[done[0]])
+        self.assertTrue(h.cache()["stocks"][done[0]]["publish_hold"])
+
+    def test_validation_after_a_refused_run_leaves_a_decided_batch_untouched(self):
+        h = BatchHarness(self, 20)
+        h.go(batch="1")
+        self.assertEqual(h.validate("1"), 0)
+        record = json.dumps(h.batch("1"), sort_keys=True)
+        cache_before = (h.t / "data" / "c.json").read_text()
+        h.go(batch="1", day=START + 7 * D)                   # the same id dispatched again: the run step refuses it ...
+        self.assertEqual(h.rc, 1)
+        self.assertEqual(h.validate("1"), 0)                  # ... and the validation that now always follows changes nothing
+        self.assertIn("already validated; nothing to validate", h.offline_log)
+        self.assertEqual(json.dumps(h.batch("1"), sort_keys=True), record)
+        self.assertEqual((h.t / "data" / "c.json").read_text(), cache_before)
+        self.assertEqual(h.validate("9"), 1)                  # a batch that was never created fails without writing anything
+        self.assertEqual((h.t / "data" / "c.json").read_text(), cache_before)
+
+    def test_the_workflow_validates_whenever_the_batch_step_ran(self):
+        import yaml
+        from pathlib import Path
+        w = yaml.safe_load((Path(__file__).resolve().parent / ".github" / "workflows" / "fundamentals_batch.yml").read_text(encoding="utf-8"))
+        steps = {s.get("name"): s for s in w["jobs"]["batch"]["steps"]}
+        self.assertEqual(steps["Validate the batch"]["if"], "always() && inputs.mode == 'run' && steps.run.outcome != 'skipped'")
+        self.assertTrue(steps["Validate the batch"]["continue-on-error"])
+        self.assertTrue(steps["Save the data"]["if"].startswith("always()"))       # the holds it sets are saved for the next publish
+
+
 if __name__ == "__main__":
     unittest.main()

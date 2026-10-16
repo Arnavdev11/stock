@@ -1097,6 +1097,9 @@ def validate_main(argv):
     batch = (cache.get("batches") or {}).get(bid)
     if not batch:
         fail("batch %s does not exist" % bid)
+    if batch.get("status") in GATE_PASSED:     # already decided (e.g. the same id was dispatched again and refused): its record is left exactly as it is
+        log("Batch %s is already %s; nothing to validate and nothing changed." % (bid, batch["status"]))
+        return 0
     try:
         out_doc = json.loads(OUT_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
