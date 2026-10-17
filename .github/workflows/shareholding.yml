@@ -88,8 +88,9 @@ jobs:
             echo "No universe.json on the data branch: the 10 development stocks are used."
           fi
 
+      # Restore only: the data is saved by the two steps at the end of this job, and only when it still holds the fundamentals state (see there).
       - name: Restore saved data
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             data
@@ -135,6 +136,25 @@ jobs:
           path: out/shareholding.json
           if-no-files-found: error
           retention-days: 14
+
+      # The saved data goes to the cache only when it still holds the fundamentals state (data/fundamentals_cache.json). The combined actions/cache step
+      # used to save whatever the workspace held, also after a restore that failed or found nothing; "Update data and publish site" then restored that
+      # state-less nse-data-shp-* cache as the newest nse-data-* one and could no longer find the fundamentals state. Without the state nothing is saved,
+      # so the last daily cache stays the newest one. Same key and paths as before (the cache version must match the daily restore). These steps come last,
+      # as the old post-step did, so they cannot affect the ledger hand-off above.
+      - name: Save the data for the next site build (only with the fundamentals state)
+        if: ${{ success() && hashFiles('data/fundamentals_cache.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-shp-${{ github.run_id }}
+
+      - name: Warn that the data was not saved (no fundamentals state)
+        if: ${{ success() && hashFiles('data/fundamentals_cache.json') == '' }}
+        run: |
+          echo "::warning::No fundamentals state (data/fundamentals_cache.json) was restored, so no nse-data-shp cache is saved (it would hide the last daily cache from the next site build). The ledger hand-off is not affected."
 
   save:
     needs: shareholding
