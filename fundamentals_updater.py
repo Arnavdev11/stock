@@ -473,7 +473,8 @@ def state_of(entry, inst, day=None):
         return "invalid"
     if not e.get("ratios_fetched"):
         return "failed_due" if failed else "missing"
-    if is_stale(e.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS) or is_stale(e.get("profile_fetched"), PROFILE_MAX_AGE_DAYS):
+    profile_due = is_stale(e.get("profile_fetched"), PROFILE_MAX_AGE_DAYS) and not (e.get("recovered") and not e.get("profile_fetched"))
+    if is_stale(e.get("ratios_fetched"), RATIOS_MAX_AGE_DAYS) or profile_due:
         return "failed_due" if failed else "stale"
     return "fresh"
 
@@ -566,6 +567,10 @@ def main(argv=None):
         return validate_main(argv[1:])
     if argv[:1] == ["accept"]:
         return accept_main(argv[1:])
+    if argv[:1] == ["seed"]:
+        return seed_main(argv[1:])
+    if argv[:1] == ["check-state"]:
+        return check_state_main(argv[1:])
     token = os.environ.get("UPSTOX_ANALYTICS_TOKEN", "").strip()
     if not token:
         fail("UPSTOX_ANALYTICS_TOKEN is not set. Add it in GitHub: "
@@ -1177,6 +1182,178 @@ def accept_main(argv):
     log("Batch %s accepted by %s (was %s; validation %s with %s problem(s)): %s" % (bid, a["by"], a["status_before"], a["validation_result"], a["validation_problem_count"], a["reason"]))
     print("::warning::fundamentals batch %s was accepted without passing validation, by %s: %s" % (bid, a["by"], a["reason"]))
     write_report(symbols, stocks, None, dt.date.today(), batch)
+    return 0
+
+
+# ---------------------------------------------------------------- recovery after a cache miss: rebuild the saved records from the published file
+NOT_RECOVERABLE = ("profile dates (the sector is refreshed with the next ratio refresh)", "failure counts and retry dates (failed stocks are retried at once)",
+                   "batch records, the batch gate and validation history", "publication holds (the published values already are the held ones)",
+                   "records held aside after an ISIN change (they are not published)", "the call log", "the dates since which stocks are not listed",
+                   "the ISIN the instrument list gave at the last run", "metrics the provider marked as having no value")
+
+
+def published_problems(doc, symbols):
+    """Why a published fundamentals.json cannot be used to rebuild the saved records ([] = usable). Strict: anything unexpected stops the recovery."""
+    if not isinstance(doc, dict):
+        return ["not a JSON object"]
+    p = []
+    if doc.get("source") != "Upstox":
+        p.append("source is not Upstox")
+    if not valid_day(doc.get("as_of")):
+        p.append("as_of is not a past date")
+    rows = doc.get("stocks")
+    if not isinstance(rows, list) or not rows:
+        return p + ["no stocks"]
+    if not isinstance(doc.get("errors", []), list):
+        p.append("errors is not a list")
+    try:
+        import validate_outputs
+        p += validate_outputs.check_fundamentals(doc, set(symbols))
+    except ImportError:
+        p.append("validate_outputs is not available")
+    if not isinstance(doc.get("coverage"), dict):
+        p.append("no coverage block: the file cannot show that it is complete")   # check_fundamentals verifies published/universe/categories only when it is present
+    if valid_day(doc.get("as_of")) and is_stale(doc["as_of"], RATIOS_MAX_AGE_DAYS):
+        p.append("as_of %s is %d or more days old (RATIOS_MAX_AGE_DAYS): every row is already stale by the project's own rule, so this file is not the "
+                 "output of a recent run and it is not recovered automatically" % (doc["as_of"], RATIOS_MAX_AGE_DAYS))
+    fetched = [r.get("fetched") for r in rows if isinstance(r, dict) and valid_day(r.get("fetched"))]
+    if fetched and valid_day(doc.get("as_of")) and doc["as_of"] != max(fetched):
+        p.append("as_of %s is not the newest row date %s (the writer always sets it to that)" % (doc["as_of"], max(fetched)))
+    for r in rows:
+        if not isinstance(r, dict) or not isinstance(r.get("symbol"), str):
+            p.append("a row has no symbol"); continue
+        s = r["symbol"]
+        if not (isinstance(r.get("isin"), str) and universe.ISIN_RE.match(r["isin"])):
+            p.append("%s: ISIN is not valid" % s)
+        if not valid_day(r.get("fetched")):
+            p.append("%s: fetched is not a past date" % s)
+        for m in METRICS:
+            v = r.get(m, "absent")
+            if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)):
+                p.append("%s: %s is not a finite number or null" % (s, m))
+    for x in doc.get("errors") or []:
+        if not (isinstance(x, dict) and isinstance(x.get("symbol"), str) and isinstance(x.get("error"), str) and x["error"]):
+            p.append("an error entry is malformed")
+    return p
+
+
+def seed_main(argv):
+    """python fundamentals_updater.py seed PATH  -  ONLY after a cache miss: rebuilds the private saved records from the published fundamentals.json at PATH
+    (symbol, ISIN, company name, the six ratios and their date; the published error of each stock). It never overwrites a saved state, never calls the API,
+    and stops (exit 1, nothing written) if the file is unreadable or fails validation. The published file is also copied, unchanged, to out/ so that the
+    site keeps exactly what it showed even if the update after this fails. What the published file does not contain is not invented (NOT_RECOVERABLE)."""
+    if len(argv) != 1:
+        fail("usage: python fundamentals_updater.py seed PATH")
+    if CACHE_FILE.exists():
+        fail("a saved fundamentals state exists (%s): seeding never overwrites it. Nothing was changed." % CACHE_FILE)
+    try:
+        raw = Path(argv[0]).read_bytes()
+        doc = json.loads(raw, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+    except (OSError, ValueError) as e:
+        fail("the published fundamentals.json is missing or not valid JSON (%s). Nothing was changed." % type(e).__name__)
+    try:
+        symbols = research_test_batch.extend(universe.load())
+    except universe.UniverseError as err:
+        fail(str(err))
+    problems = published_problems(doc, symbols)
+    if problems:
+        fail("the published fundamentals.json cannot be used for recovery (%d problem(s): %s). Nothing was changed." % (len(problems), "; ".join(problems[:5])))
+    day = today()
+    stocks = {}
+    for r in doc["stocks"]:
+        stocks[r["symbol"]] = {"isin": r["isin"], "company_name": r.get("company_name"), "sector": r.get("sector"),
+                               "ratios": {m: r.get(m) for m in METRICS}, "ratios_fetched": r["fetched"], "recovered": day}
+    for x in doc.get("errors") or []:
+        stocks.setdefault(x["symbol"], {})["last_error"] = x["error"]
+    import hashlib
+    cache = {"stocks": stocks, "recovered_from_published": {"day": day, "as_of": doc["as_of"], "rows": len(doc["stocks"]), "errors": len(doc.get("errors") or []),
+                                                             "sha256": hashlib.sha256(raw).hexdigest(), "not_recovered": list(NOT_RECOVERABLE)}}
+    write_json(CACHE_FILE, cache)               # first the state, then the output: a failure in between leaves the state, never an output without it
+    OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = OUT_FILE.with_suffix(".tmp")
+    tmp.write_bytes(raw)
+    tmp.replace(OUT_FILE)                      # the site keeps exactly what it published
+    log("Recovered the saved fundamentals records from the published file (as of %s): %d stocks with ratios, %d recorded errors. Not recoverable: %s."
+        % (doc["as_of"], len(doc["stocks"]), len(doc.get("errors") or []), "; ".join(NOT_RECOVERABLE)))
+    return 0
+
+
+def state_problems(require_records=False):
+    """Why the restored saved state cannot be used ([] = usable). A state with no records is valid only when the restored output has no rows either
+    (a genuinely empty start); an empty or unreadable state next to a published output with rows would publish a reduced universe."""
+    try:
+        cache = json.loads(CACHE_FILE.read_text(encoding="utf-8"), parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+    except OSError:
+        return ["no saved fundamentals state"]
+    except ValueError:
+        return ["the saved fundamentals state is not valid JSON"]
+    if not isinstance(cache, dict) or not isinstance(cache.get("stocks", {}), dict):
+        return ["the saved fundamentals state has no stocks map"]
+    n = len(cache.get("stocks") or {})
+    if n == 0:
+        if require_records:
+            return ["the saved fundamentals state holds no stock"]
+        try:
+            rows = len((json.loads(OUT_FILE.read_text(encoding="utf-8")) or {}).get("stocks") or [])
+        except (OSError, ValueError, AttributeError):
+            rows = 0
+        if rows:
+            return ["the saved fundamentals state holds no stock but the saved output has %d rows" % rows]
+        return []
+    published = _saved_output_rows()
+    if published:
+        # Every published row is built from a saved record (build_rows), so every row of the restored output must still be buildable from the restored
+        # state. A state that lost records next to its output would silently drop those stocks from the next publish. No threshold: an exact rule.
+        # One exception, and only that one: a record deliberately held aside after an ISIN change (hold_aside) is not published by design. A run that died
+        # after saving its state but before rebuilding the output leaves the old output listing it, so it counts as accounted for when its hold is intact.
+        records = {k: v for k, v in (cache.get("stocks") or {}).items() if isinstance(v, dict)}
+        try:
+            kept = {r["symbol"] for r in build_rows(list(published), records)[0]}
+        except Exception:                                    # an unreadable record: treat every row as unproven rather than guess
+            kept = set()
+        lost = [s for s in published if s not in kept and not _held_aside_as_published(records.get(s), published[s])]
+        if lost:
+            return ["%d of the %d stocks in the saved output have no usable saved record (%s%s): publishing now would drop them (a partial saved state)"
+                    % (len(lost), len(published), ", ".join(lost[:5]), ", ..." if len(lost) > 5 else "")]
+    return []
+
+
+def _saved_output_rows():
+    """{symbol: its row} for the distinct symbols of the restored out/fundamentals.json rows ({} when it is absent or unreadable)."""
+    try:
+        rows = (json.loads(OUT_FILE.read_text(encoding="utf-8")) or {}).get("stocks")
+    except (OSError, ValueError, AttributeError):
+        return {}
+    out = {}
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and isinstance(r.get("symbol"), str):
+            out.setdefault(r["symbol"], r)
+    return out
+
+
+def _held_aside_as_published(record, row):
+    """True when `record` (the saved record of a stock whose `row` is still in the saved output) is a valid ISIN hold of exactly that row: held_isin_change
+    names the row's ISIN and keeps the unchanged record (same ISIN, a data date), and that record can be the one the row was built from. The same data date
+    means the same snapshot, so its ratios must equal the row's; a LATER date is a refresh that was saved but never published (values may differ); an
+    EARLIER date cannot be where a published row came from."""
+    isin = row.get("isin")
+    h = (record or {}).get("held_isin_change")
+    kept = h.get("record") if isinstance(h, dict) else None
+    if not (isinstance(isin, str) and isinstance(kept, dict) and h.get("isin") == isin and kept.get("isin") == isin and valid_day(kept.get("ratios_fetched"))
+            and valid_day(row.get("fetched"))):
+        return False
+    if kept["ratios_fetched"] != row["fetched"]:
+        return kept["ratios_fetched"] > row["fetched"]
+    ratios = kept.get("ratios")
+    return isinstance(ratios, dict) and all(ratios.get(m) == row.get(m) for m in METRICS)
+
+
+def check_state_main(argv):
+    """python fundamentals_updater.py check-state [--require-records]  -  exit 0 when the restored saved state can be used, 1 (with the reason) otherwise. No API call."""
+    p = state_problems(require_records="--require-records" in argv)
+    if p:
+        fail("; ".join(p) + ". Nothing was changed.")
+    log("Saved fundamentals state is usable.")
     return 0
 
 
