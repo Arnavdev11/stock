@@ -1,4 +1,4 @@
-# REVIEWED-CONTENT-SHA256: 3e6ea5f39ca83bc7de8c04bf919338c14ac65c194a0f99c8b3b48572e2055963
+# REVIEWED-CONTENT-SHA256: ebb48ac97aab8a9cb551b0241aedf9d3a76ab7638b4a904cd364f12281028187
 # PROPOSED, NOT INSTALLED. A rehearsal of the PR #31 cache-miss recovery on a scratch branch (rehearsal/pr31-cache-recovery), never on main.
 # Isolation: every cache key and restore-key of this file starts with "rt31-<run id>-<scenario>-" (checked by the `guard` job), so no restore can match a
 # production "nse-data-*" cache and no save can create one; caches saved on a branch are invisible to main. No repository or provider secret is referenced, no
@@ -54,6 +54,10 @@ jobs:
           import hashlib, os, re, sys, yaml
           PATH = ".github/workflows/rehearsal_rt31_cache_recovery.yml"; BRANCH = "rehearsal/pr31-cache-recovery"; MARK = "# REVIEWED-CONTENT-SHA256: "
           problems = []
+          # GitHub expands a literal dollar-brace-brace sequence anywhere in a run: block BEFORE python starts (and rejects needs.<job> / status functions it cannot resolve), so the
+          # workflow expression strings compared below are built from fragments: this block contains no such sequence.
+          OPEN = "$" + "{{"; CLOSE = "}}"
+          def X(body): return OPEN + " " + body + " " + CLOSE
           def bad(tag, *what): problems.append("[%s] %s" % (tag, " ".join(str(x) for x in what)))
           src = open(PATH, "rb").read().decode("utf-8")
           # 1. destination and run context
@@ -71,14 +75,14 @@ jobs:
           if w.get("on", w.get(True)) != {"push": {"branches": [BRANCH]}}: bad("trigger", w.get("on", w.get(True)))
           if w.get("permissions") != {"contents": "read"}: bad("permissions", w.get("permissions"))
           if w.get("concurrency") != {"group": "rehearsal-pr31-cache-recovery", "cancel-in-progress": False}: bad("concurrency", w.get("concurrency"))
-          if w.get("env") != {"RUN": "${{ github.run_id }}"}: bad("workflow-env", w.get("env"))
+          if w.get("env") != {"RUN": X("github.run_id")}: bad("workflow-env", w.get("env"))
           # 4. jobs and steps: key allowlists, actions allowlist, permissions, timeouts, dependency on the guard, status functions
           JOB_KEYS = {"runs-on", "timeout-minutes", "needs", "if", "permissions", "strategy", "env", "steps"}
           STEP_KEYS = {"name", "id", "uses", "with", "run", "env", "if", "continue-on-error"}
           WITH_KEYS = {"actions/checkout@v4": {"ref", "path", "persist-credentials"}, "actions/setup-python@v5": {"python-version"}, "actions/cache@v4": {"path", "key", "restore-keys"},
                        "actions/cache/save@v4": {"path", "key"}, "actions/cache/restore@v4": {"path", "key", "restore-keys", "lookup-only"}}
           ALLOWED_PERMS = {"contents": "read", "actions": "read"}
-          IF_OK = {None, "${{ !cancelled() && needs.seed.result == 'success' }}"}
+          IF_OK = {None, X("!cancelled() && needs.seed.result == 'success'")}
           for jn, j in w["jobs"].items():
               if set(j) - JOB_KEYS: bad("job-key", jn, sorted(str(k) for k in set(j) - JOB_KEYS))
               if j.get("runs-on") != "ubuntu-latest": bad("runner", jn, j.get("runs-on"))
@@ -118,7 +122,7 @@ jobs:
                   if "github.token" in str(v):
                       n_token += 1
                       if k != "GH_TOKEN": bad("token", where, k)
-                  if k == "GH_TOKEN" and str(v) not in ("${{ github.token }}", "rt31-invalid-token-for-401"): bad("token", where, k, v)
+                  if k == "GH_TOKEN" and str(v) not in (X("github.token"), "rt31-invalid-token-for-401"): bad("token", where, k, v)
           # 7. forbidden operations, searched in the whole workflow except the lint step itself
           scan = yaml.dump({k: v for k, v in w.items() if k not in ("jobs",)}, width=10**6) + yaml.dump({jn: j for jn, j in w["jobs"].items() if jn != "guard"}, width=10**6) + yaml.dump(g[:-1], width=10**6)
           if scan.count("github.token") != n_token: bad("token", "github.token is used outside an env GH_TOKEN entry")
