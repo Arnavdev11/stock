@@ -1,0 +1,328 @@
+name: Rehearsal PR33 shareholding cache
+
+# ONE-OFF REHEARSAL for PR #33 (shareholding cache save only with the fundamentals state). Not a production workflow; it is deleted with its branch.
+# Runs only on a push to the branch rehearsal/pr33-shareholding-cache (PR #33's head commit plus this one file). No schedule, no dispatch, no deploy.
+# It exercises the cache mechanics of the three steps that PR #33 adds (restore, guarded save, warning) on the real GitHub Actions cache service, and
+# the restore the daily build performs, using ONLY caches whose key starts with rt33-<run id>-. It reads no secret, writes no data branch, no Pages,
+# no artifact and no production cache key, and calls no provider. The only credential is the run's own GITHUB_TOKEN (contents: read; actions: read in
+# two jobs). The three PR steps are replicated and the guard job proves they equal the ones in shareholding.yml of the checked-out commit (only the
+# key prefix is added, through the job variables RT_NS / RT_RESTORE_NS).
+#
+# Scenarios (each in its own key namespace rt33-<run>-<s>-; the seeded daily caches are named ...nse-data-1, never the run id, so the daily lookup is a
+# prefix match exactly like production, where nse-data-<this run> does not exist yet):
+#   s1  a daily cache WITH state exists   -> the shareholding replica restores it and saves rt33-..-s1-nse-data-shp-<run>; the daily restore then
+#                                            resolves that newest cache and finds the state carried forward
+#   s2  the newest daily cache has NO state -> restore works but the save is skipped and the warning runs; the daily restore still resolves the seed
+#   s3  the restore finds nothing (emulates a failed restore: it looks into an empty namespace) while a valid daily cache exists
+#                                          -> save skipped, warning; the daily restore still resolves the previous valid cache with its state
+#   s4  cold start, no cache at all        -> save skipped, warning; the daily restore finds nothing (a genuine miss, no stateless cache)
+# Not covered (stated in the report): the real shareholding ledger/network steps, a job that fails before the save (covered by the offline tests), a
+# genuinely failing restore (emulated by s3), cache sizes of production.
+
+on:
+  push:
+    branches: ["rehearsal/pr33-shareholding-cache"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rt33-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pyyaml
+      - name: Guard
+        env:
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          import fnmatch, glob, json, os, subprocess, sys
+          import yaml
+          PR_HEAD = "011bae5d814d07f5ffaf4c7e4e80f8c0261c1542"
+          MAIN = "b6c058b7770da31fe7aff8e845fe3c4ce19202ea"
+          BLOBS = {".github/workflows/shareholding.yml": "2af6800c1a249f55d590ba41f72f2d9e51c62a1e",
+                   "test_shareholding_cache_save.py": "b63cde479cb1a60118afe74af60f237ec8682309",
+                   ".github/workflows/update.yml": "29d8dec5279bf05d7ada8117451ebc6f8deff8d3"}
+          ME = ".github/workflows/rehearsal_rt33_shareholding_cache.yml"
+          BRANCH = "rehearsal/pr33-shareholding-cache"
+          OPEN = "$" + "{{"
+          fails = []
+          def sh(*a): return subprocess.run(a, capture_output=True, text=True, check=True).stdout.strip()
+          def check(ok, msg):
+              print(("ok   " if ok else "FAIL ") + msg)
+              if not ok: fails.append(msg)
+          check(os.environ["EVENT"] == "push" and os.environ["REF"] == "refs/heads/" + BRANCH, "push on the rehearsal branch")
+          check(sh("git", "rev-parse", "HEAD^") == PR_HEAD, "the parent is PR #33's head commit")
+          check(sh("git", "rev-parse", "HEAD^^") == MAIN, "and its parent is main b6c058b")
+          check(sh("git", "diff", "--name-only", "HEAD^", "HEAD") == ME, "this commit adds only the rehearsal file")
+          for path, blob in BLOBS.items():
+              check(sh("git", "rev-parse", "HEAD:" + path) == blob, "pinned blob " + path)
+          me = yaml.safe_load(open(ME))
+          on = me.get(True, me.get("on"))
+          check(on == {"push": {"branches": [BRANCH]}}, "trigger is only a push to the rehearsal branch")
+          check(me.get("permissions") == {"contents": "read"}, "workflow permissions are contents: read")
+          allowed_perms = [{"contents": "read"}, {"contents": "read", "actions": "read"}]
+          for name, job in me["jobs"].items():
+              check(job.get("permissions", {"contents": "read"}) in allowed_perms, "job permissions " + name)
+              check(job.get("timeout-minutes") is not None, "timeout " + name)
+          allowed_uses = {"actions/checkout@v4", "actions/setup-python@v5", "actions/cache/restore@v4", "actions/cache/save@v4"}
+          steps = [(j, s) for j, job in me["jobs"].items() for s in job["steps"]]
+          check({s["uses"] for _, s in steps if "uses" in s} <= allowed_uses, "only the allowed actions are used")
+          text = json.dumps([s for _, s in steps if s.get("name") != "Guard"])
+          bad = ["sec" + "rets.", "contents: wr" + "ite", "pages", "id-tok" + "en", "dep" + "loy", "git pu" + "sh", "cu" + "rl", "wg" + "et", "UPST" + "OX",
+                 "STOCK" + "LENS", "upload-art" + "ifact", "nse-data-shp-" + "pub", "side-"]
+          check(not [b for b in bad if b in text], "no secret, deploy, push, network or production token in any step")
+          for j, s in steps:
+              if s.get("name") != "Guard" and "run" in s:
+                  check(OPEN not in s["run"], "no literal expression in a run block: " + s.get("name", "?"))
+          keys = [str(s["with"].get("key", "")) for _, s in steps if "with" in s and "key" in s["with"]]
+          check(all(k.startswith((OPEN + " env.RT_NS }}", "rt33-" + OPEN + " github.run_id }}-")) for k in keys), "every cache key starts with the rt33 namespace")
+          check(all(str(s["with"].get("restore-keys", OPEN + " env.RT_NS }}")).startswith(OPEN + " env.RT_") for _, s in steps if "with" in s), "every restore prefix is namespaced")
+          # the replicated PR steps equal the ones in shareholding.yml of this checkout (only the namespace is added)
+          pr = {s["name"]: s for s in yaml.safe_load(open(".github/workflows/shareholding.yml"))["jobs"]["shareholding"]["steps"] if s.get("name")}
+          mine = {s["name"]: s for s in me["jobs"]["shareholding"]["steps"] if s.get("name")}
+          def norm(step):
+              s = json.loads(json.dumps(step)); w = s.get("with", {})
+              if "key" in w: w["key"] = OPEN + " env.RT_NS }}" + w["key"]
+              if "restore-keys" in w: w["restore-keys"] = OPEN + " env.RT_RESTORE_NS }}" + w["restore-keys"]
+              return s
+          for n in ["Restore saved data", "Save the data for the next site build (only with the fundamentals state)", "Warn that the data was not saved (no fundamentals state)"]:
+              check(n in pr and n in mine and norm(pr[n]) == mine[n], "replica equals the PR step: " + n)
+          # the daily restore replica equals update.yml's "Restore saved data" (path, key, restore-keys)
+          up = {s["name"]: s for s in yaml.safe_load(open(".github/workflows/update.yml"))["jobs"]["build"]["steps"] if s.get("name")}["Restore saved data"]["with"]
+          for sname in ["Look up what the daily restore resolves to (no download)", "Restore what the daily build would restore"]:
+              w = {s["name"]: s for s in me["jobs"]["daily"]["steps"] if s.get("name")}[sname]["with"]
+              w = {k: v for k, v in w.items() if k != "lookup-only"}
+              want = {"path": up["path"], "key": OPEN + " env.RT_NS }}" + up["key"], "restore-keys": OPEN + " env.RT_NS }}" + up["restore-keys"]}
+              check(w == want, "daily replica equals update.yml's restore: " + sname)
+          # no other workflow can start on this branch
+          for f in sorted(glob.glob(".github/workflows/*.yml")):
+              if f == ME: continue
+              d = yaml.safe_load(open(f)); o = d.get(True, d.get("on")); o = {o: None} if isinstance(o, str) else (o if isinstance(o, dict) else {k: None for k in (o or [])})
+              for ev in ("push", "pull_request", "pull_request_target", "create", "delete", "workflow_run"):
+                  if ev in o:
+                      b = (o[ev] or {}).get("branches") if isinstance(o[ev], dict) else None
+                      hit = ev != "push" or b is None or any(fnmatch.fnmatch(BRANCH, p) for p in b)
+                      check(not hit, "%s: %s does not start on the rehearsal branch" % (f, ev))
+          print("guard:", "FAILED %d" % len(fails) if fails else "all checks passed")
+          sys.exit(1 if fails else 0)
+          PY
+
+  seed:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Make the s1 daily cache (with state)
+        run: |
+          rm -rf data out; mkdir -p data out
+          echo '{"rt33": "valid-s1"}' > data/fundamentals_cache.json; echo '{}' > data/ledger.json; echo '{}' > out/fundamentals.json
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            out
+          key: rt33-${{ github.run_id }}-s1-nse-data-1
+      - name: Make the s3 daily cache (with state)
+        run: |
+          rm -rf data out; mkdir -p data out
+          echo '{"rt33": "valid-s3"}' > data/fundamentals_cache.json; echo '{}' > data/ledger.json; echo '{}' > out/fundamentals.json
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            out
+          key: rt33-${{ github.run_id }}-s3-nse-data-1
+      - name: Make the s2 daily cache (no fundamentals state)
+        run: |
+          rm -rf data out; mkdir -p data out
+          echo '{}' > data/ledger.json; echo '{}' > out/shareholding.json
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            out
+          key: rt33-${{ github.run_id }}-s2-nse-data-1
+
+  shareholding:
+    name: shareholding ${{ matrix.s }}
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - s: s1
+            restore: s1
+          - s: s2
+            restore: s2
+          - s: s3
+            restore: s3empty
+          - s: s4
+            restore: s4
+    env:
+      RT_NS: rt33-${{ github.run_id }}-${{ matrix.s }}-
+      RT_RESTORE_NS: rt33-${{ github.run_id }}-${{ matrix.restore }}-
+    steps:
+      - name: Start from an empty workspace
+        run: test -z "$(ls -A "$GITHUB_WORKSPACE")"
+
+      # The next three steps are the ones PR #33 adds to shareholding.yml, replicated (the guard job proves they are identical apart from the namespace).
+      - name: Restore saved data
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: ${{ env.RT_NS }}nse-data-shp-${{ github.run_id }}
+          restore-keys: ${{ env.RT_RESTORE_NS }}nse-data-
+
+      - name: Save the data for the next site build (only with the fundamentals state)
+        if: ${{ success() && hashFiles('data/fundamentals_cache.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            out
+          key: ${{ env.RT_NS }}nse-data-shp-${{ github.run_id }}
+
+      - name: Warn that the data was not saved (no fundamentals state)
+        if: ${{ success() && hashFiles('data/fundamentals_cache.json') == '' }}
+        run: |
+          echo "::warning::No fundamentals state (data/fundamentals_cache.json) was restored, so no nse-data-shp cache is saved (it would hide the last daily cache from the next site build). The ledger hand-off is not affected."
+
+  daily:
+    name: daily ${{ matrix.s }}
+    needs: shareholding
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        s: [s1, s2, s3, s4]
+    env:
+      RT_NS: rt33-${{ github.run_id }}-${{ matrix.s }}-
+    steps:
+      - name: Look up what the daily restore resolves to (no download)
+        id: lookup
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: ${{ env.RT_NS }}nse-data-${{ github.run_id }}
+          restore-keys: ${{ env.RT_NS }}nse-data-
+          lookup-only: true
+
+      - name: Restore what the daily build would restore
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: ${{ env.RT_NS }}nse-data-${{ github.run_id }}
+          restore-keys: ${{ env.RT_NS }}nse-data-
+
+      - name: Check the scenario
+        env:
+          SCEN: ${{ matrix.s }}
+          NS: ${{ env.RT_NS }}
+          RUN: ${{ github.run_id }}
+          LOOKED: ${{ steps.lookup.outputs.cache-matched-key }}
+          RESTORED: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          fail=0
+          say() { echo "$1"; echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          marker=""; [ -f data/fundamentals_cache.json ] && marker=$(tr -d '\n' < data/fundamentals_cache.json)
+          say "scenario $SCEN: lookup='$LOOKED' restored='$RESTORED' state='${marker:-none}'"
+          want_key=""; want_marker=""
+          case "$SCEN" in
+            s1) want_key="${NS}nse-data-shp-${RUN}"; want_marker='{"rt33": "valid-s1"}' ;;
+            s2) want_key="${NS}nse-data-1"; want_marker="" ;;
+            s3) want_key="${NS}nse-data-1"; want_marker='{"rt33": "valid-s3"}' ;;
+            s4) want_key=""; want_marker="" ;;
+          esac
+          [ "$LOOKED" = "$want_key" ] || { say "FAIL lookup resolved '$LOOKED', expected '$want_key'"; fail=1; }
+          [ "$RESTORED" = "$want_key" ] || { say "FAIL restore resolved '$RESTORED', expected '$want_key'"; fail=1; }
+          [ "$marker" = "$want_marker" ] || { say "FAIL state '$marker', expected '$want_marker'"; fail=1; }
+          exit $fail
+
+  caches:
+    needs: daily
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: List the caches of this ref and check the exact set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          RUN: ${{ github.run_id }}
+        run: |
+          list=$(gh api --paginate "repos/$REPO/actions/caches?ref=$REF&per_page=100" --jq '"total=" + (.total_count | tostring), "read=" + (.actions_caches | length | tostring), (.actions_caches[] | "key=" + .key)')
+          total=$(printf '%s\n' "$list" | sed -n 's/^total=//p' | sort -u)
+          read=$(printf '%s\n' "$list" | sed -n 's/^read=//p' | awk '{ s += $1 } END { print s + 0 }')
+          case "$total" in ''|*[!0-9]*) echo "::error::no single numeric total"; exit 1 ;; esac
+          [ "$read" = "$total" ] || { echo "::error::incomplete list ($read of $total)"; exit 1; }
+          got=$(printf '%s\n' "$list" | sed -n 's/^key=//p' | sort)
+          want=$(printf '%s\n' "rt33-$RUN-s1-nse-data-1" "rt33-$RUN-s1-nse-data-shp-$RUN" "rt33-$RUN-s2-nse-data-1" "rt33-$RUN-s3-nse-data-1" | sort)
+          { echo "caches on $REF ($total):"; echo "$got"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$got" = "$want" ] || { echo "::error::the cache set differs from the expected four keys"; printf 'expected:\n%s\n' "$want"; exit 1; }
+          echo "exactly the four expected rt33 caches exist; no -shp- cache for s2, s3 or s4, and no key outside rt33-$RUN-"
+
+  verdict:
+    needs: [guard, seed, shareholding, daily, caches]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check every job and the outcome of the three PR steps per scenario
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] != "success"}
+          out = subprocess.run(["gh", "api", "--paginate", "repos/%s/actions/runs/%s/attempts/1/jobs?per_page=100" % (os.environ["REPO"], os.environ["RUN"]), "--jq", ".jobs[] | @json"],
+                               capture_output=True, text=True)
+          if out.returncode != 0:
+              print("FAIL: the job list could not be read:", out.stderr.strip()[:300]); sys.exit(1)
+          jobs = {j["name"]: j for j in map(json.loads, out.stdout.splitlines() if out.stdout.strip() else [])}
+          R, S, W = "Restore saved data", "Save the data for the next site build (only with the fundamentals state)", "Warn that the data was not saved (no fundamentals state)"
+          expect = {"s1": ("success", "success", "skipped"), "s2": ("success", "skipped", "success"), "s3": ("success", "skipped", "success"), "s4": ("success", "skipped", "success")}
+          problems = []
+          for s, want in expect.items():
+              j = jobs.get("shareholding " + s)
+              got = tuple(({st["name"]: st["conclusion"] for st in j["steps"]}.get(n) for n in (R, S, W))) if j else None
+              line = "shareholding %s: restore/save/warn = %s (expected %s)" % (s, got, want)
+              print(line); open(os.environ["GITHUB_STEP_SUMMARY"], "a").write(line + "\n")
+              if got != want: problems.append(line)
+          if bad: problems.append("jobs not successful: %s" % bad)
+          print("verdict:", "FAIL" if problems else "PASS"); [print(" -", p) for p in problems]
+          sys.exit(1 if problems else 0)
+          PY
