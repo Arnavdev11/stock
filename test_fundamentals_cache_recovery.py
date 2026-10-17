@@ -66,6 +66,10 @@ def pages_of(keys, total=None, size=100):
     return [{"total_count": total, "actions_caches": [{"key": k, "ref": "refs/heads/main"} for k in c]} for c in chunks]
 
 
+class Interrupted(Exception):
+    """A run that dies (timeout, cancel, runner loss) at a chosen point."""
+
+
 class Site:
     """A published site, a runner workspace and a universe: everything the recovery reads, in one temporary folder."""
     def __init__(self, test, n=40, letters="ABE", missing_from_upstox=("A0004",), base=None):
@@ -116,8 +120,10 @@ class Site:
     def written(self):
         return sorted(str(p.relative_to(self.ws)) for d in ("data", "out") for p in (self.ws / d).rglob("*") if p.is_file()) if any((self.ws / d).exists() for d in ("data", "out")) else []
 
-    def daily_run(self, day=BASE, cap=150, provider=None):
-        """The fundamentals step of the scheduled run on the recovered workspace (scripted provider)."""
+    def daily_run(self, day=BASE, cap=150, provider=None, interrupt=None):
+        """The fundamentals step of the scheduled run on the recovered workspace (scripted provider).
+        interrupt="before_output": the run dies after its state was saved but before out/fundamentals.json is rebuilt.
+        interrupt="after_checkpoint": the run dies right after its first periodic checkpoint (CHECKPOINT_EVERY stocks). Returns (None, calls) then."""
         h = self.h
         FakeDate.now = day
         prov = provider or h.provider
@@ -127,11 +133,27 @@ class Site:
               mock.patch.object(fu, "dt", types.SimpleNamespace(date=FakeDate)), mock.patch.object(fu.time, "sleep"),
               mock.patch.object(fu.requests, "Session", lambda: prov),
               mock.patch.dict(os.environ, {"UPSTOX_ANALYTICS_TOKEN": "T", "STOCKLENS_UNIVERSE_FILE": str(self.t / "u.json")})]
+        real_write, real_checkpoint = fu.write_json, fu.checkpoint
+        out_path = self.ws / "out" / "fundamentals.json"
+        if interrupt == "before_output":
+            def write(path, obj):
+                if Path(path) == out_path:
+                    raise Interrupted("killed before the output was rebuilt")
+                return real_write(path, obj)
+            ps.append(mock.patch.object(fu, "write_json", write))
+        elif interrupt == "after_checkpoint":
+            def checkpoint(cache):
+                real_checkpoint(cache)                                   # the real periodic save ...
+                raise Interrupted("killed right after the first checkpoint")      # ... and then the run dies
+            ps += [mock.patch.object(fu, "checkpoint", checkpoint), mock.patch.object(fu, "CHECKPOINT_EVERY", 2)]
         with contextlib.ExitStack() as st:
             for p in ps:
                 st.enter_context(p)
             with contextlib.redirect_stdout(io.StringIO()):
-                fu.main()
+                try:
+                    fu.main()
+                except Interrupted:
+                    return None, len(prov.requests) - before
         return json.loads((self.ws / "out" / "fundamentals.json").read_text()), len(prov.requests) - before
 
 
@@ -434,6 +456,132 @@ class WorkflowWiring(unittest.TestCase):
         self.assertEqual(step("update.yml", "Update fundamentals")["env"]["FUNDAMENTALS_MAX_CALLS"], "${{ inputs.fundamentals_calls || '150' }}")
         self.assertEqual(w["permissions"], {"contents": "read", "actions": "read"})                  # read-only, and only the one addition
         self.assertEqual(w["concurrency"], b["concurrency"])
+
+
+class HeldIsinRecords(unittest.TestCase):
+    """A record held aside after an ISIN change (hold_aside) is not published, so a run interrupted after its state was saved but before the output was
+    rebuilt leaves a saved output that still lists the stock. That is a deliberate hold, not a lost record; a record lost WITHOUT a matching hold still stops."""
+    SYM = "A0003"
+
+    def interrupted(self, mode):
+        s = Site(self, base=BASE - 8 * D); s.stub(); put_state(s)          # published 10 days ago: every record is stale at the interrupted run (2 days ago)
+        row = next(r for r in s.published["stocks"] if r["symbol"] == self.SYM)
+        old = copy.deepcopy(json.loads((s.ws / "data" / "fundamentals_cache.json").read_text())["stocks"][self.SYM])
+        s.h.instruments[self.SYM] = dict(s.h.instruments[self.SYM], isin="INE999999991")           # the instrument list now gives another ISIN
+        out, calls = s.daily_run(day=BASE, cap=10 ** 6, interrupt=mode)                           # everything is stale: a real run with real checkpoints
+        self.assertIsNone(out)
+        return s, row, old
+
+    def state(self, s):
+        return json.loads((s.ws / "data" / "fundamentals_cache.json").read_text())
+
+    def check(self, s, workflow="update.yml", name=CHECK):
+        return s.run_step(workflow, name)
+
+    def test_a_run_interrupted_after_the_hold_is_saved_does_not_block_the_next_run(self):
+        for mode in ("before_output", "after_checkpoint"):
+            with self.subTest(mode):
+                s, row, old = self.interrupted(mode)
+                e = self.state(s)["stocks"][self.SYM]
+                self.assertEqual(e["held_isin_change"]["isin"], old["isin"])                                  # held by the real updater logic ...
+                self.assertEqual(e["held_isin_change"]["record"], {k: old[k] for k in fu.HELD_KEYS if k in old})   # ... unchanged
+                self.assertNotIn("isin", e)                                                                    # ... and no longer a publishable record
+                saved_out = json.loads((s.ws / "out" / "fundamentals.json").read_text())
+                self.assertIn(self.SYM, [r["symbol"] for r in saved_out["stocks"]])                          # the old output still lists it: the bug's precondition
+                rc, outs, log = self.check(s)                                                                  # the workflow's own step
+                self.assertEqual((rc, outs.get("state")), (0, "restored"), log)
+                rc, _, log = self.check(s, "fundamentals_batch.yml", REQUIRE)                                 # and the batch's gate
+                self.assertEqual(rc, 0, log)
+                self.assertNotIn(self.SYM, {r["symbol"] for r in fu.build_rows(list(s.h.instruments), self.state(s)["stocks"])[0]})   # never published from the hold
+
+    def test_the_held_record_is_kept_unchanged_and_stays_unpublished_after_the_run_completes(self):
+        s, row, old = self.interrupted("before_output")
+        out, calls = s.daily_run(day=BASE, cap=10 ** 6)                                                       # the next run, to the end
+        self.assertNotIn(self.SYM, [r["symbol"] for r in out["stocks"]])
+        self.assertEqual(self.state(s)["stocks"][self.SYM]["held_isin_change"]["record"], {k: old[k] for k in fu.HELD_KEYS if k in old})
+        self.assertEqual(out["coverage"]["categories"]["held_isin_change"], 1)
+        rc, outs, log = self.check(s)
+        self.assertEqual((rc, outs.get("state")), (0, "restored"), log)                                        # a regenerated output passes as before
+        self.assertEqual(vo.check_fundamentals(out), [])
+
+    def test_a_record_lost_without_a_hold_that_explains_it_still_stops(self):
+        s, row, old = self.interrupted("before_output")
+        base = self.state(s)
+        held = base["stocks"][self.SYM]["held_isin_change"]
+        broken = {
+            "the record is gone": lambda c: c["stocks"].pop(self.SYM),
+            "an empty record": lambda c: c["stocks"].__setitem__(self.SYM, {}),
+            "a hold for a different ISIN": lambda c: held.__setitem__("isin", "INE000000000"),
+            "a hold without its record": lambda c: held.pop("record"),
+            "a held record with another ISIN": lambda c: held["record"].__setitem__("isin", "INE000000000"),
+            "a held record without its data date": lambda c: held["record"].pop("ratios_fetched"),
+            "a hold that is not an object": lambda c: c["stocks"][self.SYM].__setitem__("held_isin_change", "yes"),
+            "a hold on another stock only": lambda c: (c["stocks"].setdefault("A0004", {}).__setitem__("held_isin_change", copy.deepcopy(held)), c["stocks"].pop(self.SYM)),
+        }
+        for name, mutate in broken.items():
+            with self.subTest(name):
+                c = copy.deepcopy(base); held = c["stocks"].get(self.SYM, {}).get("held_isin_change", {}) if name not in ("the record is gone", "an empty record") else {}
+                mutate(c)
+                (s.ws / "data" / "fundamentals_cache.json").write_text(json.dumps(c))
+                rc, outs, log = self.check(s)
+                self.assertEqual(rc, 1, (name, log))
+                self.assertIn("have no usable saved record", log)
+                self.assertIn(self.SYM, log)
+                self.assertNotIn("state", outs)
+
+    def tampered(self, mutate):
+        s, row, old = self.interrupted("before_output")
+        c = self.state(s); mutate(c["stocks"][self.SYM]["held_isin_change"]["record"], row)
+        (s.ws / "data" / "fundamentals_cache.json").write_text(json.dumps(c))
+        return s.run_step("update.yml", CHECK)
+
+    def test_a_hold_with_the_same_isin_and_date_but_other_ratios_than_the_saved_row_still_stops(self):
+        for metric, value in (("pe", 999.0), ("roe", -5.0), ("roce", None), ("ev_ebitda", 1.0)):
+            with self.subTest(metric):
+                rc, outs, log = self.tampered(lambda rec, row: rec["ratios"].__setitem__(metric, value))
+                self.assertEqual(rc, 1, log)
+                self.assertIn(self.SYM, log)
+
+    def test_a_hold_refreshed_after_the_saved_output_is_accepted_and_an_older_one_is_not(self):
+        day = lambda row, n: (__import__("datetime").date.fromisoformat(row["fetched"]) + n * D).isoformat()
+        rc, outs, log = self.tampered(lambda rec, row: (rec.__setitem__("ratios_fetched", day(row, 1)), rec["ratios"].__setitem__("pe", 77.0)))   # saved by a run whose output never came
+        self.assertEqual((rc, outs.get("state")), (0, "restored"), log)
+        rc, outs, log = self.tampered(lambda rec, row: rec.__setitem__("ratios_fetched", day(row, -1)))     # a record older than the row it should have produced
+        self.assertEqual(rc, 1, log)
+
+    def test_a_hold_does_not_hide_other_lost_records(self):
+        s, row, old = self.interrupted("before_output")
+        c = self.state(s)
+        other = next(r["symbol"] for r in s.published["stocks"] if r["symbol"] != self.SYM)
+        c["stocks"].pop(other)                                                                              # a genuinely lost record next to a valid hold
+        (s.ws / "data" / "fundamentals_cache.json").write_text(json.dumps(c))
+        rc, _, log = self.check(s)
+        self.assertEqual(rc, 1, log)
+        self.assertIn("1 of the %d stocks" % len(s.published["stocks"]), log)
+        self.assertIn(other, log)
+        self.assertNotIn(self.SYM, log.split("(")[1].split(")")[0])                                           # only the lost one is named
+
+    def test_the_seed_protections_are_unchanged(self):
+        s = Site(self); s.stub()
+        self.assertEqual(s.run_step("update.yml", RECOVER)[0], 0)
+        cache_bytes = (s.ws / "data" / "fundamentals_cache.json").read_bytes()
+        rc, _, log = s.run_step("update.yml", RECOVER)                                                       # a second seed never overwrites the state
+        self.assertEqual(rc, 1)
+        self.assertIn("seeding never overwrites it", log)
+        self.assertEqual((s.ws / "data" / "fundamentals_cache.json").read_bytes(), cache_bytes)
+        self.assertEqual((s.ws / "out" / "fundamentals.json").read_bytes(), s.published_bytes)              # the output is exactly what the site showed
+        rc, outs, log = s.run_step("update.yml", CHECK)                                                       # the recovered pair is consistent ...
+        self.assertEqual((rc, outs.get("state")), (0, "restored"), log)
+        c = json.loads(cache_bytes); c["stocks"].pop(s.published["stocks"][0]["symbol"])                     # ... and losing one record is still caught
+        (s.ws / "data" / "fundamentals_cache.json").write_text(json.dumps(c))
+        self.assertEqual(s.run_step("update.yml", CHECK)[0], 1)
+        for name, payload in StopsInsteadOfPublishingLess.bad_variants(None, s).items():                      # the published-file checks are all still there
+            if payload is None:
+                continue
+            with self.subTest(name):
+                t = Site(self); t.stub(curl_payload=payload)
+                self.assertEqual(t.run_step("update.yml", RECOVER)[0], 1, name)
+                self.assertEqual(t.written(), [], name)
 
 
 class Recovery(unittest.TestCase):
