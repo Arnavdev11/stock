@@ -1,0 +1,458 @@
+# REVIEWED-CONTENT-SHA256: 3e6ea5f39ca83bc7de8c04bf919338c14ac65c194a0f99c8b3b48572e2055963
+# PROPOSED, NOT INSTALLED. A rehearsal of the PR #31 cache-miss recovery on a scratch branch (rehearsal/pr31-cache-recovery), never on main.
+# Isolation: every cache key and restore-key of this file starts with "rt31-<run id>-<scenario>-" (checked by the `guard` job), so no restore can match a
+# production "nse-data-*" cache and no save can create one; caches saved on a branch are invisible to main. No repository or provider secret is referenced, no
+# provider is called, nothing is deployed or published, and the daily updater is never run (only `check-state` and `seed`, which read files). The production
+# steps' scripts are extracted from update.yml of THIS commit and run unchanged except for the replacements named in each job (the constant "nse-data-" and, in
+# p1/p2, the page size / --paginate), each proved reversible.
+# CREDENTIALS: the only credential is the job's GITHUB_TOKEN, restricted by `permissions:` to contents:read (all jobs) plus actions:read (the jobs that list caches:
+# scenario, listing_pages, api_capture). s5 deliberately uses a dummy invalid literal instead, to force HTTP 401 on the cache list; seed and pages_failure use none.
+# Every API call is a GET. The `guard` job is a LINT, not a security boundary (an edited copy of this file could edit the guard too). It checks the classes below,
+# each with an offline negative test (guard_tests.py): the run context and the destination filename (push, refs/heads/rehearsal/pr31-cache-recovery,
+# .github/workflows/rehearsal_rt31_cache_recovery.yml); the content pin on line 1 (digest of the file without that line); the exact push-only trigger; permissions
+# (workflow contents:read; jobs at most contents:read + actions:read); top-level, job and step key allowlists (no environment, container, services, secrets, defaults);
+# an allowlist of actions; cache keys / restore-keys under rt31- and the data/out path sets; GH_TOKEN values; and forbidden operations anywhere outside the lint step
+# (secrets, Pages/deploy, Upstox, Render, gh workflow/run/pr/..., git push/commit, write-flag curl/gh api, HTTP writes). It is not claimed to be comprehensive beyond those.
+# The BINDING pin is the SHA-256 of the whole file recorded at approval and compared by a person before any push; the guard also prints the file's SHA-256.
+# KNOWN REAL-RUNNER UNCERTAINTIES (never run on GitHub): the lookup-only outputs of actions/cache/restore, the total_count semantics of the cache list, the exact
+# gh error text for HTTP 401 (s5 asserts it), the effect of a production cache saved on main while s1-s4 list it (a safe stop), the live Pages file passing validation
+# in s3 (it fails from 2026-10-23, when a file whose newest row is 7+ days old is rejected), and the disposable "-restorer" caches the restore steps leave behind.
+#
+# STOP CONDITIONS (the person who runs this stops, reports and waits for a decision; NOTHING re-runs automatically, and nobody re-runs it to "get a green run"; a
+# cancelled run stops listing_pages and api_capture too, and only `verdict` still reports):
+#   1. the `guard` job fails (a cache key or restore-key outside the rt31- namespace, a secret, deploy, Pages-upload, provider or write/delete reference, a missing
+#      timeout, a permission wider than contents:read + actions:read, or a job that does not depend on `guard`);
+#   2. any cache key seen by a job that is not inside rt31-<run id>- (the `api_capture` job fails on one);
+#   3. any scenario whose actual outcome differs from its stated expectation (s1-s5, p1, p2, pg), including s5 failing for any reason other than the HTTP 401 it forces;
+#   4. incomplete diagnostics: an empty API answer, fewer than 2 caches (so no real pagination), or a job that was cancelled, timed out or skipped (`verdict` fails);
+#   5. anything touching a production cache, Pages deployment, Render, a schedule or a budget (none is possible from this file; if seen, stop at once).
+# The trigger is the push of the scratch branch. Every later push would run it again, so no further push happens without a new approval.
+name: Rehearsal PR31 cache recovery (scratch branch only)
+on:
+  push:
+    branches: ["rehearsal/pr31-cache-recovery"]
+permissions:
+  contents: read            # actions: none by default; the jobs that list caches add actions: read
+concurrency:
+  group: rehearsal-pr31-cache-recovery        # never the production group
+  cancel-in-progress: false
+env:
+  RUN: ${{ github.run_id }}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyyaml
+      - name: Lint this workflow (destination, content pin, triggers, permissions, actions, keys, forbidden operations)
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, re, sys, yaml
+          PATH = ".github/workflows/rehearsal_rt31_cache_recovery.yml"; BRANCH = "rehearsal/pr31-cache-recovery"; MARK = "# REVIEWED-CONTENT-SHA256: "
+          problems = []
+          def bad(tag, *what): problems.append("[%s] %s" % (tag, " ".join(str(x) for x in what)))
+          src = open(PATH, "rb").read().decode("utf-8")
+          # 1. destination and run context
+          for var, want in (("GITHUB_EVENT_NAME", "push"), ("GITHUB_REF", "refs/heads/" + BRANCH)):
+              if os.environ.get(var) != want: bad("context", var, "=", os.environ.get(var))
+          if not os.environ.get("GITHUB_WORKFLOW_REF", "").endswith("/" + PATH + "@refs/heads/" + BRANCH): bad("filename", os.environ.get("GITHUB_WORKFLOW_REF"))
+          # 2. content pin: the digest of the file without its own pin line must equal the pin line (a lint: an edit that also edits this guard can re-pin; the binding
+          #    pin is the approved SHA-256 of the whole file, compared by a person before the push)
+          lines = src.split("\n"); marks = [l for l in lines if l.startswith(MARK)]; body = "\n".join(l for l in lines if not l.startswith(MARK))
+          if len(marks) != 1 or marks[0][len(MARK):].strip() != hashlib.sha256(body.encode("utf-8")).hexdigest(): bad("pin", "content differs from the reviewed content")
+          w = yaml.safe_load(src)
+          # 3. top level: exact trigger, permissions, concurrency, env
+          TOP = {"name", "on", True, "permissions", "concurrency", "env", "jobs"}          # YAML reads the key `on` as the boolean True
+          if set(w) - TOP: bad("toplevel", sorted(str(k) for k in set(w) - TOP))
+          if w.get("on", w.get(True)) != {"push": {"branches": [BRANCH]}}: bad("trigger", w.get("on", w.get(True)))
+          if w.get("permissions") != {"contents": "read"}: bad("permissions", w.get("permissions"))
+          if w.get("concurrency") != {"group": "rehearsal-pr31-cache-recovery", "cancel-in-progress": False}: bad("concurrency", w.get("concurrency"))
+          if w.get("env") != {"RUN": "${{ github.run_id }}"}: bad("workflow-env", w.get("env"))
+          # 4. jobs and steps: key allowlists, actions allowlist, permissions, timeouts, dependency on the guard, status functions
+          JOB_KEYS = {"runs-on", "timeout-minutes", "needs", "if", "permissions", "strategy", "env", "steps"}
+          STEP_KEYS = {"name", "id", "uses", "with", "run", "env", "if", "continue-on-error"}
+          WITH_KEYS = {"actions/checkout@v4": {"ref", "path", "persist-credentials"}, "actions/setup-python@v5": {"python-version"}, "actions/cache@v4": {"path", "key", "restore-keys"},
+                       "actions/cache/save@v4": {"path", "key"}, "actions/cache/restore@v4": {"path", "key", "restore-keys", "lookup-only"}}
+          ALLOWED_PERMS = {"contents": "read", "actions": "read"}
+          IF_OK = {None, "${{ !cancelled() && needs.seed.result == 'success' }}"}
+          for jn, j in w["jobs"].items():
+              if set(j) - JOB_KEYS: bad("job-key", jn, sorted(str(k) for k in set(j) - JOB_KEYS))
+              if j.get("runs-on") != "ubuntu-latest": bad("runner", jn, j.get("runs-on"))
+              if not (isinstance(j.get("timeout-minutes"), int) and 0 < j["timeout-minutes"] <= 20): bad("timeout", jn)
+              if not isinstance(j.get("permissions") or {}, dict) or not set((j.get("permissions") or {}).items()) <= set(ALLOWED_PERMS.items()): bad("job-permissions", jn, j.get("permissions"))
+              if jn == "verdict":
+                  if j.get("if") != "always()": bad("if", jn, j.get("if"))
+              elif j.get("if") not in IF_OK: bad("if", jn, j.get("if"))
+              seen, todo = set(), list(([j["needs"]] if isinstance(j.get("needs"), str) else j.get("needs", [])))
+              while todo:
+                  n = todo.pop()
+                  if n not in seen:
+                      seen.add(n); nn = w["jobs"][n].get("needs", []); todo += [nn] if isinstance(nn, str) else nn
+              if jn != "guard" and "guard" not in seen: bad("not-behind-guard", jn)
+              for s in j.get("steps") or []:
+                  if set(s) - STEP_KEYS: bad("step-key", jn, s.get("name"), sorted(str(k) for k in set(s) - STEP_KEYS))
+                  u = s.get("uses")
+                  if u is not None:
+                      if u not in WITH_KEYS: bad("action", jn, u); continue
+                      if set(s.get("with") or {}) - WITH_KEYS[u]: bad("with-key", jn, u, sorted(set(s["with"]) - WITH_KEYS[u]))
+                      if u == "actions/checkout@v4" and (s.get("with") or {}).get("ref") not in (None, "stocklens-data"): bad("checkout-ref", jn, s["with"].get("ref"))
+                      if u.startswith("actions/cache"):
+                          for k in ("key", "restore-keys"):
+                              for line in str(s["with"].get(k, "")).splitlines():
+                                  if line.strip() and not line.strip().startswith("rt31-"): bad("cache-key", jn, k, line)
+                          paths = [x for x in str(s["with"].get("path", "")).split("\n") if x.strip()]
+                          if u.split("@")[0] == "actions/cache/save" and "-s4-" not in str(s["with"].get("key")) and paths != ["data", "out"]: bad("cache-path", jn, "state caches must be saved from exactly data and out", paths)
+                          if u.split("@")[0] != "actions/cache/save" and paths != ["data", "out"]: bad("cache-path", jn, "restore paths must be exactly data and out", paths)
+          # 5. the guard job itself: fixed steps before the lint step
+          g = w["jobs"]["guard"]["steps"]
+          if g[:-1] != [{"uses": "actions/checkout@v4"}, {"uses": "actions/setup-python@v5", "with": {"python-version": "3.11"}}, {"run": "pip install pyyaml"}]: bad("guard-steps", "unexpected steps before the lint step")
+          # 6. credentials: the only token is GH_TOKEN = github.token, or the dummy literal of s5
+          envs = [("workflow", w.get("env") or {})] + [(jn, j.get("env") or {}) for jn, j in w["jobs"].items()] + [(jn, s.get("env") or {}) for jn, j in w["jobs"].items() for s in j.get("steps") or []]
+          n_token = 0
+          for where, env in envs:
+              for k, v in env.items():
+                  if "github.token" in str(v):
+                      n_token += 1
+                      if k != "GH_TOKEN": bad("token", where, k)
+                  if k == "GH_TOKEN" and str(v) not in ("${{ github.token }}", "rt31-invalid-token-for-401"): bad("token", where, k, v)
+          # 7. forbidden operations, searched in the whole workflow except the lint step itself
+          scan = yaml.dump({k: v for k, v in w.items() if k not in ("jobs",)}, width=10**6) + yaml.dump({jn: j for jn, j in w["jobs"].items() if jn != "guard"}, width=10**6) + yaml.dump(g[:-1], width=10**6)
+          if scan.count("github.token") != n_token: bad("token", "github.token is used outside an env GH_TOKEN entry")
+          FORBID = [("secret", r"secrets\."), ("deploy", r"deploy-pages|upload-pages-artifact|actions-gh-pages|configure-pages|(?<![\w-])id-token\s*:|(?<![\w-])pages\s*:\s*(read|write)"), ("provider", r"UPSTOX|api\.upstox"),
+                    ("render", r"render\.com|RENDER_"), ("gh-command", r"\bgh\s+(workflow|run|pr|release|repo|secret|variable|issue|cache\s+delete|extension)\b"),
+                    ("git-write", r"\bgit\s+(push|commit|config|remote|tag|am|apply)\b"), ("curl-write", r"\bcurl\b[^\n]*(\s-X\b|\s--request\b|\s-d\b|\s--data|\s--upload-file|\s-T\b|\s-F\b|\s--form\b)"),
+                    ("http-write", r"requests\.(post|put|patch|delete)|urlopen|http\.client|\bwget\b|\bDELETE\b"), ("dispatch", r"workflow_dispatch|repository_dispatch|schedule:|workflow_call|workflow_run")]
+          for tag, rx in FORBID:
+              for m in re.finditer(rx, scan): bad(tag, repr(m.group(0)))
+          for ln in scan.splitlines():
+              if "gh api" in ln and re.search(r"--method|-X\s|--field|-F\s|-f\s|--input|--raw-field", ln): bad("gh-api-write", ln.strip()[:100])
+          if problems:
+              print("\n".join(problems)); sys.exit(1)
+          open(os.environ["GITHUB_STEP_SUMMARY"], "a").write("guard ok; sha256 of this workflow file: " + hashlib.sha256(src.encode("utf-8")).hexdigest() + "\n")
+          print("guard ok")
+          PY
+
+  seed:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # No checkout: the workspace is empty, so the data/ and out/ saved below hold only the synthetic fixtures (never a checked-out repository file). The scenario jobs
+    # restore exactly these two paths ("data" and "out"); a cache is only found when the saved path set equals the restored one (the guard checks this).
+    steps:
+      - name: Build the fixture files under RUNNER_TEMP (synthetic; the dates are two days before this run so the state is never stale)
+        run: |
+          fx="$RUNNER_TEMP/rt31fx"; mkdir -p "$fx/state/data" "$fx/state/out" "$fx/nostate/data" "$fx/nostate/out" "$fx/other/fx4data"
+          FX="$fx" python3 - <<'PY'
+          import json, os, datetime
+          fx = os.environ["FX"]; d = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+          st = {"stocks": {"RT31AAA": {"isin": "INE000A01010", "company_name": "Rehearsal Fixture", "ratios": {"pe": 10.0, "pb": 1.5, "roa": 2.0, "roe": 12.0, "roce": None, "ev_ebitda": None}, "ratios_fetched": d, "profile_fetched": d}}}
+          row = {"symbol": "RT31AAA", "isin": "INE000A01010", "company_name": "Rehearsal Fixture", "sector": None, "pe": 10.0, "pb": 1.5, "roa": 2.0, "roe": 12.0, "roce": None, "ev_ebitda": None, "revenue_growth": None, "profit_growth": None, "missing": ["roce", "ev_ebitda"], "fetched": d}
+          json.dump(st, open(fx + "/state/data/fundamentals_cache.json", "w")); json.dump({"as_of": d, "source": "Upstox", "stocks": [row], "errors": []}, open(fx + "/state/out/fundamentals.json", "w"))
+          json.dump({"note": "a cache of another workflow: no fundamentals state"}, open(fx + "/nostate/out/other.json", "w")); json.dump({"note": "placeholder"}, open(fx + "/nostate/data/placeholder.json", "w"))
+          json.dump(st, open(fx + "/other/fx4data/fundamentals_cache.json", "w"))
+          PY
+      - name: Stage the state fixture as the workspace data/ and out/ (s1)
+        run: rm -rf data out && mkdir -p data out && cp -r "$RUNNER_TEMP/rt31fx/state/data/." data/ && cp -r "$RUNNER_TEMP/rt31fx/state/out/." out/ && ls -R data out
+      # s1: one state-bearing cache. Key shape rt31-<run>-s1-nse-data-<number>, like nse-data-<run id>.
+      - uses: actions/cache/save@v4
+        with: { path: "data\nout", key: "rt31-${{ github.run_id }}-s1-nse-data-${{ github.run_id }}" }
+      # s2: an OLDER state-bearing cache (the same staged files), then (after a pause so created_at differs) a NEWER cache without state, like nse-data-shp-<run id>.
+      - uses: actions/cache/save@v4
+        with: { path: "data\nout", key: "rt31-${{ github.run_id }}-s2-nse-data-${{ github.run_id }}" }
+      - run: sleep 15
+      - name: Stage the no-state fixture as the workspace data/ and out/ (s2 newer cache)
+        run: rm -rf data out && mkdir -p data out && cp -r "$RUNNER_TEMP/rt31fx/nostate/data/." data/ && cp -r "$RUNNER_TEMP/rt31fx/nostate/out/." out/ && ls -R data out && test ! -e data/fundamentals_cache.json
+      - uses: actions/cache/save@v4
+        with: { path: "data\nout", key: "rt31-${{ github.run_id }}-s2-nse-data-shp-${{ github.run_id }}" }
+      # s4: a cache saved for ANOTHER path set (hence another cache version), which a restore of data+out can list but never resolve. Intentionally different.
+      - name: Stage the other-path fixture (s4)
+        run: rm -rf fx4 && mkdir -p fx4 && cp -r "$RUNNER_TEMP/rt31fx/other/fx4data" fx4/data && ls -R fx4
+      - uses: actions/cache/save@v4
+        with: { path: "fx4/data", key: "rt31-${{ github.run_id }}-s4-nse-data-${{ github.run_id }}" }
+      # s3 and s5 save nothing: genuine miss.
+
+  scenario:
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: { contents: read, actions: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: s1, expect: "rc=0 state=restored" }
+          - { name: s2, expect: "rc=1 shadow" }
+          - { name: s3, expect: "rc=0 state=miss, recovered" }
+          - { name: s4, expect: "rc=1 listed-but-not-resolved" }
+    env:
+      PFX: rt31-${{ github.run_id }}-${{ matrix.name }}-nse-data-
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: stocklens-data, path: ledger-branch, persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyyaml pandas requests
+      - name: Extract the production step scripts of this commit (only the constant nse-data- is replaced; proved reversible)
+        run: |
+          python3 - <<'PY'
+          import os, yaml
+          w = yaml.safe_load(open(".github/workflows/update.yml")); steps = {s.get("name"): s for s in w["jobs"]["build"]["steps"]}
+          P = os.environ["PFX"]; out = {}
+          for key, name in (("check", "Check the restored fundamentals state"), ("recover", "Recover the fundamentals state from the published site (cache miss only)"), ("universe", "Select the coverage universe")):
+              src = steps[name]["run"]; mod = src.replace("nse-data-", P) if key != "universe" else src
+              assert mod.replace(P, "nse-data-") == src, key
+              open("/tmp/%s.sh" % key, "w").write(mod)
+          print("extracted; check script constant:", P)
+          PY
+      - name: Select the coverage universe (production script, unchanged)
+        run: bash -e /tmp/universe.sh
+      - name: Restore saved data (same action, path, key shape and restore-keys as production, rehearsal prefix)
+        id: restore
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            out
+          key: rt31-${{ github.run_id }}-${{ matrix.name }}-nse-data-${{ github.run_id }}-restorer
+          restore-keys: rt31-${{ github.run_id }}-${{ matrix.name }}-nse-data-
+      - name: Look up which saved cache the restore resolved to (no download)
+        id: lookup
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: rt31-${{ github.run_id }}-${{ matrix.name }}-nse-data-${{ github.run_id }}-restorer
+          restore-keys: rt31-${{ github.run_id }}-${{ matrix.name }}-nse-data-
+          lookup-only: true
+      - name: Check the restored fundamentals state (production script, rehearsal prefix)
+        id: fstate
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+          RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          LOOKUP_OUTCOME: ${{ steps.lookup.outcome }}
+          LOOKUP_KEY: ${{ steps.lookup.outputs.cache-matched-key }}
+        run: bash -e /tmp/check.sh 2>&1 | tee /tmp/check.log; exit "${PIPESTATUS[0]}"
+      - name: Recover (production script; runs only after a genuine miss)
+        id: recover
+        if: steps.fstate.outputs.state == 'miss'
+        continue-on-error: true
+        env: { REPO: "${{ github.repository }}" }
+        run: |
+          bash -e /tmp/recover.sh 2>&1 | tee /tmp/recover.log; rc=${PIPESTATUS[0]}
+          sha256sum recovery_fundamentals.json | cut -d' ' -f1 > /tmp/published.sha256; wc -c < recovery_fundamentals.json >> /tmp/published.sha256
+          exit $rc
+      - name: Record what actually happened (no token is printed) and compare with the expectation
+        if: always()
+        env:
+          RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          LOOKUP_OUTCOME: ${{ steps.lookup.outcome }}
+          LOOKUP_KEY: ${{ steps.lookup.outputs.cache-matched-key }}
+          LOOKUP_HIT: ${{ steps.lookup.outputs.cache-hit }}
+          CHECK_OUTCOME: ${{ steps.fstate.outcome }}
+          STATE: ${{ steps.fstate.outputs.state }}
+          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
+          NAME: ${{ matrix.name }}
+        run: |
+          {
+            echo "### ${NAME}: expected ${{ matrix.expect }}"
+            echo "- restore step cache-hit: '${RESTORE_HIT}'"
+            echo "- lookup step outcome: '${LOOKUP_OUTCOME}', cache-matched-key: '${LOOKUP_KEY}', cache-hit: '${LOOKUP_HIT}'"
+            echo "- check step outcome: '${CHECK_OUTCOME}', state output: '${STATE}', recover outcome: '${RECOVER_OUTCOME}'"
+            echo '- check log:'; echo '```'; sed -e 's/\(token\|TOKEN\)[^ ]*/<masked>/g' /tmp/check.log 2>/dev/null; echo '```'
+            [ -f /tmp/recover.log ] && { echo '- recover log:'; echo '```'; cat /tmp/recover.log; echo '```'; echo "- published file sha256 / bytes: $(tr '\n' ' ' < /tmp/published.sha256)"; }
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$NAME" in
+            s1) [ "$CHECK_OUTCOME" = success ] && [ "$STATE" = restored ] ;;
+            s2) [ "$CHECK_OUTCOME" = failure ] && grep -q "shadows the daily state cache" /tmp/check.log && [ -z "$STATE" ] ;;
+            s3) [ "$CHECK_OUTCOME" = success ] && [ "$STATE" = miss ] && [ "$RECOVER_OUTCOME" = success ] ;;
+            s4) [ "$CHECK_OUTCOME" = failure ] && grep -q "but the restore resolved none of them" /tmp/check.log && [ -z "$STATE" ] ;;
+          esac
+
+  s5_listing_denied:
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: { contents: read }          # no cache is listed with a valid credential here: the dummy token below forces HTTP 401, whatever the repository visibility
+    env:
+      PFX: rt31-${{ github.run_id }}-s5-nse-data-
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyyaml
+      - name: Run the production check script with nothing cached and a dummy invalid token (the cache list must fail with HTTP 401, never read as a miss)
+        env:
+          GH_TOKEN: rt31-invalid-token-for-401
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+          RESTORE_HIT: ""
+          LOOKUP_OUTCOME: success
+          LOOKUP_KEY: ""
+        run: |
+          python3 - <<'PY'
+          import os, yaml
+          w = yaml.safe_load(open(".github/workflows/update.yml")); s = [x for x in w["jobs"]["build"]["steps"] if x.get("name") == "Check the restored fundamentals state"][0]["run"]
+          P = os.environ["PFX"]; m = s.replace("nse-data-", P); assert m.replace(P, "nse-data-") == s; open("/tmp/check.sh", "w").write(m)
+          PY
+          set +e; bash -e /tmp/check.sh > /tmp/check.log 2>&1; rc=$?; set -e
+          { echo "### s5: expected the cache list to fail with HTTP 401 and the run to stop (never a miss)"; echo "rc=$rc"; echo '```'; cat /tmp/check.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          ok=1
+          [ "$rc" = 1 ] || ok=0
+          grep -q "could not be listed" /tmp/check.log || ok=0
+          grep -qE "HTTP 401|Bad credentials" /tmp/check.log || ok=0
+          if grep -q "genuine cache miss" /tmp/check.log; then ok=0; fi
+          echo "assertions ok=$ok"
+          [ "$ok" = 1 ]
+
+  # pg: the production recover script, unchanged, pointed at a repository that does not exist under this owner: the download must fail and the run must stop.
+  pages_failure:
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyyaml
+      - name: Run the production recover script against a nonexistent repository (a read-only GET that must fail)
+        run: |
+          python3 - <<'PY'
+          import yaml
+          w = yaml.safe_load(open(".github/workflows/update.yml"))
+          s = [x for x in w["jobs"]["build"]["steps"] if x.get("name") == "Recover the fundamentals state from the published site (cache miss only)"][0]["run"]
+          assert "curl -fsSL" in s and "python fundamentals_updater.py seed" in s
+          open("/tmp/recover.sh", "w").write(s)
+          PY
+          mkdir -p /tmp/wk && cd /tmp/wk
+          export REPO="${GITHUB_REPOSITORY_OWNER}/rt31-no-such-repo-${GITHUB_RUN_ID}"
+          set +e; bash -e /tmp/recover.sh > /tmp/recover.log 2>&1; rc=$?; set -e
+          { echo "### pg: expected rc=1, 'could not be downloaded' and 'Nothing was published and nothing was changed'"; echo "rc=$rc"; echo '```'; cat /tmp/recover.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          [ "$rc" = 1 ] && grep -q "could not be downloaded" /tmp/recover.log && grep -q "Nothing was published and nothing was changed" /tmp/recover.log && [ ! -s /tmp/wk/recovery_fundamentals.json ] && [ ! -e /tmp/wk/data ]
+
+  # p1/p2: the production check script, unchanged except (a) the nse-data- constant and (b) per_page=100 -> per_page=1, so the real cache list of this branch spans several
+  # pages; p2 additionally drops --paginate so only the first page is read (a truncated list). Only this branch is listed (DEFAULT_BRANCH is set to it), so no main cache is read.
+  # Runs after `scenario`, so no scenario is still saving a cache while the pages are read. Both expect the run to stop; neither may report a genuine miss.
+  listing_pages:
+    needs: [seed, scenario]
+    if: ${{ !cancelled() && needs.seed.result == 'success' }}      # evidence is kept after a scenario failure, but nothing runs after a cancel or behind a failed guard or seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: { contents: read, actions: read }
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: p1, mode: complete }
+          - { name: p2, mode: truncated }
+    env:
+      PFX: rt31-${{ github.run_id }}-s4-nse-data-
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyyaml
+      - name: Extract the production check script (constant, per_page and, for p2, --paginate replaced; each replacement is counted and proved reversible)
+        env: { MODE: "${{ matrix.mode }}" }
+        run: |
+          python3 - <<'PY'
+          import os, yaml
+          w = yaml.safe_load(open(".github/workflows/update.yml"))
+          src = [x for x in w["jobs"]["build"]["steps"] if x.get("name") == "Check the restored fundamentals state"][0]["run"]
+          P = os.environ["PFX"]; mode = os.environ["MODE"]
+          assert src.count("per_page=100") == 1 and src.count('gh api --paginate "') == 1
+          mod = src.replace("per_page=100", "per_page=1").replace("nse-data-", P)
+          if mode == "truncated":
+              mod = mod.replace('gh api --paginate "', 'gh api "')
+              back = mod.replace('gh api "', 'gh api --paginate "')
+          else:
+              back = mod
+          back = back.replace("per_page=1&", "per_page=100&").replace("per_page=1\"", "per_page=100\"").replace(P, "nse-data-")
+          assert back == src, "replacement is not reversible"
+          assert "per_page=1" in mod and "per_page=100" not in mod
+          open("/tmp/check.sh", "w").write(mod)
+          print("extracted", mode, "prefix", P)
+          PY
+      - name: Run it (nothing restored, nothing resolved) against this branch's real cache list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.ref_name }}
+          RESTORE_HIT: ""
+          LOOKUP_OUTCOME: success
+          LOOKUP_KEY: ""
+          NAME: ${{ matrix.name }}
+          MODE: ${{ matrix.mode }}
+        run: |
+          total=$(gh api "repos/$REPO/actions/caches?ref=$REF&per_page=1" --jq '.total_count')
+          set +e; bash -e /tmp/check.sh > /tmp/check.log 2>&1; rc=$?; set -e
+          { echo "### ${NAME} (${MODE}): branch cache total_count=${total}; expected rc=1"; echo "rc=$rc"; echo '```'; sed -e 's/\(token\|TOKEN\)[^ ]*/<masked>/g' /tmp/check.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          case "$total" in ''|*[!0-9]*) echo "no usable total_count"; exit 1 ;; esac
+          [ "$total" -ge 2 ] || { echo "fewer than 2 caches: no real pagination was exercised"; exit 1; }
+          ok=1
+          [ "$rc" = 1 ] || ok=0
+          if grep -q "genuine cache miss" /tmp/check.log; then ok=0; fi
+          if [ "$MODE" = complete ]; then
+            grep -qE "saved cache\(s\) with the prefix ${PFX} exist" /tmp/check.log || ok=0
+            if grep -qE "is incomplete|is unusable" /tmp/check.log; then ok=0; fi
+          else
+            grep -qE "is incomplete \(1 of [0-9]+ caches read\)" /tmp/check.log || ok=0
+          fi
+          echo "assertions ok=$ok"
+          [ "$ok" = 1 ]
+
+  api_capture:
+    needs: [seed, scenario, listing_pages]
+    if: ${{ !cancelled() && needs.seed.result == 'success' }}      # diagnostics survive a scenario failure; never after a cancel or behind a failed guard or seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: { contents: read, actions: read }
+    steps:
+      - name: Read-only cache API facts (counts and key names only; every answer must be non-empty and every key on this branch inside rt31-)
+        env: { GH_TOKEN: "${{ github.token }}", REPO: "${{ github.repository }}" }
+        run: |
+          ref="${{ github.ref }}"; p="rt31-${{ github.run_id }}-"; bad=0
+          pages=$(gh api --paginate "repos/$REPO/actions/caches?ref=$ref&per_page=1" --jq '"  total_count=" + (.total_count|tostring) + " page_len=" + (.actions_caches|length|tostring) + " key=" + (.actions_caches[0].key // "")') || bad=1
+          exact=$(gh api "repos/$REPO/actions/caches?ref=$ref&key=${p}s1-nse-data-${{ github.run_id }}" --jq '.total_count') || bad=1
+          prefix=$(gh api "repos/$REPO/actions/caches?ref=$ref&key=${p}s1-" --jq '.total_count') || bad=1
+          all=$(gh api "repos/$REPO/actions/caches?ref=$ref&per_page=100" --jq '.total_count') || bad=1
+          outside=$(gh api --paginate "repos/$REPO/actions/caches?ref=$ref&per_page=100" --jq '.actions_caches[].key | select(startswith("rt31-") | not)') || bad=1
+          main=$(gh api "repos/$REPO/actions/caches?ref=refs/heads/main&per_page=1" --jq '.total_count') || bad=1
+          {
+            echo "### Cache API responses (GET only)"
+            echo "- per_page=1 on this ref (total_count on every page, pagination):"; printf '%s\n' "$pages"
+            echo "- key filter with the exact full key of the s1 cache: '${exact}'"
+            echo "- key filter with a PREFIX (${p}s1-): '${prefix}'   (>0 = prefix semantics, 0 = exact-only)"
+            echo "- all caches of this ref: '${all}'"
+            echo "- keys on this ref outside rt31- (must be none): '${outside}'"
+            echo "- caches of refs/heads/main (count only; none restored): '${main}'"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bad" = 0 ] && [ -n "$pages" ] && [ -n "$exact" ] && [ -n "$prefix" ] && [ -n "$all" ] && [ -n "$main" ] && [ -z "$outside" ] && [ "$all" -ge 2 ]
+
+  verdict:
+    needs: [guard, seed, scenario, s5_listing_denied, pages_failure, listing_pages, api_capture]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job must have succeeded; otherwise STOP (do not re-run; report and wait)
+        env:
+          RESULTS: "guard=${{ needs.guard.result }} seed=${{ needs.seed.result }} scenario=${{ needs.scenario.result }} s5=${{ needs.s5_listing_denied.result }} pg=${{ needs.pages_failure.result }} pages=${{ needs.listing_pages.result }} api=${{ needs.api_capture.result }}"
+        run: |
+          echo "### Verdict: $RESULTS" >> "$GITHUB_STEP_SUMMARY"
+          if printf '%s\n' "$RESULTS" | tr ' ' '\n' | grep -v '=success$' | grep -q .; then
+            echo "STOP: at least one job did not succeed. Do not re-run automatically; report the summaries and wait for a decision." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
