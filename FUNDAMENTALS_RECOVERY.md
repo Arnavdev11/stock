@@ -12,7 +12,7 @@ nothing downloaded or written) reports the cache the restore resolves to.
 | Condition | How it is recognised | Result |
 |---|---|---|
 | 1. A state was restored | `data/fundamentals_cache.json` exists | `check-state`: usable, or stop. Never touched, never recovered over. |
-| 2. A cache was restored but holds no state | the lookup resolved a key (for example `nse-data-shp-…` of another workflow) | stop; names the key; a maintainer decides |
+| 2. A cache was restored but holds no state | the lookup resolved a key (for example `nse-data-shp-…` of another workflow; since PR #33 the shareholding workflow saves such a cache only when its job succeeded and `data/fundamentals_cache.json` exists, which does not prove the state is valid, and older such caches may still exist) | stop; names the key; a maintainer decides |
 | 3. No cache at all | lookup resolved nothing **and** the complete cache list of this ref and the default branch holds no `nse-data-` key (all caches are read and filtered with `startswith` in `jq`; the API's `key` filter is not used) | recover from the published site (below) |
 | 4. Cache store unreadable | lookup step did not succeed, a list call failed, a list is incomplete (fewer caches read than `total_count`) or its total changes while paging | stop; re-run when the service answers; never a miss |
 | 5. A cache exists but was not restored | the lookup resolved a daily key without a state, or nothing resolved but caches are listed | stop; names the condition; a re-run is advised only where it can help |
@@ -46,5 +46,40 @@ a valid start, not a copy of the lost one.
   and no defensible percentage, so it is recovered as it is (the site already shows it).
 * A published file older than 7 days, a changed universe size (the existing `coverage.universe` check), or a stock that left the universe stop the recovery:
   a maintainer decides. After an outage of more than 7 days the caches may also have expired (GitHub removes caches unused for 7 days), so this can coincide.
-* Not exercised against real GitHub Actions: the lookup step's `cache-matched-key` with `lookup-only` and restore-keys, the `total_count` of the cache list, and the
-  Pages download are only simulated with stubs. A rehearsal is needed before relying on the recovery.
+* Not yet observed in production: see "Verification status" below. The rehearsal used synthetic `rt31-` caches on a scratch branch, not the real `nse-data-` caches.
+
+## Verification status
+
+### Verified in a GitHub Actions rehearsal
+
+Scratch branch `rehearsal/pr31-cache-recovery`, run 39042332308 on commit `237ebcd`; all 12 jobs concluded `success`. The production step scripts were extracted from
+`update.yml` and run against synthetic `rt31-` caches. Replaced in them: the `nse-data-` prefix; in p1 and p2 the page size (`per_page=100` to `per_page=1`); and in p2
+also `--paginate` was removed, to deliberately test a truncated cache listing. No provider was called and nothing was deployed or published (by the workflow's design and
+its guard job; the job logs were not inspected).
+
+Supported by readable evidence (check-run annotations and step conclusions):
+
+* s2: a newer cache without state (like `nse-data-shp-…`) in front of an older one with state stops the run. The annotation names the resolved shp key and says it
+  "shadows the daily state cache".
+* s3: no cache at all is read as a genuine miss (annotation: "a genuine cache miss … recovered from the published site"); the recovery step concluded `success`.
+  According to the rehearsal workflow's assertions, recovery included seed validation of the published file available that day; the step logs were not inspected.
+* s4: a cache saved for another path set is listed but not resolved by the restore, and the run stops (annotation: "the restore resolved none of them").
+* s1: the check step concluded `success` and the recovery step was `skipped` (a state-bearing cache was restored). The log lines themselves were not read.
+* The lookup step's `cache-matched-key` with `lookup-only` and restore-keys behaved as the workflow assumes, as far as s2 (a key resolved) and s4 (none resolved) show.
+
+Supported only by the rehearsal workflow's own pass/fail assertions (the jobs concluded `success`; their logs and summaries were not available for inspection):
+
+* s5: a cache list refused with HTTP 401 stops the run and is never read as a miss.
+* pg: a failed Pages download stops the run and writes nothing.
+* p1 and p2: with paging forced by `per_page=1`, a complete list is read in full (p1) and a truncated one is reported as incomplete (p2); neither is read as a miss.
+* The `total_count` behaviour of the cache list, which p1 and p2 depend on.
+
+### Implemented in the workflow, not exercised in any real run
+
+The ISIN hold-aside check and the `Require the saved fundamentals state` step of `fundamentals_batch.yml`. The rehearsal's `check-state` ran only on a one-stock fixture.
+
+### Awaiting production verification
+
+A qualifying scheduled run on `main` is needed to verify: the restore, lookup and `check-state` steps against the real `nse-data-` caches of `main`; whether the
+real restored state passes `check-state`; the recovery on the real published file; the shareholding workflow's guarded save (`hashFiles`) in a real run (its
+rehearsal, run 39050410705, used synthetic caches); and the data published afterwards. Nothing in this document is a claim that the recovery has worked in production.
