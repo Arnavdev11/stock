@@ -23976,6 +23976,606 @@
    "name": "Infosys Limited",
    "quarters": [
     {
+     "quarter_end": "2026-09-30",
+     "status": "available",
+     "reason": null,
+     "values": {
+      "promoters": 13.9,
+      "fii": 27.44,
+      "other_dii": 19.89,
+      "mutual_funds": 22.96,
+      "retail_other": 15.8
+     },
+     "format_version": "new-domestic-foreign",
+     "percent_unit": "fraction",
+     "diagnostics": {
+      "total_reported_pct": 99.99,
+      "employee_trusts_pct": 0.21,
+      "employee_trusts_mode": "separate",
+      "retail_other_excl_trusts": 15.59,
+      "governments_pct": 0.02,
+      "promoter_row_absent": false,
+      "share_basis_total": 3706606376.0,
+      "dr_custodian_shares": 342234972.0,
+      "non_promoter_non_public_shares": 350150567.0,
+      "share_derived_pct": {
+       "promoters": 13.94,
+       "fii": 27.29,
+       "other_dii": 19.94,
+       "mutual_funds": 23.02,
+       "retail_other": 15.81
+      },
+      "conflict": null
+     },
+     "quality": {
+      "status": "ok",
+      "flags": []
+     },
+     "raw": {
+      "total_shares": 4048841348.0,
+      "rows": {
+       "AlternativeInvestmentFunds": [
+        10999095.0,
+        0.003
+       ],
+       "Banks": [
+        99480.0,
+        0.0
+       ],
+       "BodiesCorporate": [
+        20039380.0,
+        0.0054
+       ],
+       "CustodianOrDRHolder": [
+        342234972.0,
+        null
+       ],
+       "DirectorsAndDirectorsRelatives": [
+        1580865.0,
+        0.0004
+       ],
+       "EmployeeBenefitsTrusts": [
+        7915595.0,
+        0.0021
+       ],
+       "ForeignCompanies": [
+        0.0,
+        0.0004
+       ],
+       "ForeignNationals": [
+        7675.0,
+        0.0
+       ],
+       "Governments": [
+        865208.0,
+        0.0002
+       ],
+       "Indian": [
+        516677914.0,
+        0.139
+       ],
+       "IndividualsOrHinduUndividedFamily": [
+        516677914.0,
+        0.139
+       ],
+       "InstitutionsDomestic": [
+        1592186140.0,
+        0.4285
+       ],
+       "InstitutionsForeign": [
+        1011635442.0,
+        0.2744
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryOne": [
+        974240722.0,
+        0.2643
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryTwo": [
+        37394720.0,
+        0.0101
+       ],
+       "InsuranceCompanies": [
+        595321887.0,
+        0.1602
+       ],
+       "InvestorEducationAndProtectionFund": [
+        1420484.0,
+        0.0004
+       ],
+       "KeyManagerialPersonnel": [
+        434254.0,
+        0.0001
+       ],
+       "MutualFundsOrUTI": [
+        853161465.0,
+        0.2296
+       ],
+       "NBFCsRegisteredWithRBI": [
+        126347.0,
+        0.0
+       ],
+       "NonInstitutions": [
+        577326077.0,
+        0.1557
+       ],
+       "NonResidentIndians": [
+        45948351.0,
+        0.0124
+       ],
+       "OtherNonInstitutions": [
+        19188802.0,
+        0.0052
+       ],
+       "ProvidentFundsOrPensionFunds": [
+        125705046.0,
+        0.0338
+       ],
+       "PublicShareholding": [
+        3182012867.0,
+        0.8588
+       ],
+       "RelativesOfPromotersOtherThanPromoterGroup": [
+        318963.0,
+        0.0001
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh": [
+        173727944.0,
+        0.0468
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh": [
+        314659359.0,
+        0.0847
+       ],
+       "ShareholdingByCompaniesOrBodiesCorporateWhereCentralOrStateGovernmentIsPromoter": [
+        865208.0,
+        0.0002
+       ],
+       "ShareholdingOfPromoterAndPromoterGroup": [
+        516677914.0,
+        0.139
+       ],
+       "ShareholdingPattern": [
+        4048841348.0,
+        1.0
+       ],
+       "SharesHeldByNonPromoterNonPublicShareholders": [
+        350150567.0,
+        null
+       ],
+       "SovereignWealthFundsDomestic": [
+        6772820.0,
+        0.0018
+       ]
+      }
+     },
+     "source": {
+      "provider": "NSE",
+      "record_id": "215753",
+      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/SHP_1742200_20102026120732_WEB.xml",
+      "broadcast_date": "2026-10-20",
+      "submission_date": "2026-10-20",
+      "revised": false,
+      "revision_date": null,
+      "revision_remark": null
+     },
+     "fetched": "2026-10-20",
+     "revisions": [],
+     "named_holders": {
+      "version": 2,
+      "status": "available",
+      "reason": null,
+      "fetched": "2026-10-20",
+      "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
+      "holders": [
+       {
+        "holder_name": "LIFE INSURANCE CORPORATION OF INDIA - ULIF00220091",
+        "category": "DII",
+        "label": "DII \u2013 Insurance",
+        "section": "insurance_companies",
+        "shares": 438594872,
+        "percentage": 11.8,
+        "axis": "DetailsOfSharesHeldByInsuranceCompaniesAxis",
+        "member": "InsuranceCompanies_Context15"
+       },
+       {
+        "holder_name": "SBI MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 167485121,
+        "percentage": 4.51,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context19"
+       },
+       {
+        "holder_name": "ICICI PRUDENTIAL MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 146692156,
+        "percentage": 3.95,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context15"
+       },
+       {
+        "holder_name": "National Pension System Trust",
+        "category": "DII",
+        "label": "DII \u2013 Other",
+        "section": "provident_pension_funds",
+        "shares": 125705046,
+        "percentage": 3.38,
+        "axis": "DetailsOfSharesHeldByProvidentFundsOrPensionFundsAxis",
+        "member": "ProvidentFundsOrPensionFunds_Context15"
+       },
+       {
+        "holder_name": "NIPPON LIFE INDIA TRUSTEE",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 98562135,
+        "percentage": 2.65,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context17"
+       },
+       {
+        "holder_name": "SUDHA GOPALAKRISHNAN",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 95357000,
+        "percentage": 2.57,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context21"
+       },
+       {
+        "holder_name": "UTI MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 71887330,
+        "percentage": 1.93,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context18"
+       },
+       {
+        "holder_name": "HDFC MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 63538616,
+        "percentage": 1.71,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context16"
+       },
+       {
+        "holder_name": "ROHAN MURTY",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 60812892,
+        "percentage": 1.64,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context28"
+       },
+       {
+        "holder_name": "VANGUARD TOTAL INTERNATIONAL STOCK INDEX FUND",
+        "category": "Foreign Investor",
+        "label": "FPI",
+        "section": "fpi_category_one",
+        "shares": 52268865,
+        "percentage": 1.41,
+        "axis": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis",
+        "member": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOne_Context16"
+       },
+       {
+        "holder_name": "VANGUARD EMERGING MARKETS STOCK INDEX FUND",
+        "category": "Foreign Investor",
+        "label": "FPI",
+        "section": "fpi_category_one",
+        "shares": 50059965,
+        "percentage": 1.35,
+        "axis": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOneAxis",
+        "member": "DetailsOfSharesHeldByInstitutionsForeignPortfolioInvestorOne_Context15"
+       },
+       {
+        "holder_name": "SBI LIFE INSURANCE CO. LTD",
+        "category": "DII",
+        "label": "DII \u2013 Insurance",
+        "section": "insurance_companies",
+        "shares": 47134562,
+        "percentage": 1.27,
+        "axis": "DetailsOfSharesHeldByInsuranceCompaniesAxis",
+        "member": "InsuranceCompanies_Context16"
+       },
+       {
+        "holder_name": "PARAG PARIKH MUTUAL FUND",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 43467736,
+        "percentage": 1.17,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context20"
+       },
+       {
+        "holder_name": "NANDAN M NILEKANI",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 40789562,
+        "percentage": 1.1,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context15"
+       },
+       {
+        "holder_name": "AKSHATA MURTY",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 38957096,
+        "percentage": 1.05,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context22"
+       },
+       {
+        "holder_name": "ASHA DINESH",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 38579304,
+        "percentage": 1.04,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context18"
+       },
+       {
+        "holder_name": "SUDHA N MURTY",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 34550626,
+        "percentage": 0.93,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context24"
+       },
+       {
+        "holder_name": "ROHINI NILEKANI",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 34335092,
+        "percentage": 0.92,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context20"
+       },
+       {
+        "holder_name": "DINESH KRISHNASWAMY",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 32479590,
+        "percentage": 0.87,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context19"
+       },
+       {
+        "holder_name": "S GOPALAKRISHNAN",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 31853808,
+        "percentage": 0.86,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context17"
+       },
+       {
+        "holder_name": "NARAYANA MURTHY",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 15145638,
+        "percentage": 0.41,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context16"
+       },
+       {
+        "holder_name": "MEGHANA GOPALAKRISHNAN",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 14834928,
+        "percentage": 0.4,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context32"
+       },
+       {
+        "holder_name": "NIHAR NILEKANI",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 12677752,
+        "percentage": 0.34,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context27"
+       },
+       {
+        "holder_name": "SHRUTI SHIBULAL",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 8705651,
+        "percentage": 0.23,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context33"
+       },
+       {
+        "holder_name": "JANHAVI NILEKANI",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 8589721,
+        "percentage": 0.23,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context25"
+       },
+       {
+        "holder_name": "DEEKSHA DINESH",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 7646684,
+        "percentage": 0.21,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context30"
+       },
+       {
+        "holder_name": "DIVYA DINESH",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 7646684,
+        "percentage": 0.21,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context31"
+       },
+       {
+        "holder_name": "MILAN SHIBULAL MANCHANDA",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 6106302,
+        "percentage": 0.16,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context36"
+       },
+       {
+        "holder_name": "NIKITA SHIBULAL MANCHANDA",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 6106302,
+        "percentage": 0.16,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context37"
+       },
+       {
+        "holder_name": "GAURAV MANCHANDA",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 5773233,
+        "percentage": 0.16,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context29"
+       },
+       {
+        "holder_name": "S D SHIBULAL",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 5208673,
+        "percentage": 0.14,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context23"
+       },
+       {
+        "holder_name": "KUMARI SHIBULAL",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 4945935,
+        "percentage": 0.13,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context26"
+       },
+       {
+        "holder_name": "TANUSH NILEKANI CHANDRA",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 3356017,
+        "percentage": 0.09,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context35"
+       },
+       {
+        "holder_name": "EKAGRAH ROHAN MURTY",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 1500000,
+        "percentage": 0.04,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context38"
+       },
+       {
+        "holder_name": "SHRAY CHANDRA",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 719424,
+        "percentage": 0.02,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context34"
+       },
+       {
+        "holder_name": "DEUTSCHE BANK TRUST COMPANY AMERICAS",
+        "category": "Other",
+        "label": "Other \u2013 Custodian / DR holder",
+        "section": "custodian_dr_holder",
+        "shares": 342234972,
+        "percentage": null,
+        "axis": "DetailsOfSharesHeldByCustodianOrDRHolderAxis",
+        "member": "CustodianOrDRHolder_Context15"
+       }
+      ],
+      "excluded": {
+       "zero_share": 0,
+       "category_rows": 0,
+       "persons_in_concert": 0,
+       "unclaimed": 0,
+       "unnamed": 0,
+       "unmapped_axis": 4,
+       "conflicting": 0
+      },
+      "unmapped_axes": {
+       "DetailsOfSharesHeldByOtherNonInstitutionsAxis": 4
+      },
+      "section_totals": {
+       "insurance_companies": {
+        "named_shares": 485729434,
+        "category_total_shares": 595321887,
+        "named_count": 2
+       },
+       "mutual_funds": {
+        "named_shares": 591633094,
+        "category_total_shares": 853161465,
+        "named_count": 6
+       },
+       "provident_pension_funds": {
+        "named_shares": 125705046,
+        "category_total_shares": 125705046,
+        "named_count": 1
+       },
+       "promoter_individuals": {
+        "named_shares": 516677914,
+        "category_total_shares": 516677914,
+        "named_count": 24
+       },
+       "fpi_category_one": {
+        "named_shares": 102328830,
+        "category_total_shares": null,
+        "named_count": 2
+       },
+       "custodian_dr_holder": {
+        "named_shares": 342234972,
+        "category_total_shares": 342234972,
+        "named_count": 1
+       }
+      },
+      "flags": []
+     }
+    },
+    {
      "quarter_end": "2026-06-30",
      "status": "available",
      "reason": null,
