@@ -7,6 +7,771 @@
    "name": "Reliance Industries Limited",
    "quarters": [
     {
+     "quarter_end": "2026-09-30",
+     "status": "available",
+     "reason": null,
+     "values": {
+      "promoters": 50.44,
+      "fii": 16.67,
+      "other_dii": 11.41,
+      "mutual_funds": 10.31,
+      "retail_other": 11.17
+     },
+     "format_version": "new-domestic-foreign",
+     "percent_unit": "fraction",
+     "diagnostics": {
+      "total_reported_pct": 100.0,
+      "employee_trusts_pct": null,
+      "employee_trusts_mode": "none",
+      "retail_other_excl_trusts": 11.17,
+      "governments_pct": 0.1,
+      "promoter_row_absent": false,
+      "share_basis_total": 13312748854.0,
+      "dr_custodian_shares": 0.0,
+      "non_promoter_non_public_shares": 0.0,
+      "share_derived_pct": {
+       "promoters": 50.44,
+       "fii": 16.67,
+       "other_dii": 11.4,
+       "mutual_funds": 10.31,
+       "retail_other": 11.17
+      },
+      "conflict": null
+     },
+     "quality": {
+      "status": "ok",
+      "flags": []
+     },
+     "raw": {
+      "total_shares": 13312748854.0,
+      "rows": {
+       "AlternativeInvestmentFunds": [
+        23041158.0,
+        0.0017
+       ],
+       "AssociateCompaniesOrSubsidiaries": [
+        733866.0,
+        0.0001
+       ],
+       "Banks": [
+        6698483.0,
+        0.0005
+       ],
+       "BodiesCorporate": [
+        74269399.0,
+        0.0056
+       ],
+       "CentralGovernmentOrPresidentOfIndia": [
+        12460181.0,
+        0.0009
+       ],
+       "CustodianOrDRHolder": [
+        0.0,
+        null
+       ],
+       "DirectorsAndDirectorsRelatives": [
+        19710463.0,
+        0.0015
+       ],
+       "ForeignDirectInvestment": [
+        22336573.0,
+        0.0017
+       ],
+       "ForeignNationals": [
+        112626.0,
+        0.0
+       ],
+       "Governments": [
+        12881044.0,
+        0.001
+       ],
+       "Indian": [
+        6715496096.0,
+        0.5044
+       ],
+       "IndividualsOrHinduUndividedFamily": [
+        112002852.0,
+        0.0084
+       ],
+       "InstitutionsDomestic": [
+        2890889750.0,
+        0.2172
+       ],
+       "InstitutionsForeign": [
+        2219391919.0,
+        0.1667
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryOne": [
+        2127778524.0,
+        0.1598
+       ],
+       "InstitutionsForeignPortfolioInvestorCategoryTwo": [
+        68925212.0,
+        0.0052
+       ],
+       "InsuranceCompanies": [
+        1261044600.0,
+        0.0947
+       ],
+       "InvestorEducationAndProtectionFund": [
+        85397410.0,
+        0.0064
+       ],
+       "KeyManagerialPersonnel": [
+        709300.0,
+        0.0001
+       ],
+       "MutualFundsOrUTI": [
+        1372782469.0,
+        0.1031
+       ],
+       "NBFCsRegisteredWithRBI": [
+        208752.0,
+        0.0
+       ],
+       "NonInstitutions": [
+        1474090045.0,
+        0.1107
+       ],
+       "NonResidentIndians": [
+        76562946.0,
+        0.0058
+       ],
+       "OtherFinancialInstitutions": [
+        381668.0,
+        0.0
+       ],
+       "OtherIndianShareholders": [
+        6603493244.0,
+        0.496
+       ],
+       "OtherInstitutionsForeign": [
+        351610.0,
+        0.0
+       ],
+       "OtherNonInstitutions": [
+        61483997.0,
+        0.0046
+       ],
+       "ProvidentFundsOrPensionFunds": [
+        215963942.0,
+        0.0162
+       ],
+       "PublicShareholding": [
+        6597252758.0,
+        0.4956
+       ],
+       "RelativesOfPromotersOtherThanPromoterGroup": [
+        524490.0,
+        0.0
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh": [
+        190660176.0,
+        0.0143
+       ],
+       "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh": [
+        963925372.0,
+        0.0724
+       ],
+       "ShareholdingByCompaniesOrBodiesCorporateWhereCentralOrStateGovernmentIsPromoter": [
+        419663.0,
+        0.0
+       ],
+       "ShareholdingOfPromoterAndPromoterGroup": [
+        6715496096.0,
+        0.5044
+       ],
+       "ShareholdingPattern": [
+        13312748854.0,
+        1.0
+       ],
+       "SharesHeldByNonPromoterNonPublicShareholders": [
+        0.0,
+        null
+       ],
+       "SovereignWealthFundsDomestic": [
+        10768678.0,
+        0.0008
+       ],
+       "StateGovernmentsOrGovernors": [
+        1200.0,
+        0.0
+       ]
+      }
+     },
+     "source": {
+      "provider": "NSE",
+      "record_id": "216074",
+      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/SHP_1742991_21102026042504_WEB.xml",
+      "broadcast_date": "2026-10-21",
+      "submission_date": "2026-10-21",
+      "revised": false,
+      "revision_date": null,
+      "revision_remark": null
+     },
+     "fetched": "2026-10-21",
+     "revisions": [],
+     "named_holders": {
+      "version": 2,
+      "status": "available",
+      "reason": null,
+      "fetched": "2026-10-21",
+      "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
+      "holders": [
+       {
+        "holder_name": "Srichakra Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 1479199658,
+        "percentage": 11.11,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context15"
+       },
+       {
+        "holder_name": "Devarshi Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 1091138920,
+        "percentage": 8.2,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context16"
+       },
+       {
+        "holder_name": "Karuna Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 1091138920,
+        "percentage": 8.2,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context17"
+       },
+       {
+        "holder_name": "Tattvam Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 1091138920,
+        "percentage": 8.2,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context18"
+       },
+       {
+        "holder_name": "Life Insurance Corporation of India",
+        "category": "DII",
+        "label": "DII \u2013 Insurance",
+        "section": "insurance_companies",
+        "shares": 945908925,
+        "percentage": 7.11,
+        "axis": "DetailsOfSharesHeldByInsuranceCompaniesAxis",
+        "member": "InsuranceCompanies_Context15"
+       },
+       {
+        "holder_name": "Reliance Industries Holding Private Ltd",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 608030142,
+        "percentage": 4.57,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context37"
+       },
+       {
+        "holder_name": "Reliance Industrial Investments and Holdings Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 481884012,
+        "percentage": 3.62,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context54"
+       },
+       {
+        "holder_name": "Reliance Services and Holdings Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 343765640,
+        "percentage": 2.58,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context53"
+       },
+       {
+        "holder_name": "SBI Mutual Funds",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 338019479,
+        "percentage": 2.54,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context15"
+       },
+       {
+        "holder_name": "Samarjit Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 249250548,
+        "percentage": 1.87,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context19"
+       },
+       {
+        "holder_name": "ICICI Prudential Mutual Funds",
+        "category": "DII",
+        "label": "DII \u2013 Mutual Fund",
+        "section": "mutual_funds",
+        "shares": 246342274,
+        "percentage": 1.85,
+        "axis": "DetailsOfSharesHeldByMutualFundsOrUTIAxis",
+        "member": "MutualFundsOrUTI_Context16"
+       },
+       {
+        "holder_name": "NPS Trust",
+        "category": "DII",
+        "label": "DII \u2013 Other",
+        "section": "provident_pension_funds",
+        "shares": 215963942,
+        "percentage": 1.62,
+        "axis": "DetailsOfSharesHeldByProvidentFundsOrPensionFundsAxis",
+        "member": "ProvidentFundsOrPensionFunds_Context15"
+       },
+       {
+        "holder_name": "Sikka Ports & Terminals Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 70000000,
+        "percentage": 0.53,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context55"
+       },
+       {
+        "holder_name": "K D Ambani",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 31482644,
+        "percentage": 0.24,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context20"
+       },
+       {
+        "holder_name": "Shreeji Comtrade LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 28675930,
+        "percentage": 0.22,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context50"
+       },
+       {
+        "holder_name": "Shrikrishna Tradecom LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 28675930,
+        "percentage": 0.22,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context51"
+       },
+       {
+        "holder_name": "Svar Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 27178734,
+        "percentage": 0.2,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context46"
+       },
+       {
+        "holder_name": "Akash M Ambani",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 16104042,
+        "percentage": 0.12,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context18"
+       },
+       {
+        "holder_name": "Anant M Ambani",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 16104042,
+        "percentage": 0.12,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context19"
+       },
+       {
+        "holder_name": "Isha M Ambani",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 16104042,
+        "percentage": 0.12,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context17"
+       },
+       {
+        "holder_name": "Nita M Ambani",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 16104042,
+        "percentage": 0.12,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context16"
+       },
+       {
+        "holder_name": "Mukesh D Ambani",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_individuals",
+        "shares": 16104040,
+        "percentage": 0.12,
+        "axis": "DetailsSharesHeldByIndividualsOrHUFAxis",
+        "member": "IndividualsOrHUF_Context15"
+       },
+       {
+        "holder_name": "Reliance Welfare Association",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 10689994,
+        "percentage": 0.08,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context52"
+       },
+       {
+        "holder_name": "Vasuprada Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 2631850,
+        "percentage": 0.02,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context47"
+       },
+       {
+        "holder_name": "Exotic Officeinfra Private Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 55348,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context38"
+       },
+       {
+        "holder_name": "Carat Holdings and Trading Co Pvt Ltd",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 21902,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context39"
+       },
+       {
+        "holder_name": "Neutron Enterprises Private Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 3698,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context40"
+       },
+       {
+        "holder_name": "Futura Commercials Private Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 3628,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context41"
+       },
+       {
+        "holder_name": "Chakradev Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context42"
+       },
+       {
+        "holder_name": "Chakradhar Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context25"
+       },
+       {
+        "holder_name": "Chakresh Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context26"
+       },
+       {
+        "holder_name": "Chhatrabhuj Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context27"
+       },
+       {
+        "holder_name": "Harinarayan Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context28"
+       },
+       {
+        "holder_name": "Janardan Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context43"
+       },
+       {
+        "holder_name": "Shripal Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context33"
+       },
+       {
+        "holder_name": "Vishatan Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 432,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context36"
+       },
+       {
+        "holder_name": "Abhayaprada Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context20"
+       },
+       {
+        "holder_name": "Adisesh Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context21"
+       },
+       {
+        "holder_name": "Ajitesh Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context22"
+       },
+       {
+        "holder_name": "Badri Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context23"
+       },
+       {
+        "holder_name": "Bhuvanesh Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context24"
+       },
+       {
+        "holder_name": "Kankhal Trading LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context29"
+       },
+       {
+        "holder_name": "Pavana Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context30"
+       },
+       {
+        "holder_name": "Pitambar Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context31"
+       },
+       {
+        "holder_name": "Rishikesh Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context32"
+       },
+       {
+        "holder_name": "Taran Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context34"
+       },
+       {
+        "holder_name": "Trilokesh Commercials LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 430,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context35"
+       },
+       {
+        "holder_name": "Kamalakar Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 426,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context48"
+       },
+       {
+        "holder_name": "Narahari Enterprises LLP",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 426,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context49"
+       },
+       {
+        "holder_name": "Elakshi Commercials Private Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 216,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context44"
+       },
+       {
+        "holder_name": "Pinakin Commercials Private Limited",
+        "category": "Promoter",
+        "label": "Promoter",
+        "section": "promoter_group_indian",
+        "shares": 216,
+        "percentage": 0.0,
+        "axis": "DetailsOfSharesHeldByOthersIndianShareholdersAxis",
+        "member": "OthersIndianShareholders_Context45"
+       }
+      ],
+      "excluded": {
+       "zero_share": 4,
+       "category_rows": 1,
+       "persons_in_concert": 0,
+       "unclaimed": 0,
+       "unnamed": 0,
+       "unmapped_axis": 9,
+       "conflicting": 0
+      },
+      "unmapped_axes": {
+       "DetailsOfSharesHeldByOtherNonInstitutionsAxis": 9
+      },
+      "section_totals": {
+       "promoter_group_indian": {
+        "named_shares": 6603493244,
+        "category_total_shares": 6603493244,
+        "named_count": 41
+       },
+       "insurance_companies": {
+        "named_shares": 945908925,
+        "category_total_shares": 1261044600,
+        "named_count": 1
+       },
+       "mutual_funds": {
+        "named_shares": 584361753,
+        "category_total_shares": 1372782469,
+        "named_count": 2
+       },
+       "provident_pension_funds": {
+        "named_shares": 215963942,
+        "category_total_shares": 215963942,
+        "named_count": 1
+       },
+       "promoter_individuals": {
+        "named_shares": 112002852,
+        "category_total_shares": 112002852,
+        "named_count": 6
+       }
+      },
+      "flags": []
+     }
+    },
+    {
      "quarter_end": "2026-06-30",
      "status": "available",
      "reason": null,
