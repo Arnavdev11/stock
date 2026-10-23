@@ -750,7 +750,7 @@ class MarkerVerification(unittest.TestCase):
                "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "schedule", "GITHUB_SHA": "e" * 40, "CP_DATA_STATUS": "complete", "CP_DATA_OK": "true",
                **{"CP_OUTCOME_" + n.upper(): "success" for n in V.MARKER_STEPS}}
         when = dt.datetime(2026, 10, 20, 9, 58, tzinfo=dt.timezone.utc)
-        P.write_marker(d, P.build_marker(d, env, when))
+        P.write_marker(d, env, when)
         self.assertEqual(self.verify(d)["data_status"], "complete")
         self.assertEqual(set(json.loads((d / V.MARKER_NAME).read_text())), set(V.MARKER_FIELDS))
 
