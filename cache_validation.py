@@ -1,12 +1,17 @@
 """
 cache_validation.py - the helper behind the one-off workflow "Validate cache coverage" (.github/workflows/cache_validation.yml).
 
-It does three small jobs and nothing else. It makes no network call, imports no provider client and writes only the one file it is told to.
+It does a few small jobs and nothing else. It makes no network call, imports no provider client and writes only the one file it is told to.
 
-  select CACHE_LIST_JSON       Choose the cache to restore from the list of cache METADATA that `gh api` returned (no cache content is involved).
-                               The key must match ^nse-data-[0-9]+$ exactly - the key of the daily "Update data and publish site" run and of a fundamentals batch;
-                               the other caches that share the prefix (nse-data-shp-..., nse-data-sector-...) never match. The newest such cache is chosen.
-                               The list must be complete (the entries read equal the total the API reports); anything else is refused.
+  candidates CACHE_LIST_JSON REF OUT
+                               Write to OUT the run ids of the newest caches of REF whose key is exactly nse-data-<digits> (metadata only). The workflow fetches those runs.
+  select CACHE_LIST_JSON WORKFLOW_JSON RUNS_DIR REF NOW
+                               Choose the cache to restore: the newest exact nse-data-<digits> cache of REF that was saved by a SUCCESSFUL run of the exact daily workflow
+                               "Update data and publish site" (update.yml) on the default branch. GitHub's cache list does not say which run created a cache, and the
+                               fundamentals batch workflow names its caches the same way, so the number alone proves nothing. The owner is corroborated: the run with
+                               that id must be a completed, successful run of the workflow whose id and path match update.yml, on the default branch, started by schedule
+                               or workflow_dispatch, and the cache must have been created during that run and be at most 7 days old. A cache whose run is positively a
+                               fundamentals-batch run is skipped; anything else that does not check out refuses the run. The list must be complete and a key may appear once.
   check-files DATA_DIR         Refuse unless the three saved-state files exist as ordinary, non-empty files.
   summarize REPORT_JSON DATA_DIR OUT_MD
                                Build the public job summary from the coverage report. The summary is built NEW from an explicit allowlist: every number and every
@@ -49,6 +54,9 @@ MAX_REPORT_BYTES = 64 * 1024 * 1024
 PROVENANCE_ENV = {                                                      # name -> pattern the value must fully match
     "CV_MATCHED_KEY": CACHE_KEY_RE.pattern, "CV_RESTORE_HIT": r"true", "CV_RUN_ID": r"[0-9]{1,20}", "CV_MAIN_SHA": r"[0-9a-f]{40}", "CV_DATA_BRANCH_SHA": r"[0-9a-f]{40}",
     "CV_AS_OF": r"[0-9]{4}-[0-9]{2}-[0-9]{2}", "CV_CREATED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_LAST_ACCESSED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_SIZE": r"[0-9]{1,15}",
+    "CV_VERSION": r"[0-9a-f]{64}", "CV_CACHE_REF": r"refs/heads/[A-Za-z0-9._/\-]{1,100}", "CV_SOURCE_RUN_ID": r"[0-9]{1,20}", "CV_SOURCE_RUN_EVENT": r"schedule|workflow_dispatch",
+    "CV_SOURCE_RUN_HEAD_SHA": r"[0-9a-f]{40}", "CV_SOURCE_RUN_ATTEMPT": r"[0-9]{1,3}", "CV_SOURCE_RUN_CREATED_AT": r"[0-9T:.+\-Z]{10,40}",
+    "CV_SOURCE_RUN_UPDATED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_SKIPPED_BATCH_CACHES": r"[0-9]{1,2}",
 }
 
 
@@ -60,20 +68,51 @@ class Refused(Exception):
 
 
 # ---------------------------------------------------------------- choosing the cache (metadata only)
+# GitHub's cache list records NO workflow, run, job or actor for a cache: only id, ref, key, version, last_accessed_at, created_at and size_in_bytes. So the owner of a
+# cache cannot be read from it. This repository names its caches nse-data-<github.run_id>, and both "Update data and publish site" (update.yml) and "Fundamentals
+# coverage batch" (fundamentals_batch.yml) do it, so the key alone cannot say which one made a cache. The owner is therefore CORROBORATED, never taken from the number
+# alone: the run with that id is fetched and must be a successful run of the exact daily workflow, on the default branch, whose lifetime contains the cache's creation.
+# A cache whose run is positively a fundamentals-batch run is skipped. Everything else that does not check out stops the run (fail closed).
+DAILY_WORKFLOW_PATH = ".github/workflows/update.yml"
+DAILY_WORKFLOW_NAME = "Update data and publish site"
+EXCLUDED_WORKFLOW_PATHS = (".github/workflows/fundamentals_batch.yml",)      # the one other workflow that saves nse-data-<run id>
+EXPECTED_EVENTS = ("schedule", "workflow_dispatch")
+MAX_CANDIDATES = 10                                                         # exact-key caches examined, newest first; more batch caches than this in a row stops the run
+MAX_CACHE_AGE = dt.timedelta(days=7)                                        # caches unused for 7 days are evicted; an older one is not today's saved state
+WINDOW_SLACK = dt.timedelta(minutes=5)
+REF_RE = re.compile(r"refs/heads/[A-Za-z0-9._/\-]{1,100}", re.ASCII)
+SHA_RE = re.compile(r"[0-9a-f]{40}", re.ASCII)
+VERSION_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
+
+
 def _when(text):
     if not isinstance(text, str):
-        raise Refused("cache_list_bad_date")
+        raise Refused("metadata_bad_date")
     try:
         t = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
-        raise Refused("cache_list_bad_date") from None
+        raise Refused("metadata_bad_date") from None
     if t.tzinfo is None:
-        raise Refused("cache_list_bad_date")
+        raise Refused("metadata_bad_date")
     return t
 
 
-def select_cache(text):
-    """The newest cache whose key is exactly nse-data-<digits>, from the (possibly paginated, concatenated) JSON the cache list API returned."""
+def _int(v):
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _object(text, code):
+    try:
+        doc = json.loads(text) if isinstance(text, str) else None
+    except (ValueError, RecursionError):
+        raise Refused(code) from None
+    if not isinstance(doc, dict):
+        raise Refused(code)
+    return doc
+
+
+def _entries(text):
+    """Every entry of the (possibly paginated, concatenated) cache list; refused unless the list is complete."""
     dec, i, pages = json.JSONDecoder(), 0, []
     text = text if isinstance(text, str) else ""
     while True:
@@ -83,7 +122,7 @@ def select_cache(text):
             break
         try:
             doc, i = dec.raw_decode(text, i)
-        except ValueError:
+        except (ValueError, RecursionError):
             raise Refused("cache_list_not_json") from None
         pages.append(doc)
     if not pages:
@@ -93,28 +132,97 @@ def select_cache(text):
         if not isinstance(p, dict) or not isinstance(p.get("actions_caches"), list):
             raise Refused("cache_list_unexpected_shape")
         t = p.get("total_count")
-        if isinstance(t, bool) or not isinstance(t, int) or t < 0:
+        if not _int(t) or t < 0:
             raise Refused("cache_list_unexpected_shape")
         totals.add(t)
         entries.extend(p["actions_caches"])
     if len(totals) != 1 or len(entries) != next(iter(totals)):
         raise Refused("cache_list_incomplete")
-    found = []
     for e in entries:
         if not isinstance(e, dict) or not isinstance(e.get("key"), str):
             raise Refused("cache_list_unexpected_shape")
-        if CACHE_KEY_RE.fullmatch(e["key"]):
-            size = e.get("size_in_bytes")
-            if isinstance(size, bool) or not isinstance(size, int) or size < 0:
-                raise Refused("cache_list_unexpected_shape")
-            created = _when(e.get("created_at"))
-            la = e.get("last_accessed_at") or e["created_at"]          # a cache never restored may carry no access time
-            _when(la)
-            found.append((created, int(e["key"][len("nse-data-"):]), e["key"], e["created_at"], la, size))
+    return entries
+
+
+def _exact_key_caches(text, ref):
+    """The caches of REF whose key is exactly nse-data-<digits>, newest first, each with checked metadata. A key listed twice on the ref is ambiguous and refused."""
+    if not isinstance(ref, str) or not REF_RE.fullmatch(ref):
+        raise Refused("ref_not_a_branch")
+    found, seen = [], set()
+    for e in _entries(text):
+        if not CACHE_KEY_RE.fullmatch(e["key"]) or e.get("ref") != ref:
+            continue                                                         # another prefix, or another branch's cache: never a candidate
+        if e["key"] in seen:
+            raise Refused("cache_key_listed_more_than_once")
+        seen.add(e["key"])
+        if not _int(e.get("size_in_bytes")) or e["size_in_bytes"] < 0 or not isinstance(e.get("version"), str) or not VERSION_RE.fullmatch(e["version"]):
+            raise Refused("cache_list_unexpected_shape")
+        created = _when(e.get("created_at"))
+        accessed = e.get("last_accessed_at") or e["created_at"]            # a cache never restored may carry no access time
+        _when(accessed)
+        found.append({"key": e["key"], "run_id": e["key"][len("nse-data-"):], "created": created, "created_at": e["created_at"], "last_accessed_at": accessed,
+                      "size_in_bytes": e["size_in_bytes"], "version": e["version"], "ref": ref})
+    found.sort(key=lambda c: (c["created"], int(c["run_id"])), reverse=True)
+    return found
+
+
+def candidate_run_ids(text, ref):
+    """The run ids (as in the keys) of the newest exact-key caches of REF, newest first. These are the runs whose metadata must be fetched."""
+    found = _exact_key_caches(text, ref)
     if not found:
-        raise Refused("no_cache_with_an_exact_nse_data_key")
-    _, _, key, created, accessed, size = max(found)
-    return {"key": key, "created_at": created, "last_accessed_at": accessed, "size_in_bytes": size}
+        raise Refused("no_cache_with_an_exact_nse_data_key_on_the_ref")
+    return [c["run_id"] for c in found[:MAX_CANDIDATES]]
+
+
+def select_daily_cache(cache_text, workflow_text, run_texts, ref, now):
+    """The newest cache that was saved by a successful run of the exact daily workflow on REF, or Refused.
+    run_texts: {run id: JSON text of that run, or None when it could not be fetched}."""
+    now = _when(now)
+    wf = _object(workflow_text, "workflow_metadata_unreadable")
+    if not _int(wf.get("id")) or wf.get("path") != DAILY_WORKFLOW_PATH or wf.get("name") != DAILY_WORKFLOW_NAME or wf.get("state") != "active":
+        raise Refused("daily_workflow_identity_not_confirmed")
+    branch = ref[len("refs/heads/"):] if isinstance(ref, str) and REF_RE.fullmatch(ref) else None
+    candidates = _exact_key_caches(cache_text, ref)[:MAX_CANDIDATES]
+    if not candidates:
+        raise Refused("no_cache_with_an_exact_nse_data_key_on_the_ref")
+    skipped = 0
+    for c in candidates:
+        text = run_texts.get(c["run_id"])
+        if text is None:
+            raise Refused("run_metadata_missing")
+        run = _object(text, "run_metadata_unexpected_shape")
+        path, wid, rid = run.get("path"), run.get("workflow_id"), run.get("id")
+        if not isinstance(path, str) or not _int(wid) or not _int(rid):
+            raise Refused("run_metadata_unexpected_shape")
+        if rid != int(c["run_id"]):
+            raise Refused("run_metadata_id_mismatch")
+        base = path.split("@", 1)[0]
+        if base in EXCLUDED_WORKFLOW_PATHS:
+            skipped += 1                                                     # positively another workflow's cache: not the daily state
+            continue
+        if base != DAILY_WORKFLOW_PATH:
+            raise Refused("run_from_an_unexpected_workflow")
+        if wid != wf["id"]:
+            raise Refused("run_workflow_identity_inconsistent")
+        if run.get("status") != "completed" or run.get("conclusion") != "success":
+            raise Refused("run_not_successful")
+        if run.get("head_branch") != branch:
+            raise Refused("run_on_another_branch")
+        if run.get("event") not in EXPECTED_EVENTS:
+            raise Refused("run_event_not_expected")
+        if not isinstance(run.get("head_sha"), str) or not SHA_RE.fullmatch(run["head_sha"]) or not _int(run.get("run_attempt")) or run["run_attempt"] < 1:
+            raise Refused("run_metadata_unexpected_shape")
+        r_created, r_updated = _when(run.get("created_at")), _when(run.get("updated_at"))
+        if not (r_created <= c["created"] <= r_updated + WINDOW_SLACK):
+            raise Refused("cache_created_outside_the_run")
+        if c["created"] > now + WINDOW_SLACK:
+            raise Refused("cache_from_the_future")
+        if now - c["created"] > MAX_CACHE_AGE:
+            raise Refused("cache_too_old")
+        return {"key": c["key"], "created_at": c["created_at"], "last_accessed_at": c["last_accessed_at"], "size_in_bytes": c["size_in_bytes"], "version": c["version"],
+                "ref": c["ref"], "run_id": c["run_id"], "run_event": run["event"], "run_head_sha": run["head_sha"], "run_attempt": run["run_attempt"],
+                "run_created_at": run["created_at"], "run_updated_at": run["updated_at"], "skipped_batch_caches": skipped}
+    raise Refused("no_daily_cache_among_the_newest_candidates")
 
 
 # ---------------------------------------------------------------- the restored files
@@ -277,9 +385,14 @@ def render(summary, prov, hashes):
          "**This is cache coverage, not publication status.** It counts what the saved updater caches hold. A cached record is not proof that anything reached the website, "
          "and a stock the cache lacks may still be published from another source. Counts only: no record, value, name, identifier, sector or symbol appears here.", "",
          "Reference date %s. Raw cache files stayed on the runner and were not uploaded." % summary["generated_for"], "", "## Provenance", "",
-         "- cache key: `%s` (restored by exact key, no prefix match, nothing saved)" % prov["CV_MATCHED_KEY"],
+         "- cache key: `%s` (restored by exact key, no prefix match, nothing saved); branch `%s`; cache version `%s`" % (prov["CV_MATCHED_KEY"], prov["CV_CACHE_REF"], prov["CV_VERSION"]),
          "- cache created %s, last accessed %s before this restore, %s bytes" % (prov["CV_CREATED_AT"], prov["CV_LAST_ACCESSED_AT"], prov["CV_SIZE"]),
-         "- run %s, repository commit `%s`, data branch commit `%s`" % (prov["CV_RUN_ID"], prov["CV_MAIN_SHA"], prov["CV_DATA_BRANCH_SHA"]), "",
+         "- **origin (corroborated, not proven by GitHub):** the key's run %s is a successful run (attempt %s, event `%s`, commit `%s`, %s to %s) of the workflow `%s` on the default "
+         "branch, and the cache was created during that run. GitHub's cache list does not record which run created a cache; this link rests on the run id in the key checked "
+         "against that run. %s newer cache(s) with an exact key belonged to `fundamentals_batch.yml` runs and were skipped."
+         % (prov["CV_SOURCE_RUN_ID"], prov["CV_SOURCE_RUN_ATTEMPT"], prov["CV_SOURCE_RUN_EVENT"], prov["CV_SOURCE_RUN_HEAD_SHA"], prov["CV_SOURCE_RUN_CREATED_AT"],
+            prov["CV_SOURCE_RUN_UPDATED_AT"], DAILY_WORKFLOW_NAME, prov["CV_SKIPPED_BATCH_CACHES"]),
+         "- this validation: run %s, repository commit `%s`, data branch commit `%s`" % (prov["CV_RUN_ID"], prov["CV_MAIN_SHA"], prov["CV_DATA_BRANCH_SHA"]), "",
          "| State file | Usable | Entries | Problem | Bytes | SHA-256 |", "|---|---|---|---|---|---|"]
     for name in STATE_FILES:
         f, h = summary["state_files"][name], hashes[name]
@@ -322,9 +435,21 @@ def main(argv, env=None):
     env = os.environ if env is None else env
     try:
         cmd = argv[1] if len(argv) > 1 else ""
-        if cmd == "select" and len(argv) == 3:
-            c = select_cache(Path(argv[2]).read_text(encoding="utf-8"))
-            lines = ["key=" + c["key"], "created_at=" + c["created_at"], "last_accessed_at=" + c["last_accessed_at"], "size=%d" % c["size_in_bytes"]]
+        if cmd == "candidates" and len(argv) == 5:
+            ids = candidate_run_ids(Path(argv[2]).read_text(encoding="utf-8"), argv[3])
+            Path(argv[4]).write_text("\n".join(ids) + "\n", encoding="utf-8")
+            print("cache_validation: %d candidate run(s)" % len(ids))
+            return 0
+        if cmd == "select" and len(argv) == 7:
+            cache_text = Path(argv[2]).read_text(encoding="utf-8")
+            runs = {}
+            for rid in candidate_run_ids(cache_text, argv[5]):
+                f = Path(argv[4]) / (rid + ".json")
+                runs[rid] = f.read_text(encoding="utf-8") if f.is_file() and not f.is_symlink() else None
+            c = select_daily_cache(cache_text, Path(argv[3]).read_text(encoding="utf-8"), runs, argv[5], argv[6])
+            names = ("key", "created_at", "last_accessed_at", "size_in_bytes", "version", "ref", "run_id", "run_event", "run_head_sha", "run_attempt", "run_created_at",
+                     "run_updated_at", "skipped_batch_caches")
+            lines = ["%s=%s" % (n, c[n]) for n in names]
             target = env.get("GITHUB_OUTPUT")
             if target:
                 with open(target, "a", encoding="utf-8") as fh:
@@ -344,7 +469,7 @@ def main(argv, env=None):
                 fh.write(text)
             print("cache_validation: summary written")
             return 0
-        print("cache_validation: usage: select LIST | check-files DIR | summarize REPORT DIR OUT")
+        print("cache_validation: usage: candidates LIST REF OUT | select LIST WORKFLOW RUNS_DIR REF NOW | check-files DIR | summarize REPORT DIR OUT")
         return 2
     except Refused as e:
         print("cache_validation: refused (%s)" % e.code)

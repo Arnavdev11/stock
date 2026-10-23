@@ -28,65 +28,228 @@ AS_OF = "2026-10-23"
 HOSTILE = ("HOSTILE COMPANY NAME", "HOSTILE SECTOR LABEL", "HOSTILE ERROR TEXT", "INE999999990", "OUTSIDEXYZ")
 
 
+REF = "refs/heads/main"
+NOW = "2026-10-23T12:00:00Z"
+DAILY_WF_ID, BATCH_WF_ID = 111, 222
+BATCH_PATH = ".github/workflows/fundamentals_batch.yml"
+
+
 def page(caches, total=None):
     return json.dumps({"total_count": len(caches) if total is None else total, "actions_caches": caches})
 
 
-def cache(key, created="2026-10-20T10:00:00Z", accessed="2026-10-22T10:00:00Z", size=1000):
-    return {"id": 1, "ref": "refs/heads/main", "key": key, "version": "v", "last_accessed_at": accessed, "created_at": created, "size_in_bytes": size}
+def cache(key, created="2026-10-20T10:00:00Z", accessed="2026-10-22T10:00:00Z", size=1000, ref=REF, version="a" * 64):
+    return {"id": 1, "ref": ref, "key": key, "version": version, "last_accessed_at": accessed, "created_at": created, "size_in_bytes": size}
 
 
-class SelectCache(unittest.TestCase):
-    def test_the_newest_exact_key_is_chosen(self):
-        c = V.select_cache(page([cache("nse-data-100", "2026-10-18T00:00:00Z"), cache("nse-data-200", "2026-10-21T00:00:00Z"), cache("nse-data-150", "2026-10-19T00:00:00Z")]))
-        self.assertEqual((c["key"], c["size_in_bytes"]), ("nse-data-200", 1000))
+def workflow(**kw):
+    return dict({"id": DAILY_WF_ID, "name": V.DAILY_WORKFLOW_NAME, "path": V.DAILY_WORKFLOW_PATH, "state": "active"}, **kw)
 
-    def test_other_workflows_caches_never_match_even_when_newer(self):
+
+def daily_run(run_id, **kw):
+    return dict({"id": int(run_id), "workflow_id": DAILY_WF_ID, "path": V.DAILY_WORKFLOW_PATH, "head_branch": "main", "head_sha": "c" * 40, "event": "schedule", "status": "completed",
+                 "conclusion": "success", "run_attempt": 1, "created_at": "2026-10-20T09:50:00Z", "updated_at": "2026-10-20T10:20:00Z"}, **kw)
+
+
+def batch_run(run_id, **kw):
+    return daily_run(run_id, **dict({"workflow_id": BATCH_WF_ID, "path": BATCH_PATH, "event": "workflow_dispatch"}, **kw))
+
+
+def select(caches, runs, wf=None, ref=REF, now=NOW, total=None):
+    """runs: {run id: dict | str | None}. A dict is serialised; None means the run could not be fetched."""
+    texts = {str(k): (None if v is None else v if isinstance(v, str) else json.dumps(v)) for k, v in runs.items()}
+    wtext = json.dumps(workflow() if wf is None else wf) if not isinstance(wf, str) else wf
+    return V.select_daily_cache(page(caches, total), wtext, texts, ref, now)
+
+
+class ExactKeyMatching(unittest.TestCase):
+    def test_only_exact_nse_data_digit_keys_of_the_ref_are_candidates_newest_first(self):
         keys = ["nse-data-shp-300", "nse-data-sector-301", "nse-data-", "nse-data-12x", "nse-data-1-2", "side-historical-5", "sector-private-9", "NSE-DATA-77",
-                "nse-data-1\n", " nse-data-1", "nse-data-1 ", "xnse-data-1", "nse-data-١٢", "nse-data-" + "9" * 21]
-        caches = [cache(k, "2026-10-22T00:00:00Z") for k in keys] + [cache("nse-data-5", "2026-10-01T00:00:00Z")]
-        self.assertEqual(V.select_cache(page(caches))["key"], "nse-data-5")
+                "nse-data-1\n", " nse-data-1", "nse-data-1 ", "xnse-data-1", "nse-data-\u0661\u0662", "nse-data-" + "9" * 21]
+        caches = [cache(k, "2026-10-22T00:00:00Z") for k in keys] + [cache("nse-data-5", "2026-10-01T00:00:00Z"), cache("nse-data-6", "2026-10-02T00:00:00Z"),
+                                                                     cache("nse-data-7", "2026-10-03T00:00:00Z", ref="refs/heads/other")]
+        self.assertEqual(V.candidate_run_ids(page(caches), REF), ["6", "5"])
 
-    def test_no_matching_cache_fails_closed(self):
-        for caches in ([], [cache("nse-data-shp-1")], [cache("side-market-2")]):
+    def test_a_tie_in_time_takes_the_higher_run_id_first(self):
+        self.assertEqual(V.candidate_run_ids(page([cache("nse-data-9"), cache("nse-data-10")]), REF), ["10", "9"])
+
+    def test_no_candidate_fails_closed(self):
+        for caches in ([], [cache("nse-data-shp-1")], [cache("side-market-2")], [cache("nse-data-3", ref="refs/heads/feature")], [cache("nse-data-4", ref="refs/pull/1/merge")]):
             with self.assertRaises(V.Refused) as cm:
-                V.select_cache(page(caches))
-            self.assertIn(cm.exception.code, ("no_cache_with_an_exact_nse_data_key",))
+                V.candidate_run_ids(page(caches), REF)
+            self.assertEqual(cm.exception.code, "no_cache_with_an_exact_nse_data_key_on_the_ref")
 
-    def test_a_tie_in_time_takes_the_higher_run_id(self):
-        c = V.select_cache(page([cache("nse-data-9"), cache("nse-data-10")]))
-        self.assertEqual(c["key"], "nse-data-10")
+    def test_the_walk_is_limited(self):
+        ids = V.candidate_run_ids(page([cache("nse-data-%d" % i, "2026-10-%02dT00:00:00Z" % (1 + i)) for i in range(15)]), REF)
+        self.assertEqual(len(ids), V.MAX_CANDIDATES)
+        self.assertEqual(ids[0], "14")
 
     def test_pages_are_joined_and_the_list_must_be_complete(self):
         both = page([cache("nse-data-1")], total=2) + "\n" + page([cache("nse-data-2", "2026-10-21T00:00:00Z")], total=2)
-        self.assertEqual(V.select_cache(both)["key"], "nse-data-2")
-        for bad in (page([cache("nse-data-1")], total=3), page([cache("nse-data-1")], total=0),
-                    page([cache("nse-data-1")], total=2) + page([cache("nse-data-2")], total=3)):
+        self.assertEqual(V.candidate_run_ids(both, REF), ["2", "1"])
+        for bad in (page([cache("nse-data-1")], total=3), page([cache("nse-data-1")], total=0), page([cache("nse-data-1")], total=2) + page([cache("nse-data-2")], total=3)):
             with self.assertRaises(V.Refused) as cm:
-                V.select_cache(bad)
+                V.candidate_run_ids(bad, REF)
             self.assertEqual(cm.exception.code, "cache_list_incomplete")
 
     def test_unusable_lists_are_refused(self):
         cases = {"": "cache_list_empty_response", "   \n": "cache_list_empty_response", "not json": "cache_list_not_json", "[]": "cache_list_unexpected_shape",
                  '{"total_count": 1}': "cache_list_unexpected_shape", '{"total_count": "1", "actions_caches": []}': "cache_list_unexpected_shape",
-                 '{"total_count": true, "actions_caches": []}': "cache_list_unexpected_shape",
+                 '{"total_count": true, "actions_caches": []}': "cache_list_unexpected_shape", "[" * 100000: "cache_list_not_json",
                  page(["nse-data-1"]): "cache_list_unexpected_shape", page([{"id": 1}]): "cache_list_unexpected_shape"}
         for text, code in cases.items():
             with self.subTest(text=text[:30]):
                 with self.assertRaises(V.Refused) as cm:
-                    V.select_cache(text)
+                    V.candidate_run_ids(text, REF)
                 self.assertEqual(cm.exception.code, code)
 
-    def test_a_matching_cache_with_bad_metadata_is_refused_not_skipped(self):
-        for bad in (cache("nse-data-1", created="yesterday"), cache("nse-data-1", created="2026-10-20T10:00:00"), cache("nse-data-1", size=-1),
-                    dict(cache("nse-data-1"), size_in_bytes="9"), dict(cache("nse-data-1"), size_in_bytes=True), dict(cache("nse-data-1"), created_at=None)):
+    def test_a_candidate_with_bad_metadata_is_refused_not_skipped(self):
+        for bad in (cache("nse-data-1", created="yesterday"), cache("nse-data-1", created="2026-10-20T10:00:00"), cache("nse-data-1", size=-1), cache("nse-data-1", version="short"),
+                    dict(cache("nse-data-1"), version=None), dict(cache("nse-data-1"), size_in_bytes="9"), dict(cache("nse-data-1"), size_in_bytes=True),
+                    dict(cache("nse-data-1"), created_at=None)):
             with self.subTest(bad=str(bad)[:60]):
                 with self.assertRaises(V.Refused):
-                    V.select_cache(page([bad]))
+                    V.candidate_run_ids(page([bad]), REF)
 
     def test_a_missing_access_time_falls_back_to_the_creation_time(self):
-        c = V.select_cache(page([dict(cache("nse-data-1"), last_accessed_at=None)]))
+        c = select([dict(cache("nse-data-1"), last_accessed_at=None)], {1: daily_run(1)})
         self.assertEqual(c["last_accessed_at"], c["created_at"])
+
+    def test_the_same_key_twice_on_the_ref_is_ambiguous(self):
+        with self.assertRaises(V.Refused) as cm:
+            select([cache("nse-data-1"), cache("nse-data-1", version="b" * 64)], {1: daily_run(1)})
+        self.assertEqual(cm.exception.code, "cache_key_listed_more_than_once")
+        select([cache("nse-data-1"), cache("nse-data-1", ref="refs/heads/other", version="b" * 64)], {1: daily_run(1)})     # another branch's copy is not this ref's
+
+    def test_the_ref_must_be_a_branch(self):
+        for ref in ("refs/pull/1/merge", "main", "refs/heads/", "refs/heads/a b", "refs/tags/v1"):
+            with self.subTest(ref=ref):
+                with self.assertRaises(V.Refused) as cm:
+                    V.candidate_run_ids(page([cache("nse-data-1")]), ref)
+                self.assertEqual(cm.exception.code, "ref_not_a_branch")
+
+
+class DailyWorkflowIdentification(unittest.TestCase):
+    def test_a_cache_of_a_successful_daily_run_is_selected_with_its_origin(self):
+        c = select([cache("nse-data-200")], {200: daily_run(200, event="workflow_dispatch")})
+        self.assertEqual((c["key"], c["run_id"], c["run_event"], c["run_head_sha"], c["ref"], c["version"], c["skipped_batch_caches"]),
+                         ("nse-data-200", "200", "workflow_dispatch", "c" * 40, REF, "a" * 64, 0))
+        self.assertEqual(c["size_in_bytes"], 1000)
+
+    def test_a_newer_fundamentals_batch_cache_is_excluded_and_counted(self):
+        caches = [cache("nse-data-300", "2026-10-22T10:00:00Z"), cache("nse-data-301", "2026-10-22T12:00:00Z"), cache("nse-data-200", "2026-10-20T10:00:00Z")]
+        runs = {300: batch_run(300, created_at="2026-10-22T09:50:00Z", updated_at="2026-10-22T10:20:00Z"),
+                301: batch_run(301, created_at="2026-10-22T11:50:00Z", updated_at="2026-10-22T12:20:00Z"), 200: daily_run(200)}
+        c = select(caches, runs)
+        self.assertEqual((c["key"], c["skipped_batch_caches"]), ("nse-data-200", 2))
+
+    def test_the_batch_workflow_path_with_a_ref_suffix_is_still_the_batch(self):
+        c = select([cache("nse-data-300", "2026-10-22T10:00:00Z"), cache("nse-data-200")], {300: batch_run(300, path=BATCH_PATH + "@refs/heads/main"), 200: daily_run(200)})
+        self.assertEqual(c["key"], "nse-data-200")
+
+    def test_only_batch_caches_means_no_daily_cache(self):
+        with self.assertRaises(V.Refused) as cm:
+            select([cache("nse-data-300"), cache("nse-data-301", "2026-10-21T00:00:00Z")], {300: batch_run(300), 301: batch_run(301)})
+        self.assertEqual(cm.exception.code, "no_daily_cache_among_the_newest_candidates")
+
+    def test_a_daily_cache_beyond_the_walk_limit_is_not_reached(self):
+        caches = [cache("nse-data-%d" % (500 + i), "2026-10-22T%02d:00:00Z" % i) for i in range(V.MAX_CANDIDATES)] + [cache("nse-data-200", "2026-10-20T10:00:00Z")]
+        runs = {500 + i: batch_run(500 + i, created_at="2026-10-22T00:00:00Z", updated_at="2026-10-22T23:59:00Z") for i in range(V.MAX_CANDIDATES)}
+        runs[200] = daily_run(200)
+        with self.assertRaises(V.Refused) as cm:
+            select(caches, runs)
+        self.assertEqual(cm.exception.code, "no_daily_cache_among_the_newest_candidates")
+
+    def refuses(self, code, caches, runs, **kw):
+        with self.assertRaises(V.Refused) as cm:
+            select(caches, runs, **kw)
+        self.assertEqual(cm.exception.code, code)
+
+    def test_missing_run_metadata_stops_the_run_it_does_not_skip_to_an_older_cache(self):
+        caches = [cache("nse-data-300", "2026-10-22T10:00:00Z"), cache("nse-data-200")]
+        self.refuses("run_metadata_missing", caches, {300: None, 200: daily_run(200)})
+        self.refuses("run_metadata_missing", caches, {200: daily_run(200)})
+
+    def test_ambiguous_or_inconsistent_metadata_stops_the_run(self):
+        c = [cache("nse-data-200")]
+        self.refuses("run_metadata_id_mismatch", c, {200: daily_run(201)})
+        self.refuses("run_workflow_identity_inconsistent", c, {200: daily_run(200, workflow_id=999)})
+        self.refuses("run_workflow_identity_inconsistent", c, {200: daily_run(200)}, wf=workflow(id=999))
+        self.refuses("run_from_an_unexpected_workflow", c, {200: daily_run(200, path=".github/workflows/shareholding.yml")})
+        self.refuses("run_from_an_unexpected_workflow", c, {200: daily_run(200, path="update.yml")})
+        self.refuses("run_from_an_unexpected_workflow", c, {200: daily_run(200, path=".github/workflows/update.yml.bak")})
+
+    def test_the_daily_workflow_itself_must_be_confirmed(self):
+        c, r = [cache("nse-data-200")], {200: daily_run(200)}
+        for bad in (workflow(name="Update shareholding pattern ledger"), workflow(path=".github/workflows/other.yml"), workflow(state="disabled_manually"), workflow(id="111"),
+                    workflow(id=True), {"id": 111}):
+            with self.subTest(bad=str(bad)[:50]):
+                self.refuses("daily_workflow_identity_not_confirmed", c, r, wf=bad)
+        for bad in ("not json", "[]", "null", "", "[" * 100000):
+            with self.subTest(bad=bad[:10]):
+                self.refuses("workflow_metadata_unreadable", c, r, wf=bad)
+
+    def test_wrong_branch(self):
+        self.refuses("run_on_another_branch", [cache("nse-data-200")], {200: daily_run(200, head_branch="feature")})
+        self.refuses("run_on_another_branch", [cache("nse-data-200")], {200: daily_run(200, head_branch=None)})
+        self.refuses("no_cache_with_an_exact_nse_data_key_on_the_ref", [cache("nse-data-200", ref="refs/heads/feature")], {200: daily_run(200, head_branch="feature")})
+        self.refuses("no_cache_with_an_exact_nse_data_key_on_the_ref", [cache("nse-data-200", ref="refs/pull/3/merge")], {200: daily_run(200)})
+
+    def test_an_unsuccessful_run_is_refused_not_skipped(self):
+        for status, conclusion in (("completed", "failure"), ("completed", "cancelled"), ("completed", "skipped"), ("completed", None), ("in_progress", None), ("queued", "success"),
+                                   ("in_progress", "success")):
+            with self.subTest(status=status, conclusion=conclusion):
+                caches = [cache("nse-data-300", "2026-10-22T10:00:00Z"), cache("nse-data-200")]
+                self.refuses("run_not_successful", caches, {300: daily_run(300, status=status, conclusion=conclusion, created_at="2026-10-22T09:50:00Z", updated_at="2026-10-22T10:20:00Z"),
+                                                            200: daily_run(200)})
+
+    def test_only_scheduled_or_manual_daily_runs_count(self):
+        for ev in ("push", "pull_request", "workflow_run", None):
+            self.refuses("run_event_not_expected", [cache("nse-data-200")], {200: daily_run(200, event=ev)})
+
+    def test_a_stale_future_or_foreign_timed_cache(self):
+        run = {200: daily_run(200)}
+        self.refuses("cache_too_old", [cache("nse-data-200")], run, now="2026-10-27T10:00:01Z")
+        select([cache("nse-data-200")], run, now="2026-10-27T10:00:00Z")                         # exactly 7 days is still fresh
+        self.refuses("cache_from_the_future", [cache("nse-data-200")], run, now="2026-10-20T09:00:00Z")
+        self.refuses("cache_created_outside_the_run", [cache("nse-data-200", "2026-10-20T09:40:00Z")], run)
+        self.refuses("cache_created_outside_the_run", [cache("nse-data-200", "2026-10-20T10:26:00Z")], run)
+        select([cache("nse-data-200", "2026-10-20T10:24:00Z")], run)                             # within the 5 minute slack after the run's last update
+
+    def test_unexpected_run_shapes_fail_closed(self):
+        c = [cache("nse-data-200")]
+        shape = "run_metadata_unexpected_shape"
+        for bad in (dict(daily_run(200), path=None), dict(daily_run(200), workflow_id="111"), dict(daily_run(200), workflow_id=True), dict(daily_run(200), id="200"),
+                    dict(daily_run(200), head_sha="abc"), dict(daily_run(200), head_sha=None), dict(daily_run(200), run_attempt=0), dict(daily_run(200), run_attempt=True),
+                    "not json", "[]", "[" * 100000):
+            with self.subTest(bad=str(bad)[:50]):
+                self.refuses(shape, c, {200: bad})
+        for bad in (dict(daily_run(200), created_at="soon"), dict(daily_run(200), updated_at=None), dict(daily_run(200), created_at="2026-10-20T09:50:00")):
+            with self.subTest(bad=str(bad)[:50]):
+                self.refuses("metadata_bad_date", c, {200: bad})
+        with self.assertRaises(V.Refused):
+            select(c, {200: daily_run(200)}, now="yesterday")
+
+    def test_the_numeric_key_alone_is_never_enough(self):
+        # a key that looks right but whose run is not a daily run, or whose run does not contain the cache, is not accepted
+        self.refuses("run_metadata_missing", [cache("nse-data-200")], {})
+        self.refuses("cache_created_outside_the_run", [cache("nse-data-200", "2026-10-01T00:00:00Z")], {200: daily_run(200)}, now="2026-10-02T00:00:00Z")
+
+    def test_the_repository_facts_the_rule_rests_on_still_hold(self):
+        docs = {p.name: yaml.safe_load(p.read_text(encoding="utf-8")) for p in (HERE / ".github" / "workflows").glob("*.yml")}
+        self.assertEqual(docs["update.yml"]["name"], V.DAILY_WORKFLOW_NAME)
+        self.assertTrue((HERE / V.DAILY_WORKFLOW_PATH).is_file())
+        for path in V.EXCLUDED_WORKFLOW_PATHS:
+            self.assertTrue((HERE / path).is_file())
+        saving = set()
+        for name, doc in docs.items():
+            for _, kind, key, _, _, _ in ISO.caches(doc):
+                if kind in ("both", "save") and V.CACHE_KEY_RE.fullmatch(key.replace("${{ github.run_id }}", "123")):
+                    saving.add(name)
+        # exactly the daily workflow and the batch name their caches nse-data-<run id>: that is the ambiguity this selection resolves. A third one must be handled here.
+        self.assertEqual(saving, {"update.yml", "fundamentals_batch.yml"})
+        self.assertEqual({"/".join(("", ".github/workflows", n)).lstrip("/") for n in ("update.yml",)} | set(V.EXCLUDED_WORKFLOW_PATHS),
+                         {V.DAILY_WORKFLOW_PATH, ".github/workflows/fundamentals_batch.yml"})
 
 
 class StateFiles(unittest.TestCase):
@@ -168,7 +331,7 @@ class RealReportCase(unittest.TestCase):
 
     def prov(self, **kw):
         p = {"CV_MATCHED_KEY": "nse-data-123", "CV_RESTORE_HIT": "true", "CV_RUN_ID": "456", "CV_MAIN_SHA": "a" * 40, "CV_DATA_BRANCH_SHA": "b" * 40, "CV_AS_OF": AS_OF,
-             "CV_CREATED_AT": "2026-10-20T10:00:00Z", "CV_LAST_ACCESSED_AT": "2026-10-22T10:00:00Z", "CV_SIZE": "1234"}
+             "CV_CREATED_AT": "2026-10-20T10:00:00Z", "CV_LAST_ACCESSED_AT": "2026-10-22T10:00:00Z", "CV_SIZE": "1234", **Provenance.SOURCE}
         p.update(kw)
         return p
 
@@ -343,13 +506,16 @@ class SchemaFailsClosed(RealReportCase):
 
 
 class Provenance(unittest.TestCase):
+    SOURCE = {"CV_VERSION": "d" * 64, "CV_CACHE_REF": REF, "CV_SOURCE_RUN_ID": "123", "CV_SOURCE_RUN_EVENT": "schedule", "CV_SOURCE_RUN_HEAD_SHA": "e" * 40, "CV_SOURCE_RUN_ATTEMPT": "1",
+              "CV_SOURCE_RUN_CREATED_AT": "2026-10-20T09:50:00Z", "CV_SOURCE_RUN_UPDATED_AT": "2026-10-20T10:20:00Z", "CV_SKIPPED_BATCH_CACHES": "2"}
     OK = {"CV_MATCHED_KEY": "nse-data-123", "CV_RESTORE_HIT": "true", "CV_RUN_ID": "456", "CV_MAIN_SHA": "a" * 40, "CV_DATA_BRANCH_SHA": "b" * 40, "CV_AS_OF": AS_OF,
-          "CV_CREATED_AT": "2026-10-20T10:00:00Z", "CV_LAST_ACCESSED_AT": "2026-10-22T10:00:00.123Z", "CV_SIZE": "1234"}
+          "CV_CREATED_AT": "2026-10-20T10:00:00Z", "CV_LAST_ACCESSED_AT": "2026-10-22T10:00:00.123Z", "CV_SIZE": "1234", **SOURCE}
 
     def test_a_good_set_passes_and_any_odd_value_is_refused(self):
         self.assertEqual(V.provenance_from_env(self.OK), self.OK)
         for name, bad in (("CV_MATCHED_KEY", "nse-data-shp-1"), ("CV_MATCHED_KEY", "nse-data-1\n"), ("CV_RESTORE_HIT", "false"), ("CV_RUN_ID", "12 34"), ("CV_MAIN_SHA", "A" * 40),
-                          ("CV_DATA_BRANCH_SHA", "b" * 39), ("CV_AS_OF", "yesterday"), ("CV_CREATED_AT", "<script>"), ("CV_SIZE", "12.5"), ("CV_SIZE", "")):
+                          ("CV_DATA_BRANCH_SHA", "b" * 39), ("CV_AS_OF", "yesterday"), ("CV_CREATED_AT", "<script>"), ("CV_SIZE", "12.5"), ("CV_SIZE", ""), ("CV_SOURCE_RUN_EVENT", "push"), ("CV_SOURCE_RUN_HEAD_SHA", "zz"), ("CV_VERSION", "d" * 63),
+                          ("CV_CACHE_REF", "refs/pull/1/merge"), ("CV_SKIPPED_BATCH_CACHES", "-1"), ("CV_SOURCE_RUN_ATTEMPT", "x")):
             with self.subTest(name=name, bad=bad):
                 with self.assertRaises(V.Refused):
                     V.provenance_from_env(dict(self.OK, **{name: bad}))
@@ -396,25 +562,51 @@ class CommandLine(RealReportCase):
         self.assertEqual((rc, out.strip()), (1, "cache_validation: refused (report_date_mismatch)"))
         self.assertFalse((self.root / "s2.md").exists())
 
+    def files(self, caches, runs=None, wf=None):
+        d = self.root / "cli"
+        (d / "runs").mkdir(parents=True, exist_ok=True)
+        (d / "caches.json").write_text(page(caches), encoding="utf-8")
+        (d / "workflow.json").write_text(json.dumps(workflow() if wf is None else wf), encoding="utf-8")
+        for rid, run in (runs or {}).items():
+            (d / "runs" / ("%s.json" % rid)).write_text(json.dumps(run), encoding="utf-8")
+        return d
+
+    def test_candidates_then_select_end_to_end(self):
+        d = self.files([cache("nse-data-300", "2026-10-22T10:00:00Z"), cache("nse-data-200")],
+                       {300: batch_run(300, created_at="2026-10-22T09:50:00Z", updated_at="2026-10-22T10:20:00Z"), 200: daily_run(200)})
+        rc, out = self.run_cli(["candidates", str(d / "caches.json"), REF, str(d / "ids.txt")])
+        self.assertEqual((rc, (d / "ids.txt").read_text()), (0, "300\n200\n"))
+        args = ["select", str(d / "caches.json"), str(d / "workflow.json"), str(d / "runs"), REF, NOW]
+        rc, out = self.run_cli(args)
+        self.assertEqual(rc, 0)
+        self.assertIn("key=nse-data-200", out.split("\n"))
+        self.assertIn("skipped_batch_caches=1", out.split("\n"))
+        go = self.root / "gh_output"
+        rc, out = self.run_cli(args, {"GITHUB_OUTPUT": str(go)})
+        self.assertEqual((rc, out), (0, ""))
+        lines = go.read_text().split("\n")
+        self.assertEqual(lines[0], "key=nse-data-200")
+        self.assertTrue(all(re.fullmatch(r"[a-z_]+=[0-9A-Za-z:.+/\- ]*", l) for l in lines if l), lines)
+
+    def test_a_run_file_that_is_missing_is_a_fixed_refusal(self):
+        d = self.files([cache("nse-data-200")])
+        rc, out = self.run_cli(["select", str(d / "caches.json"), str(d / "workflow.json"), str(d / "runs"), REF, NOW])
+        self.assertEqual((rc, out.strip()), (1, "cache_validation: refused (run_metadata_missing)"))
+
     def test_garbage_input_prints_no_input_text(self):
         junk = self.root / "junk.json"
         junk.write_text("SECRET-LOOKING TEXT " + HOSTILE[0], encoding="utf-8")
-        for argv in (["select", str(junk)], ["summarize", str(junk), str(self.root), str(self.root / "o.md")], ["select", str(self.root / "missing.json")]):
+        d = self.files([cache("nse-data-200")], {200: daily_run(200)})
+        (d / "runs" / "200.json").write_text("SECRET-LOOKING TEXT " + HOSTILE[0], encoding="utf-8")
+        for argv in (["candidates", str(junk), REF, str(self.root / "o.txt")], ["select", str(junk), str(d / "workflow.json"), str(d / "runs"), REF, NOW],
+                     ["select", str(d / "caches.json"), str(junk), str(d / "runs"), REF, NOW], ["select", str(d / "caches.json"), str(d / "workflow.json"), str(d / "runs"), REF, NOW],
+                     ["select", str(d / "caches.json"), str(d / "workflow.json"), str(d / "runs"), REF, HOSTILE[0]],
+                     ["summarize", str(junk), str(self.root), str(self.root / "o.md")], ["select", str(self.root / "missing.json"), str(junk), str(d / "runs"), REF, NOW]):
             rc, out = self.run_cli(argv, self.prov())
-            self.assertEqual(rc, 1)
+            self.assertEqual(rc, 1, argv)
             self.assertRegex(out.strip(), r"^cache_validation: refused \([a-z_]+\)$")
             self.assertNotIn("SECRET", out)
             self.assertNotIn(HOSTILE[0], out)
-
-    def test_select_writes_the_github_output_lines(self):
-        lst = self.root / "list.json"
-        lst.write_text(page([cache("nse-data-77", size=5)]), encoding="utf-8")
-        go = self.root / "gh_output"
-        rc, _ = self.run_cli(["select", str(lst)], {"GITHUB_OUTPUT": str(go)})
-        self.assertEqual(rc, 0)
-        self.assertEqual(go.read_text().split("\n")[0], "key=nse-data-77")
-        rc, out = self.run_cli(["select", str(lst)])
-        self.assertIn("key=nse-data-77", out)
 
     def test_usage_error(self):
         self.assertEqual(self.run_cli([])[0], 2)
@@ -468,6 +660,7 @@ class WorkflowControls(unittest.TestCase):
 
     def test_the_selection_pattern_is_the_exact_one(self):
         self.assertEqual(V.CACHE_KEY_RE.pattern.replace("{1,20}", "+"), "nse-data-[0-9]+")
+        self.assertIn("python cache_validation.py candidates", self.code)
         self.assertIn("python cache_validation.py select", self.code)
         self.assertIn("python cache_validation.py check-files data", self.code)
         self.assertIn("python cache_validation.py summarize", self.code)
@@ -486,9 +679,29 @@ class WorkflowControls(unittest.TestCase):
     def test_the_default_branch_guard_comes_first(self):
         self.assertIn("default branch", self.steps[0]["name"].lower())
 
-    def test_the_only_token_is_the_read_only_workflow_token_used_to_list_metadata(self):
+    def test_the_only_token_is_the_read_only_workflow_token_and_it_only_reads_metadata(self):
         tokens = [(s.get("name"), s["env"]["GH_TOKEN"]) for s in self.steps if "GH_TOKEN" in s.get("env", {})]
-        self.assertEqual(tokens, [("List cache metadata (no content)", "${{ github.token }}")])
+        self.assertEqual(tokens, [("Read the daily workflow's metadata", "${{ github.token }}"), ("List cache metadata (no content)", "${{ github.token }}"),
+                                  ("Read those runs' metadata", "${{ github.token }}")])
+        calls = re.findall(r"gh api[^\n]*", self.code)
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(calls[0].startswith('gh api "repos/$REPO/actions/workflows/update.yml"'))
+        self.assertTrue(calls[1].startswith('gh api --paginate "repos/$REPO/actions/caches?ref=refs/heads/$DEFAULT_BRANCH&per_page=100"'))
+        self.assertTrue(calls[2].startswith('gh api "repos/$REPO/actions/runs/$id"'))
+        for c in calls:
+            c = c.split(">")[0]                                         # the command, not its redirection or the clean-up after it
+            for flag in (" -X", "--method", " -f ", " -F ", "--field", "--raw-field", "--input"):
+                self.assertNotIn(flag, c + " ")
+
+    def test_the_selection_is_a_chain_of_the_daily_workflow_check(self):
+        names = [s.get("name") for s in self.steps]
+        order = ["Read the daily workflow's metadata", "List cache metadata (no content)", "Name the runs behind the newest exact-key caches", "Read those runs' metadata",
+                 "Select the newest cache saved by a successful daily run", "Restore that cache only (never saved)", "Check that exactly the selected cache was restored"]
+        self.assertEqual([names.index(n) for n in order], sorted(names.index(n) for n in order))
+        sel = [s for s in self.steps if s.get("id") == "select"][0]["run"]
+        for part in ('"$RUNNER_TEMP/caches.json"', '"$RUNNER_TEMP/workflow.json"', '"$RUNNER_TEMP/runs"', '"refs/heads/$DEFAULT_BRANCH"', "date -u"):
+            self.assertIn(part, sel)
+        self.assertIn("update.yml", self.code)
 
     def test_no_step_prints_a_file_or_record(self):
         for banned in ("cat ", "head ", "tail ", "jq ", "echo \"$(", "python -c", "print("):
@@ -509,7 +722,8 @@ class WorkflowControls(unittest.TestCase):
 class DocumentationStatesTheLimits(unittest.TestCase):
     def test_the_document_says_what_the_result_is_and_is_not(self):
         text = (HERE / "CACHE_VALIDATION.md").read_text(encoding="utf-8")
-        for needle in ("cache coverage, not publication status", "has not been run", "default branch", "No artifact", "nse-data-"):
+        for needle in ("cache coverage, not publication status", "has not been run", "default branch", "No artifact", "nse-data-", "fundamentals_batch.yml", "corroborated",
+                       "does not record which run", "Update data and publish site", "7 days", "fail", "marker"):
             self.assertIn(needle, text)
 
 

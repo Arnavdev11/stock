@@ -3,12 +3,15 @@ name: Validate cache coverage
 # A ONE-OFF, manual (workflow_dispatch only) check of `coverage_report.py --state-dir` against the REAL saved updater state. See CACHE_VALIDATION.md.
 #
 # WHAT IT DOES
-#   1. Lists the repository's cache METADATA (no content) and picks the newest cache whose key is exactly nse-data-<digits> (cache_validation.py select).
-#      The caches of other workflows that share the prefix (nse-data-shp-..., nse-data-sector-...) never match. No cache that fits = the run fails.
-#   2. Restores THAT KEY ONLY (no restore-keys, fail-on-cache-miss) with the same path set as the daily run (data, out), because the cache version is derived from the paths.
-#   3. Refuses unless fundamentals_cache.json, financials_cache.json and quarterly_cache.json are all there.
-#   4. Runs the merged coverage report offline against the data branch's universe and `--state-dir data`. Its output stays on the runner.
-#   5. Writes ONLY the job summary, built new from an explicit allowlist (cache_validation.py summarize): counts, reason counts, file status, hashes, provenance.
+#   1. Reads the metadata of the daily workflow ("Update data and publish site", update.yml) and lists the repository's cache METADATA (no content).
+#   2. Picks the newest cache of the default branch that was saved by a SUCCESSFUL run of that exact daily workflow (cache_validation.py select). GitHub's cache list does
+#      not record which run made a cache, and fundamentals_batch.yml names its caches the same way (nse-data-<run id>), so the key is never trusted alone: the run with that
+#      id is fetched and must be a completed, successful run of the daily workflow (by workflow id and path) on the default branch, and the cache must have been created
+#      during that run and be at most 7 days old. A cache whose run is positively a fundamentals-batch run is skipped; anything else that does not check out fails the run.
+#   3. Restores THAT KEY ONLY (no restore-keys, fail-on-cache-miss) with the same path set as the daily run (data, out), because the cache version is derived from the paths.
+#   4. Refuses unless fundamentals_cache.json, financials_cache.json and quarterly_cache.json are all there.
+#   5. Runs the merged coverage report offline against the data branch's universe and `--state-dir data`. Its output stays on the runner.
+#   6. Writes ONLY the job summary, built new from an explicit allowlist (cache_validation.py summarize): counts, reason counts, file status, hashes, provenance.
 #
 # WHAT IT NEVER DOES
 #   * It saves no cache, uploads no artifact, deploys nothing, touches no GitHub Pages and writes nothing to any branch.
@@ -60,6 +63,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Read the daily workflow's metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$REPO/actions/workflows/update.yml" > "$RUNNER_TEMP/workflow.json" 2>/dev/null \
+            || { echo "::error::The daily workflow's metadata could not be read, so its caches cannot be identified. Nothing was restored."; exit 1; }
+
       - name: List cache metadata (no content)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,9 +80,27 @@ jobs:
           gh api --paginate "repos/$REPO/actions/caches?ref=refs/heads/$DEFAULT_BRANCH&per_page=100" > "$RUNNER_TEMP/caches.json" 2>/dev/null \
             || { echo "::error::The cache list could not be read, so no cache can be identified. Nothing was restored."; exit 1; }
 
-      - name: Select the newest cache with an exact nse-data-<digits> key
+      - name: Name the runs behind the newest exact-key caches
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python cache_validation.py candidates "$RUNNER_TEMP/caches.json" "refs/heads/$DEFAULT_BRANCH" "$RUNNER_TEMP/candidate_runs.txt"
+
+      - name: Read those runs' metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/runs"
+          while IFS= read -r id; do
+            case "$id" in ''|*[!0-9]*) echo "::error::Unexpected run id."; exit 1 ;; esac
+            gh api "repos/$REPO/actions/runs/$id" > "$RUNNER_TEMP/runs/$id.json" 2>/dev/null || rm -f "$RUNNER_TEMP/runs/$id.json"
+          done < "$RUNNER_TEMP/candidate_runs.txt"
+
+      - name: Select the newest cache saved by a successful daily run
         id: select
-        run: python cache_validation.py select "$RUNNER_TEMP/caches.json"
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python cache_validation.py select "$RUNNER_TEMP/caches.json" "$RUNNER_TEMP/workflow.json" "$RUNNER_TEMP/runs" "refs/heads/$DEFAULT_BRANCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Restore that cache only (never saved)
         id: restore
@@ -109,7 +138,16 @@ jobs:
           CV_RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
           CV_CREATED_AT: ${{ steps.select.outputs.created_at }}
           CV_LAST_ACCESSED_AT: ${{ steps.select.outputs.last_accessed_at }}
-          CV_SIZE: ${{ steps.select.outputs.size }}
+          CV_SIZE: ${{ steps.select.outputs.size_in_bytes }}
+          CV_VERSION: ${{ steps.select.outputs.version }}
+          CV_CACHE_REF: ${{ steps.select.outputs.ref }}
+          CV_SOURCE_RUN_ID: ${{ steps.select.outputs.run_id }}
+          CV_SOURCE_RUN_EVENT: ${{ steps.select.outputs.run_event }}
+          CV_SOURCE_RUN_HEAD_SHA: ${{ steps.select.outputs.run_head_sha }}
+          CV_SOURCE_RUN_ATTEMPT: ${{ steps.select.outputs.run_attempt }}
+          CV_SOURCE_RUN_CREATED_AT: ${{ steps.select.outputs.run_created_at }}
+          CV_SOURCE_RUN_UPDATED_AT: ${{ steps.select.outputs.run_updated_at }}
+          CV_SKIPPED_BATCH_CACHES: ${{ steps.select.outputs.skipped_batch_caches }}
           CV_RUN_ID: ${{ github.run_id }}
           CV_MAIN_SHA: ${{ github.sha }}
         run: |
