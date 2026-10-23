@@ -212,7 +212,7 @@ class DirectoryCrossCheck(Case):
         self.assertNotIn("100", row)
 
     def test_every_way_the_directory_can_be_unusable_gives_the_same_unverified_result(self):
-        cases = {"unreadable": None, "invalid_json": "{ not json", "not_an_object": "[1, 2]", "wrong_kind": json.dumps({"kind": "something_else", "symbols": [{"symbol": "S0000"}]}),
+        cases = {"directory_is_a_folder": None, "invalid_json": "{ not json", "not_an_object": "[1, 2]", "wrong_kind": json.dumps({"kind": "something_else", "symbols": [{"symbol": "S0000"}]}),
                  "no_symbols_list": json.dumps({"kind": "stock_directory", "symbols": {"S0000": "x"}}), "empty_symbols_list": json.dumps({"kind": "stock_directory", "symbols": []})}
         for reason, text in cases.items():
             with self.subTest(reason=reason):
@@ -231,6 +231,30 @@ class DirectoryCrossCheck(Case):
                 self.assertEqual(m["facts"]["universe_identifier_check"]["well_formed"], 4)
                 if text is None:
                     path.rmdir()
+
+    def test_a_genuine_read_failure_is_unreadable_not_missing_and_not_verified(self):
+        self.make(5)                                                    # a valid directory is on disk; only the read of it is made to fail
+        target = (self.data / "stock_directory.json")
+        real = Path.read_bytes
+        def flaky(path_self, *a, **k):
+            if path_self.name == "stock_directory.json":
+                raise PermissionError(13, "simulated read failure")      # an OSError subclass; no dependence on OS permissions or on running as root
+            return real(path_self, *a, **k)
+        self.assertTrue(target.is_file())                               # so this is not the 'missing' path
+        with mock.patch.object(Path, "read_bytes", flaky):
+            doc, problem = C.Inputs(self.data).read(target)
+            self.assertEqual((doc, problem), (None, "unreadable"))
+            r = self.build()
+        for scope in ("first_500", "all"):
+            m = self.directory_row(r, scope)
+            self.assertEqual(m["facts"]["directory_cross_check"], {"performed": False, "reason": "unreadable", "stocks_cross_checked": 0})
+            self.assertEqual(m["counts"], {"valid": None, "stale": None, "missing": 0, "invalid": 0, "not_applicable": None, "unverified": 5})
+            self.assertIsNone(m["coverage_pct"])
+            self.assertIsNone(m["fresh_pct"])
+            self.assertEqual(m["denominator"]["value"], 5)
+            self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 5)
+            self.assertIn("stock_directory.json is unreadable", m["problems"][0])
+            self.assertIn("NOT reported as verified", m["unverified"][0]["reason"])
 
     def test_a_stock_without_an_isin_is_missing_not_unverified(self):
         self.make(5, with_directory=False)
