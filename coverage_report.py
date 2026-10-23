@@ -43,7 +43,14 @@ Inputs (all optional except universe.json; a missing one makes its module "not_m
                         stale        also: a financial section written under an OLDER schema version (or none) is readable but the updater refetches it before use, so it is
                                      counted stale, with the fixed reason "a_section_has_an_older_schema" in the facts (never invalid)
                         unverified   cannot be decided offline (a fundamentals record held aside after an ISIN change; a file that is missing, unreadable, malformed
-                                     or of an unsupported schema makes the WHOLE module unverified, never zero coverage)
+                                     or of an unsupported schema makes the WHOLE module unverified, never zero coverage). Identity: a fundamentals or financials record that
+                                     holds usable data is compared with the canonical ISIN of its symbol (universe.json, cross-checked with stock_directory.json when usable).
+                                     Equal -> it keeps its valid/stale class. Different, absent from the record, or no single canonical ISIN (the universe has none, or the
+                                     directory contradicts it or lists the symbol twice) -> unverified with a fixed reason; nothing is remapped and no ISIN is ever written.
+                                     Quarterly records carry no ISIN and are not compared.
+                      Counters: a "failures" counter must be a whole number from 0 to 1000 (this report's own plausibility bound); a boolean, negative, non-integer or larger value
+                      makes that record invalid before the counter is used in any calculation, and a whole number longer than 18 characters is read as a marker, never converted,
+                      so a corrupt file cannot make the report slow or large. A bad counter is never read as zero.
                       A cache record is not proof of publication: whether the data reached the site is reported as unverified.
                       Quarterly back-off and results-pending states are derived only from fields the cache holds (failures and last_attempt for back-off; the stored
                       quarter-end dates for the pending window), with the updater's own rules, and are reported in the facts beside the counts, never instead of them.
@@ -106,6 +113,8 @@ QUARTERLY_PENDING_FROM_DAYS = 10  # quarterly_results_updater.PENDING_FROM_DAYS
 QUARTERLY_PENDING_FOR_DAYS = 90   # quarterly_results_updater.PENDING_FOR_DAYS
 QUARTERLY_PENDING_EVERY_DAYS = 2  # quarterly_results_updater.PENDING_EVERY_DAYS
 MAX_RETRY_DAYS = 30               # quarterly_results_updater.MAX_RETRY_DAYS (and financials_updater.MAX_RETRY_DAYS)
+MAX_PLAUSIBLE_FAILURES = 1000     # this report's own bound, not an updater rule: with the back-off capped at 30 days, 1000 consecutive failures is about 80 years of retries
+MAX_INT_TEXT = 18                 # a whole number longer than this many characters in a state file is not parsed to an int (see _bounded_int)
 OUTPUT_NAMES = ("coverage_report.json", "coverage_report.md")
 OUTSIDE_LIST_LIMIT = 50
 
@@ -152,6 +161,22 @@ def _sorted_dict(d):
     return {str(k): d[k] for k in sorted(d, key=str)}
 
 
+class _HugeInt:
+    """Stands in for a whole number too long to be a real counter or value in a state file. It is not an int, so every numeric and date check refuses it, and it is never written to a report."""
+    __slots__ = ()
+
+    def __repr__(self):
+        return "<huge integer>"
+
+
+_HUGE = _HugeInt()
+
+
+def _bounded_int(text):
+    """json parse_int for state files: converting a very long digit string is the work a corrupt file could use to waste time and memory, so it is not done."""
+    return int(text) if len(text) <= MAX_INT_TEXT else _HUGE
+
+
 class _DupDict(dict):
     """A JSON object that remembers which keys appeared more than once (json.loads would silently keep only the last)."""
     dups = ()
@@ -181,7 +206,7 @@ class Inputs:
         except ValueError:
             return "supplied:" + Path(path).name
 
-    def read(self, path, register=True, label=None, pairs_hook=None):
+    def read(self, path, register=True, label=None, pairs_hook=None, bound_ints=False):
         """(document, problem). problem is None, 'missing', 'unreadable' or 'invalid_json'. NaN/Infinity are refused. register=False: not listed one by one (the shards are listed as one hash)."""
         p = Path(path)
         if not p.is_file():
@@ -194,8 +219,9 @@ class Inputs:
             name = label or self.label(p)
             self.items[name] = {"path": name, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
         try:
-            return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs_hook, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c))), None
-        except (UnicodeDecodeError, ValueError):
+            return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs_hook, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)),
+                              **({"parse_int": _bounded_int} if bound_ints else {})), None
+        except (UnicodeDecodeError, ValueError, RecursionError):      # RecursionError: valid JSON nested too deeply for the parser; unusable, like any other file that cannot be read as JSON
             return None, "invalid_json"
 
     def listing(self):
@@ -307,7 +333,7 @@ class Data:
         self.state = {}                      # kind -> (document or None, problem or None)
         if self.state_dir is not None:
             for kind, fname in STATE_FILES.items():
-                doc, prob = self.inputs.read(self.state_dir / fname, label="state:" + fname, pairs_hook=_dup_hook)
+                doc, prob = self.inputs.read(self.state_dir / fname, label="state:" + fname, pairs_hook=_dup_hook, bound_ints=True)
                 self.state[kind] = (None, prob) if prob else _state_schema(kind, doc)
 
     def load_universe(self):
@@ -962,7 +988,7 @@ def _state_open(name, kind, d, syms, scope):
     return None, (stocks, set(getattr(stocks, "dups", ())))
 
 
-def _state_finish(name, kind, d, syms, scope, stocks, dups, tally, mis, inv, facts, freshness, unverified, extra_unverified=0):
+def _state_finish(name, kind, d, syms, scope, stocks, dups, tally, mis, inv, facts, freshness, unverified, extra_unverified=0, extra_warnings=None):
     n = len(syms)
     counts = _counts(valid=tally["valid"], stale=tally["stale"], missing=tally["missing"], invalid=tally["invalid"], unverified=extra_unverified)
     fname = STATE_FILES[kind]
@@ -972,7 +998,7 @@ def _state_finish(name, kind, d, syms, scope, stocks, dups, tally, mis, inv, fac
     facts["state_file"] = {"name": fname, "usable": True, "entries": len(stocks), "identified_by": 'the symbol key in "stocks"',
                            "duplicate_symbol_keys": {"distinct": len(dups), "in_this_scope": len(in_scope), "symbols": sorted(x for x in dups if isinstance(x, str) and universe.SYMBOL_RE.match(x))[:OUTSIDE_LIST_LIMIT]},
                            "keys_that_are_not_valid_symbols": bad_keys}
-    warnings = []
+    warnings = list(extra_warnings or [])
     if dups:
         warnings.append({"code": "duplicate_symbol_keys_in_state_file", "count": len(dups), "identifiers": facts["state_file"]["duplicate_symbol_keys"]["symbols"],
                          "message": "%s repeats %d symbol key(s). A universe stock with a repeated key cannot be read unambiguously and is counted invalid; no entry was chosen over another." % (fname, len(dups))})
@@ -1000,6 +1026,57 @@ def _classify_all(syms, stocks, dups, classify, as_of):
     return tally, mis, inv, unv, stl
 
 
+def _canonical_isin(d, sym):
+    """(isin or None, reason or None). The universe's ISIN, unless it is absent or the stock directory (when usable) contradicts it or lists the symbol twice: then there is no single
+    canonical ISIN and nothing is compared. Never guessed, never remapped."""
+    u = d.isin.get(sym)
+    if u is None:
+        return None, "canonical_isin_unavailable_universe_has_none"
+    st = _directory_state(d)
+    if st["usable"]:
+        if sym in st["dup_symbols"]:
+            return None, "canonical_isin_ambiguous_directory_lists_symbol_twice"
+        di = st["entries"].get(sym)
+        if di is not None and di != u:
+            return None, "canonical_isin_ambiguous_directory_disagrees"
+    return u, None
+
+
+def _isin_verdict(d, sym, record_isin, acc):
+    """None when the record's ISIN equals the canonical one (counted as matched); otherwise the fixed reason the record's identity is NOT confirmed. Values are compared, never written."""
+    canonical, why = _canonical_isin(d, sym)
+    if canonical is None:
+        _tally(acc["canonical_unavailable_or_ambiguous"], why)
+        return why
+    if record_isin is None or record_isin is _HUGE or record_isin == "":
+        acc["record_has_no_isin"] += 1
+        return "cache_record_has_no_isin"
+    if record_isin != canonical:
+        acc["differs_from_universe"] += 1
+        acc["differing_symbols"].append(sym)
+        return "isin_differs_from_universe"
+    acc["matched"] += 1
+    return None
+
+
+def _new_isin_acc():
+    return {"matched": 0, "differs_from_universe": 0, "record_has_no_isin": 0, "canonical_unavailable_or_ambiguous": {}, "differing_symbols": []}
+
+
+def _isin_facts_and_warning(acc):
+    facts = {"canonical_source": "universe.json, cross-checked with stock_directory.json when that file is usable", "matched": acc["matched"],
+             "differs_from_universe": acc["differs_from_universe"], "record_has_no_isin": acc["record_has_no_isin"],
+             "canonical_unavailable_or_ambiguous": _sorted_dict(acc["canonical_unavailable_or_ambiguous"]),
+             "note": "compared for records that hold usable data; the identifiers themselves are never written; nothing is remapped"}
+    warns = []
+    if acc["differs_from_universe"]:
+        syms = sorted(acc["differing_symbols"])
+        warns.append({"code": "state_isin_differs_from_universe", "count": len(syms), "identifiers": syms[:OUTSIDE_LIST_LIMIT],
+                      "message": "%d cached record(s) carry an ISIN that differs from the universe's. They are counted unverified (the data may belong to another instrument); "
+                                 "they are not remapped and not treated as invalid, and the cause has not been established. The ISINs are not shown." % len(syms)})
+    return facts, warns
+
+
 def mod_fundamentals_state(d, syms, scope):
     name = "fundamentals_state"
     mod, ctx = _state_open(name, "fundamentals", d, syms, scope)
@@ -1007,6 +1084,7 @@ def mod_fundamentals_state(d, syms, scope):
         return mod
     stocks, dups = ctx
     acc = {"all_six_metrics": 0, "some_metrics": 0, "no_metrics": 0, "with_recorded_error_but_data": 0, "data_but_not_listed_now": 0}
+    iacc = _new_isin_acc()
 
     def classify(sym, e, as_of):
         if e is None:
@@ -1026,6 +1104,9 @@ def mod_fundamentals_state(d, syms, scope):
                 return "invalid", "ratios_not_exactly_the_six_metrics"
             if any(v is not None and not _isnum(v) for v in r.values()):
                 return "invalid", "ratio_not_a_finite_number_or_null"
+            verdict = _isin_verdict(d, sym, e.get("isin"), iacc)
+            if verdict:
+                return "unverified", verdict
             present = sum(1 for v in r.values() if v is not None)
             acc["all_six_metrics" if present == len(FUNDAMENTALS_METRICS) else "no_metrics" if present == 0 else "some_metrics"] += 1
             if e.get("last_error") == NOT_FOUND_ERROR:
@@ -1041,17 +1122,22 @@ def mod_fundamentals_state(d, syms, scope):
 
     tally, mis, inv, unv, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
     facts = {"stocks_with_ratios": tally["valid"] + tally["stale"], "stale_reasons": _sorted_dict(stl), "ratio_completeness_of_stocks_with_ratios": acc,
-             "held_aside_after_isin_change": unv.get("held_aside_after_isin_change", 0),
+             "held_aside_after_isin_change": unv.get("held_aside_after_isin_change", 0), "isin_check": _isin_facts_and_warning(iacc)[0],
              "sector_label": "never read: it is private until the sector approval gate opens",
              "batches_recorded": len(d.state["fundamentals"][0]["batches"]) if isinstance(d.state["fundamentals"][0].get("batches"), dict) else None}
     unverified = [{"what": "whether the cached ratios were published", "count": tally["valid"] + tally["stale"],
                    "reason": "a cache record is not proof of publication; out/fundamentals.json and the site are not part of the state folder"}]
-    if unv:
-        unverified.append({"what": "records held aside after an ISIN change", "count": sum(unv.values()),
+    if unv.get("held_aside_after_isin_change"):
+        unverified.append({"what": "records held aside after an ISIN change", "count": unv["held_aside_after_isin_change"],
                            "reason": "which ISIN is right is a decision for a person; the held data is neither counted as usable nor as missing"})
+    others = sum(v for k, v in unv.items() if k != "held_aside_after_isin_change")
+    if others:
+        unverified.append({"what": "cached records whose identity is not confirmed", "count": others,
+                           "reason": "the record's ISIN differs from, or is missing next to, the canonical ISIN, or no single canonical ISIN exists; the reasons are in unverified_reasons"})
+    facts["unverified_reasons"] = _sorted_dict(unv)
     return _state_finish(name, "fundamentals", d, syms, scope, stocks, dups, tally, mis, inv, facts,
                          {"status": "configured", "threshold_days": FUNDAMENTALS_MAX_AGE_DAYS, "threshold_source": "fundamentals_updater.RATIOS_MAX_AGE_DAYS", "age_taken_from": "ratios_fetched"},
-                         unverified, extra_unverified=sum(unv.values()))
+                         unverified, extra_unverified=sum(unv.values()), extra_warnings=_isin_facts_and_warning(iacc)[1])
 
 
 def _quarterly_problem(e, as_of):
@@ -1062,9 +1148,9 @@ def _quarterly_problem(e, as_of):
                 return k + "_not_a_past_date"
     if e.get("basis") is not None and e.get("basis") not in BASES:
         return "basis_not_recognised"
-    f = e.get("failures")
-    if f is not None and (isinstance(f, bool) or not isinstance(f, int) or f < 0):
-        return "failures_not_a_count"
+    bad = _failures_problem(e.get("failures"))
+    if bad:
+        return bad
     qs = e.get("quarters")
     if not isinstance(qs, dict):
         return "quarters_not_an_object"
@@ -1087,7 +1173,19 @@ def _add_months(day, n):
 
 
 def _retry_days(failures):
-    return min(2 ** (max(1, int(failures or 1)) - 1), MAX_RETRY_DAYS)
+    """The updater's retry_days. The exponent is capped: 2**16 already exceeds the 30-day ceiling, so the result is identical for every counter while the work stays constant."""
+    return min(2 ** (min(max(1, int(failures or 1)), 17) - 1), MAX_RETRY_DAYS)
+
+
+def _failures_problem(v):
+    """None, or a fixed reason why a failures counter cannot be trusted. Checked before the counter is used in any calculation; a bad counter is never read as zero."""
+    if v is None:
+        return None
+    if v is _HUGE:
+        return "failures_implausibly_large"
+    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+        return "failures_not_a_count"
+    return "failures_implausibly_large" if v > MAX_PLAUSIBLE_FAILURES else None
 
 
 def _quarterly_refresh_state(e, as_of):
@@ -1179,6 +1277,9 @@ def _fin_section(sec, as_of):
             day = _date(sec.get(k))
             if day is None or day > as_of:
                 return "invalid", k + "_not_a_past_date"
+    bad = _failures_problem(sec.get("failures"))
+    if bad:
+        return "invalid", bad
     if not sec.get("data"):
         return ("failed", None) if sec.get("error") else ("none", None)
     if not isinstance(sec["data"], dict):
@@ -1204,6 +1305,7 @@ def mod_financials_state(d, syms, scope):
     stocks, dups = ctx
     sections = {s: {"fresh": 0, "stale": 0, "outdated_schema": 0, "none": 0, "failed": 0, "invalid": 0} for s in FIN_SECTIONS}
     basis, partial = {}, {}
+    iacc = _new_isin_acc()
 
     def classify(sym, e, as_of):
         if e is None:
@@ -1218,6 +1320,9 @@ def mod_financials_state(d, syms, scope):
                 return "invalid", "%s:%s" % (n, st[n][1])
         usable = [n for n in FIN_SECTIONS if st[n][0] in ("fresh", "stale", "outdated_schema")]
         if len(usable) == len(FIN_SECTIONS):
+            verdict = _isin_verdict(d, sym, e.get("isin"), iacc)
+            if verdict:
+                return "unverified", verdict
             for n in FIN_SECTIONS:
                 _tally(basis, e[n]["basis"])
             if any(st[n][0] == "outdated_schema" for n in FIN_SECTIONS):
@@ -1232,8 +1337,8 @@ def mod_financials_state(d, syms, scope):
             return "missing", "failed_last_attempt"
         return "missing", "never_fetched"
 
-    tally, mis, inv, _, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
-    facts = {"stocks_with_all_three_sections": tally["valid"] + tally["stale"], "required_sections": list(FIN_SECTIONS), "stale_reasons": _sorted_dict(stl),
+    tally, mis, inv, unv, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
+    facts = {"isin_check": _isin_facts_and_warning(iacc)[0], "unverified_reasons": _sorted_dict(unv), "stocks_with_all_three_sections": tally["valid"] + tally["stale"], "required_sections": list(FIN_SECTIONS), "stale_reasons": _sorted_dict(stl),
              "incomplete_statements": {"stocks": mis.get("incomplete_sections", 0), "sections_held": _sorted_dict(partial),
                                        "meaning": "some but not all of the three statements are usable in this cache; not a statement about publication or about what the provider has"},
              "section_states_counted_over_stocks_with_an_entry": sections, "basis_counts_of_complete_stocks": _sorted_dict(basis), "required_schema": FIN_SCHEMA}
@@ -1241,9 +1346,13 @@ def mod_financials_state(d, syms, scope):
                    "reason": "a cache record is not proof of publication; out/financials.json and the site are not part of the state folder"},
                   {"what": "whether stocks with incomplete statements are published", "count": mis.get("incomplete_sections", 0),
                    "reason": "the updater builds a published row from any usable section, so a stock counted missing here may still be published with fewer statements; the published file is not supplied"}]
+    if unv:
+        unverified.append({"what": "cached records whose identity is not confirmed", "count": sum(unv.values()),
+                           "reason": "the record's ISIN differs from, or is missing next to, the canonical ISIN, or no single canonical ISIN exists; the reasons are in unverified_reasons"})
     return _state_finish(name, "financials", d, syms, scope, stocks, dups, tally, mis, inv, facts,
                          {"status": "configured", "threshold_days": STATEMENT_MAX_AGE_DAYS, "threshold_source": "financials_updater.STATEMENT_MAX_AGE_DAYS",
-                          "age_taken_from": "each section's fetched date; the stock is stale when any section is, or when a section has an older schema version"}, unverified)
+                          "age_taken_from": "each section's fetched date; the stock is stale when any section is, or when a section has an older schema version"}, unverified,
+                         extra_unverified=sum(unv.values()), extra_warnings=_isin_facts_and_warning(iacc)[1])
 
 
 # ---------------------------------------------------------------- the report

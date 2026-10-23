@@ -1250,6 +1250,272 @@ class StateDirBoundariesAndFinancials(StateDirCase):
             self.assertTrue(any("the stocks key appears more than once" in p for p in m["problems"]), m["problems"])
 
 
+class StateDirHardening(StateDirCase):
+    def raw(self, name, text):
+        (self.state / name).write_text(text, encoding="utf-8")
+
+    def quarterly_text(self, failures_by_symbol):
+        """Raw JSON, so numbers of any length can be written (json.dumps refuses a 5000-digit int)."""
+        parts = []
+        for s_, f in failures_by_symbol.items():
+            e = json.loads(json.dumps(q_entry()))
+            e["failures"] = "@@"
+            parts.append('"%s": %s' % (s_, json.dumps(e).replace('"@@"', f)))
+        return '{"schema_version": 1, "kind": "quarterly_cache", "stocks": {%s}}' % ", ".join(parts)
+
+    def test_normal_counters_are_unchanged(self):
+        self.make(4)
+        self.raw("quarterly_cache.json", self.quarterly_text({sym(0): "0", sym(1): "1", sym(2): "5", sym(3): "1000"}))
+        m = self.sm(self.build_s(), "quarterly_results")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (4, 0))
+
+    def test_bad_counters_make_the_record_invalid_with_a_fixed_reason_never_zero(self):
+        self.make(10)
+        bad = {sym(0): "-1", sym(1): "true", sym(2): '"3"', sym(3): "2.5", sym(4): "1001", sym(5): "1" + "0" * 18, sym(6): "9" * 5000, sym(7): "[]", sym(8): "null", sym(9): "3"}
+        self.raw("quarterly_cache.json", self.quarterly_text(bad))
+        m = self.sm(self.build_s(), "quarterly_results")
+        self.assertEqual(m["invalid_reasons"], {"failures_implausibly_large": 3, "failures_not_a_count": 5})
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (2, 8))          # null and 3 are fine; the rest are invalid, none was read as zero
+        self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 10)
+
+    def test_extreme_counters_are_bounded_in_time_and_memory(self):
+        import time
+        self.make(5)
+        self.raw("quarterly_cache.json", self.quarterly_text({sym(0): "1" + "0" * 9, sym(1): "1" + "0" * 10, sym(2): "9" * 17, sym(3): "9" * 4000, sym(4): "9" * 400000}))
+        t0 = time.monotonic()
+        r = self.build_s()
+        self.assertLess(time.monotonic() - t0, 5.0)          # the old calculation took ~6 s and ~440 MB for 10**9 and ran out of memory for 10**10
+        m = self.sm(r, "quarterly_results")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (0, 5))
+        self.assertEqual(m["invalid_reasons"], {"failures_implausibly_large": 5})
+        self.assertNotIn("9999999", json.dumps(r))
+
+    def test_the_bounded_retry_days_equals_the_updaters_and_is_constant_work(self):
+        qu = _updater()
+        for n in list(range(0, 80)) + [10**6]:
+            self.assertEqual(C._retry_days(n), qu.retry_days(n) if n < 10**5 else 30, n)
+        self.assertEqual(C._retry_days(10**30), 30)
+
+    def test_huge_numbers_elsewhere_are_invalid_records_not_crashes(self):
+        self.make(3)
+        big = "7" * 100
+        self.raw("fundamentals_cache.json", '{"stocks": {"S0000": {"isin": "%s", "ratios": {"pe": %s, "pb": 1, "roa": 1, "roe": 1, "roce": 1, "ev_ebitda": 1}, "ratios_fetched": "2026-10-22"}}}' % (isin(0), big))
+        sec = '{"data": {"revenue": %s}, "basis": "consolidated", "fetched": "2026-10-20", "schema": %s, "error": null, "attempted": "2026-10-20", "failures": 0}'
+        self.raw("financials_cache.json", '{"stocks": {"S0000": {"isin": "%s", "income": %s, "balance_sheet": %s, "cash_flow": %s}}}' % (isin(0), sec % (big, 2), sec % (1, big), sec % (1, 2)))
+        r = self.build_s()
+        self.assertEqual(self.sm(r, "fundamentals_state")["invalid_reasons"], {"ratio_not_a_finite_number_or_null": 1})
+        self.assertEqual(self.sm(r, "fundamentals_state")["counts"]["valid"], 0)
+        self.assertEqual(self.sm(r, "fundamentals_state")["counts"]["invalid"], 1)
+        fin = self.sm(r, "annual_financials_and_balance_sheet")
+        self.assertEqual(fin["invalid_reasons"], {"balance_sheet:schema_not_recognised": 1})
+        self.assertNotIn(big, json.dumps(r))
+
+    def test_a_corrupt_section_counter_makes_the_financial_record_invalid(self):
+        self.make(4)
+        stocks = {}
+        for i, v in enumerate((-1, True, 5000, 2)):
+            e = fin_entry(i)
+            e["income"]["failures"] = v
+            stocks[sym(i)] = e
+        self.put("financials_cache.json", {"stocks": stocks})
+        m = self.sm(self.build_s(), "annual_financials_and_balance_sheet")
+        self.assertEqual(m["invalid_reasons"], {"income:failures_implausibly_large": 1, "income:failures_not_a_count": 2})
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (1, 3))
+
+    def test_the_report_is_unchanged_for_other_files_when_a_state_file_has_a_huge_number(self):
+        self.make(3)
+        self.raw("quarterly_cache.json", self.quarterly_text({sym(0): "9" * 6000}))
+        r = self.build_s()
+        self.assertEqual(self.sm(r, "quarterly_results")["counts"]["invalid"], 1)
+        self.assertEqual(self.sm(r, "directory")["counts"]["valid"], 3)          # nothing outside the state modules is affected
+
+
+class StateDirDeeplyNestedJson(StateDirCase):
+    DEEP = 100000
+
+    def test_deeply_nested_json_makes_only_that_module_unverified(self):
+        self.make(4)
+        leak = "ZZDEEPLEAK"
+        (self.state / "quarterly_cache.json").write_text('{"stocks": ' + "[" * self.DEEP + '"' + leak + '"' + "]" * self.DEEP + "}", encoding="utf-8")
+        (self.state / "fundamentals_cache.json").write_text('{"stocks": {"S0000": ' + '{"a": ' * self.DEEP + '"' + leak + '"' + "}" * self.DEEP + "}}", encoding="utf-8")
+        self.put("financials_cache.json", {"stocks": {sym(0): fin_entry(0), sym(1): fin_entry(1, "2026-09-01")}})
+        json.loads('{"stocks": ' + "[" * 900 + "]" * 900 + "}")          # nested JSON of this kind is valid text; only the parser's depth limit is at issue
+        rc, out, err = self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out), "--state-dir", str(self.state))
+        self.assertEqual(rc, 0, err)          # no uncaught traceback
+        self.assertNotIn("Traceback", err)
+        rep = json.loads((self.out / "coverage_report.json").read_text())
+        for name, fname in (("quarterly_results", "quarterly_cache.json"), ("fundamentals_state", "fundamentals_cache.json")):
+            m = self.sm(rep, name)
+            self.assertEqual((m["measurability"], m["counts"]["valid"], m["counts"]["stale"], m["counts"]["unverified"], m["coverage_pct"]), ("not_measurable", None, None, 4, None), name)
+            self.assertEqual(m["problems"], ["%s is invalid_json" % fname])
+            self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 4)
+            self.assertFalse(rep["state_files"][fname]["usable"])
+        fin = self.sm(rep, "annual_financials_and_balance_sheet")          # other modules stay measurable
+        self.assertEqual((fin["measurability"], fin["counts"]["valid"], fin["counts"]["stale"], fin["counts"]["missing"]), ("partial", 1, 1, 2))
+        self.assertEqual(self.sm(rep, "directory")["counts"]["valid"], 4)
+        self.assertTrue(rep["state_files"]["financials_cache.json"]["usable"])
+        for n in C.OUTPUT_NAMES:
+            t = (self.out / n).read_text(encoding="utf-8")
+            for text in (leak, "RecursionError", "recursion", "Traceback", "maximum"):
+                self.assertNotIn(text, t, (n, text))
+
+    def test_a_deeply_nested_universe_is_refused_not_a_crash(self):
+        self.make(3)
+        (self.data / "universe.json").write_text('{"symbols": ' + "[" * self.DEEP + "]" * self.DEEP + "}", encoding="utf-8")
+        rc, out, err = self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out))
+        self.assertEqual(rc, 2)
+        self.assertIn("universe.json is invalid_json", err)
+        self.assertNotIn("Traceback", err)
+        self.assertFalse(self.out.exists())
+
+    def test_other_programming_errors_are_still_not_swallowed(self):
+        self.make(2)
+        self.put("quarterly_cache.json", q_doc({}))
+        with mock.patch.object(C.json, "loads", side_effect=TypeError("a real bug")):
+            with self.assertRaises(TypeError):
+                self.build_s()
+
+
+class StateDirIsinCheck(StateDirCase):
+    def isin_mod(self, r, name):
+        return self.sm(r, name)
+
+    def test_matching_isins_keep_their_valid_and_stale_classes(self):
+        self.make(3)
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): f_entry(0), sym(1): f_entry(1, "2026-10-10")}})
+        self.put("financials_cache.json", {"stocks": {sym(0): fin_entry(0), sym(1): fin_entry(1, "2026-09-01")}})
+        r = self.build_s()
+        for name in ("fundamentals_state", "annual_financials_and_balance_sheet"):
+            m = self.sm(r, name)
+            self.assertEqual((m["counts"]["valid"], m["counts"]["stale"], m["counts"]["unverified"]), (1, 1, 0), name)
+            self.assertEqual(m["facts"]["isin_check"]["matched"], 2)
+            self.assertEqual(m["facts"]["isin_check"]["differs_from_universe"], 0)
+            self.assertFalse([w for w in m["warnings"] if w["code"] == "state_isin_differs_from_universe"])
+
+    def test_a_mismatched_isin_is_unverified_with_a_warning_and_no_isin_is_printed(self):
+        self.make(4)
+        wrong, wrong_fin = f_entry(1), fin_entry(1)
+        wrong["isin"] = wrong_fin["isin"] = "INE999999991"
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): f_entry(0), sym(1): wrong, sym(2): f_entry(2, "2026-10-10")}})
+        self.put("financials_cache.json", {"stocks": {sym(0): fin_entry(0), sym(1): wrong_fin}})
+        self.assertEqual(self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out), "--state-dir", str(self.state))[0], 0)
+        rep = json.loads((self.out / "coverage_report.json").read_text())
+        f = self.sm(rep, "fundamentals_state")
+        self.assertEqual(f["counts"], {"valid": 1, "stale": 1, "missing": 1, "invalid": 0, "not_applicable": None, "unverified": 1})
+        self.assertEqual(f["facts"]["unverified_reasons"], {"isin_differs_from_universe": 1})
+        self.assertEqual((f["facts"]["isin_check"]["matched"], f["facts"]["isin_check"]["differs_from_universe"]), (2, 1))
+        w = [x for x in f["warnings"] if x["code"] == "state_isin_differs_from_universe"][0]
+        self.assertEqual((w["count"], w["identifiers"]), (1, ["S0001"]))
+        fin = self.sm(rep, "annual_financials_and_balance_sheet")
+        self.assertEqual((fin["counts"]["valid"], fin["counts"]["unverified"], fin["counts"]["missing"]), (1, 1, 2))
+        self.assertEqual(fin["facts"]["unverified_reasons"], {"isin_differs_from_universe": 1})
+        for n in C.OUTPUT_NAMES:
+            t = (self.out / n).read_text(encoding="utf-8")
+            self.assertNotIn("INE999999991", t)
+            self.assertNotIn(isin(1), t)          # neither the cached nor the universe's ISIN is written
+        self.assertEqual(rep["scopes"]["all"]["warning_summary"], {"isin_differs_from_universe": {"records": 0, "distinct_symbols": 0}})      # the existing ISIN summary is untouched
+
+    def test_a_valid_looking_symbol_match_alone_is_not_enough(self):
+        self.make(2)
+        e = f_entry(0)
+        e["isin"] = isin(1)          # another stock's real ISIN under this symbol
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): e}})
+        m = self.sm(self.build_s(), "fundamentals_state")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"]), (0, 1))
+
+    def test_a_record_without_an_isin_is_unverified(self):
+        self.make(3)
+        a, b = f_entry(0), fin_entry(0)
+        del a["isin"]
+        b["isin"] = None
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): a}})
+        self.put("financials_cache.json", {"stocks": {sym(0): b}})
+        r = self.build_s()
+        for name in ("fundamentals_state", "annual_financials_and_balance_sheet"):
+            m = self.sm(r, name)
+            self.assertEqual(m["facts"]["unverified_reasons"], {"cache_record_has_no_isin": 1}, name)
+            self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"]), (0, 1), name)
+
+    def test_a_missing_ambiguous_or_contradicted_canonical_isin_is_unverified_not_guessed(self):
+        self.make(4)
+        doc = universe_doc(self.symbols)
+        doc["symbols"][0]["isin"] = None                         # the universe has no ISIN for S0000
+        write(self.data / "universe.json", doc)
+        d = directory_doc(self.symbols)
+        d["symbols"][1]["isin"] = "INE777777771"                 # the directory contradicts the universe for S0001
+        d["symbols"].append({"symbol": "S0002", "isin": isin(2), "name": "again"})      # S0002 listed twice
+        write(self.data / "stock_directory.json", d)
+        self.put("fundamentals_cache.json", {"stocks": {sym(i): f_entry(i) for i in range(4)}})
+        self.put("financials_cache.json", {"stocks": {sym(i): fin_entry(i) for i in range(4)}})
+        r = self.build_s()
+        for name in ("fundamentals_state", "annual_financials_and_balance_sheet"):
+            m = self.sm(r, name)
+            self.assertEqual(m["facts"]["unverified_reasons"], {"canonical_isin_ambiguous_directory_disagrees": 1, "canonical_isin_ambiguous_directory_lists_symbol_twice": 1,
+                                                               "canonical_isin_unavailable_universe_has_none": 1}, name)
+            self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"]), (1, 3), name)          # only S0003 can be confirmed
+            self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 4, name)
+            self.assertEqual(m["facts"]["isin_check"]["canonical_unavailable_or_ambiguous"], m["facts"]["unverified_reasons"])
+
+    def test_an_unusable_directory_does_not_stop_the_universe_isin_from_being_used(self):
+        self.make(2, with_directory=False)
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): f_entry(0)}})
+        m = self.sm(self.build_s(), "fundamentals_state")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"]), (1, 0))
+
+    def test_records_without_usable_data_are_not_compared_and_counts_reconcile(self):
+        self.make(6)
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): {"isin": "INE999999991"}, sym(1): {"last_error": C.NOT_FOUND_ERROR, "isin": "INE999999991"}}})
+        m = self.sm(self.build_s(), "fundamentals_state")
+        self.assertEqual((m["counts"]["missing"], m["counts"]["unverified"]), (6, 0))          # no data -> missing, whatever the ISIN says
+        self.assertEqual(m["facts"]["isin_check"]["differs_from_universe"], 0)
+        self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 6)
+
+    def test_quarterly_records_are_not_compared_and_other_modules_are_unchanged(self):
+        self.make(3)
+        e = q_entry()
+        e["isin"] = "INE999999991"
+        self.put("quarterly_cache.json", q_doc({sym(0): e}))
+        m = self.sm(self.build_s(), "quarterly_results")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"]), (1, 0))
+        self.assertNotIn("isin_check", m["facts"])
+
+    def test_counts_reconcile_in_both_scopes_with_isin_differences(self):
+        self.make(600)
+        stocks = {}
+        for i in range(0, 600, 2):
+            e = f_entry(i)
+            if i % 10 == 0:
+                e["isin"] = "INE999999991"
+            stocks[sym(i)] = e
+        self.put("fundamentals_cache.json", {"stocks": stocks})
+        r = self.build_s("both")
+        for scope, n, bad in (("first_500", 500, 50), ("all", 600, 60)):
+            m = self.sm(r, "fundamentals_state", scope)
+            self.assertEqual((m["denominator"]["value"], m["counts"]["unverified"], m["counts"]["valid"]), (n, bad, n // 2 - bad), scope)
+            self.assertEqual(sum(v for v in m["counts"].values() if v is not None), n, scope)
+
+    def test_without_state_dir_nothing_changes(self):
+        self.make(3)
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): f_entry(0)}})
+        self.assertEqual(C.render_json(self.build("all")), C.render_json(C.build_report(self.data, AS_OF, "all", None, None)))
+        self.assertNotIn("fundamentals_state", C.render_json(self.build("all")))
+
+    def test_no_network_during_the_isin_and_counter_checks(self):
+        self.make(4)
+        e = f_entry(1)
+        e["isin"] = "INE999999991"
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): f_entry(0), sym(1): e}})
+        self.put("financials_cache.json", {"stocks": {sym(0): fin_entry(0)}})
+        (self.state / "quarterly_cache.json").write_text('{"schema_version": 1, "kind": "quarterly_cache", "stocks": {"S0000": {"failures": 99999999999999999999, "quarters": {}}}}', encoding="utf-8")
+
+        def boom(*a, **k):
+            raise AssertionError("a network or process call was attempted")
+        with mock.patch.object(socket.socket, "connect", boom), mock.patch.object(socket, "create_connection", boom), mock.patch.object(socket, "getaddrinfo", boom), \
+                mock.patch.object(subprocess, "Popen", boom):
+            rc, out, err = self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out), "--state-dir", str(self.state))
+        self.assertEqual(rc, 0, err)
+
+
 class SameRulesAsTheUpdaters(unittest.TestCase):
     """Drift guard: the constants copied into the report must still equal the updaters' own. The updaters are imported here only, with the network blocked."""
 
