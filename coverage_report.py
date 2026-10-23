@@ -21,6 +21,34 @@ Inputs (all optional except universe.json; a missing one makes its module "not_m
                       shareholding_ledger.json, historical/historical.json, historical/attempts.json, historical/shards/<SYMBOL>.json
   --fundamentals FILE a fundamentals file (out/fundamentals.json shape) you supply. It is measured as what it is: its own as_of is reported and ages are
                       taken against --as-of. Without it fundamentals and growth are not measurable (the saved state lives only in the GitHub Actions cache).
+  --state-dir DIR     OPTIONAL. A folder you supply that holds the updaters' saved state, copied out of a workflow run's data/ folder (the Actions cache is not
+                      reachable from here). Exactly these file names are read, each only if present:
+                        fundamentals_cache.json   {"stocks": {SYMBOL: {isin, ratios{pe,pb,roa,roe,roce,ev_ebitda}, ratios_fetched, profile_fetched, last_attempt, last_error, ...}}}
+                        financials_cache.json     {"stocks": {SYMBOL: {income|balance_sheet|cash_flow: {data, basis, fetched, schema, error, attempted, failures}, last_error}}}
+                        quarterly_cache.json      {"schema_version": 1, "kind": "quarterly_cache", "stocks": {SYMBOL: {basis, last_checked, last_attempt, last_success, quarters{PERIOD_END: ...}}}}
+                      (The published out/financials.json is NOT the state: it holds no fetch or attempt dates, so it is never read.) A record is identified by its
+                      SYMBOL key in "stocks". Without --state-dir the report is exactly what it was before this option existed.
+                      Classification, per universe stock (counts only; no value, error text or record is written):
+                        valid        usable data that is not older than the documented interval
+                        stale        usable data older than the interval (fundamentals ratios 7 days = RATIOS_MAX_AGE_DAYS; financial statements 30 days =
+                                     STATEMENT_MAX_AGE_DAYS; quarterly results 30 days = STEADY_EVERY_DAYS, the steady re-check interval; the 2-day re-check inside
+                                     a results-pending window is not applied)
+                        missing      no usable data; the reason says why (no cache entry, never fetched, failed last attempt, not in Upstox, ...). Quarterly: a failed
+                                     request (failures > 0) is told apart from a check that stored no quarters ("no_data") and from a rejected response, which are not failures.
+                                     Financial statements: the unit is the complete set of three statements (income, balance sheet, cash flow); a stock holding only some
+                                     of them is missing here with the reason "incomplete_sections" and the sections it does hold are listed in the facts. That is a statement
+                                     about this cache, not about publication or about what the provider has: the updater builds a published row from any usable section.
+                        invalid      a record that is present but malformed, from a schema version newer than or unknown to the updater, dated in the future, or whose
+                                     symbol key appears more than once in the file (no entry is chosen over another)
+                        stale        also: a financial section written under an OLDER schema version (or none) is readable but the updater refetches it before use, so it is
+                                     counted stale, with the fixed reason "a_section_has_an_older_schema" in the facts (never invalid)
+                        unverified   cannot be decided offline (a fundamentals record held aside after an ISIN change; a file that is missing, unreadable, malformed
+                                     or of an unsupported schema makes the WHOLE module unverified, never zero coverage)
+                      A cache record is not proof of publication: whether the data reached the site is reported as unverified.
+                      Quarterly back-off and results-pending states are derived only from fields the cache holds (failures and last_attempt for back-off; the stored
+                      quarter-end dates for the pending window), with the updater's own rules, and are reported in the facts beside the counts, never instead of them.
+                      A pending window says a new quarter's result is expected; it does not say whether it has arrived. A file whose top-level "stocks" key is repeated
+                      is unusable (which copy is meant cannot be known) and its module is unverified.
   --as-of YYYY-MM-DD  the reference date for every age (required: the report never reads the clock, so equal inputs give an identical report)
 
 Identifiers: a stored record whose ISIN differs from the universe's is still counted (the stock is keyed by symbol) but is named under the module's
@@ -30,8 +58,8 @@ Freshness: a threshold is used only where the code documents its meaning. Fundam
 "refresh ratios weekly"). Candles, financial history, shareholding quarters: no threshold has been agreed, so they report measurable facts (ages, dates,
 row counts) and the status "threshold_not_configured"; they are never labelled fresh or stale.
 
-Usage: python coverage_report.py --data-branch DIR --as-of 2026-10-23 --out REPORT_DIR [--scope first500|all|both] [--fundamentals FILE]
-Exit codes: 0 report written, 2 refused (bad arguments, unsafe --out, unreadable or invalid universe).
+Usage: python coverage_report.py --data-branch DIR --as-of 2026-10-23 --out REPORT_DIR [--scope first500|all|both] [--fundamentals FILE] [--state-dir DIR]
+Exit codes: 0 report written, 2 refused (bad arguments, --state-dir not a folder, unsafe --out, unreadable or invalid universe).
 """
 import argparse
 import datetime as dt
@@ -67,6 +95,17 @@ DIRECTORY_KIND = "stock_directory"      # stock_directory.KIND
 # no workflow in the repository sets): the 10 development stocks plus a fixed five-stock test set. A drift test pins this tuple to the collector's own list.
 SH_COLLECTOR_SCOPE = tuple(universe.TEST_SYMBOLS) + ("DOMS", "20MICRONS", "21STCENMGM", "360ONE", "3BBLACKBIO")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+STATE_FILES = {"fundamentals": "fundamentals_cache.json", "financials": "financials_cache.json", "quarterly": "quarterly_cache.json"}    # processing_state.KINDS
+FIN_SECTIONS = ("income", "balance_sheet", "cash_flow")      # financials_updater.SECTIONS
+FIN_SCHEMA = 2                    # financials_updater.SCHEMA_VERSION
+STATEMENT_MAX_AGE_DAYS = 30       # financials_updater.STATEMENT_MAX_AGE_DAYS
+QUARTERLY_SCHEMA = 1              # quarterly_results_updater.SCHEMA_VERSION
+QUARTERLY_STEADY_DAYS = 30        # quarterly_results_updater.STEADY_EVERY_DAYS
+BASES = ("consolidated", "standalone")      # quarterly_results_updater.BASES
+QUARTERLY_PENDING_FROM_DAYS = 10  # quarterly_results_updater.PENDING_FROM_DAYS
+QUARTERLY_PENDING_FOR_DAYS = 90   # quarterly_results_updater.PENDING_FOR_DAYS
+QUARTERLY_PENDING_EVERY_DAYS = 2  # quarterly_results_updater.PENDING_EVERY_DAYS
+MAX_RETRY_DAYS = 30               # quarterly_results_updater.MAX_RETRY_DAYS (and financials_updater.MAX_RETRY_DAYS)
 OUTPUT_NAMES = ("coverage_report.json", "coverage_report.md")
 OUTSIDE_LIST_LIMIT = 50
 
@@ -113,6 +152,22 @@ def _sorted_dict(d):
     return {str(k): d[k] for k in sorted(d, key=str)}
 
 
+class _DupDict(dict):
+    """A JSON object that remembers which keys appeared more than once (json.loads would silently keep only the last)."""
+    dups = ()
+
+
+def _dup_hook(pairs):
+    out, seen, dups = _DupDict(), set(), []
+    for k, v in pairs:
+        if k in seen and k not in dups:
+            dups.append(k)
+        seen.add(k)
+        out[k] = v
+    out.dups = tuple(dups)
+    return out
+
+
 class Inputs:
     """Every file the run reads: size and sha256, so a report says exactly which bytes it describes. Files are opened read-only."""
 
@@ -126,7 +181,7 @@ class Inputs:
         except ValueError:
             return "supplied:" + Path(path).name
 
-    def read(self, path, register=True, label=None):
+    def read(self, path, register=True, label=None, pairs_hook=None):
         """(document, problem). problem is None, 'missing', 'unreadable' or 'invalid_json'. NaN/Infinity are refused. register=False: not listed one by one (the shards are listed as one hash)."""
         p = Path(path)
         if not p.is_file():
@@ -139,7 +194,7 @@ class Inputs:
             name = label or self.label(p)
             self.items[name] = {"path": name, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
         try:
-            return json.loads(raw.decode("utf-8"), parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c))), None
+            return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs_hook, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c))), None
         except (UnicodeDecodeError, ValueError):
             return None, "invalid_json"
 
@@ -228,7 +283,7 @@ def _cell_counter(values):
 
 # ---------------------------------------------------------------- loading
 class Data:
-    def __init__(self, data_dir, fundamentals_path, as_of):
+    def __init__(self, data_dir, fundamentals_path, as_of, state_dir=None):
         self.dir = Path(data_dir)
         self.as_of = as_of
         self.inputs = Inputs(self.dir)
@@ -248,6 +303,12 @@ class Data:
         self.shard_names = []
         self.shard_docs = {}
         self.shard_hash = None
+        self.state_dir = None if state_dir is None else Path(state_dir)
+        self.state = {}                      # kind -> (document or None, problem or None)
+        if self.state_dir is not None:
+            for kind, fname in STATE_FILES.items():
+                doc, prob = self.inputs.read(self.state_dir / fname, label="state:" + fname, pairs_hook=_dup_hook)
+                self.state[kind] = (None, prob) if prob else _state_schema(kind, doc)
 
     def load_universe(self):
         doc, prob = self.inputs.read(self.dir / "universe.json")
@@ -869,15 +930,333 @@ def mod_detail(d, syms, scope, cf, fh_mod, sh_mod):
                                 "reason": "the published pages, the out/by_symbol shards generated at build time and the Actions cache are not accessible; only the stored inputs above are measured"}])
 
 
+# ---------------------------------------------------------------- saved state (--state-dir)
+def _state_schema(kind, doc):
+    """(document, None) when the file has the shape its updater writes, else (None, 'unsupported_schema: ...'). Structure only; no value is looked at."""
+    if not isinstance(doc, dict):
+        return None, "unsupported_schema: not a JSON object"
+    if "stocks" in getattr(doc, "dups", ()):
+        return None, "unsupported_schema: the stocks key appears more than once"
+    if not isinstance(doc.get("stocks"), dict):
+        return None, "unsupported_schema: no stocks object"
+    if kind == "quarterly":
+        if doc.get("kind") is not None and doc.get("kind") != "quarterly_cache":
+            return None, "unsupported_schema: wrong kind"
+        v = doc.get("schema_version")
+        if v is not None and (isinstance(v, bool) or v != QUARTERLY_SCHEMA):
+            return None, "unsupported_schema: schema_version is not %d" % QUARTERLY_SCHEMA
+    return doc, None
+
+
+def _state_open(name, kind, d, syms, scope):
+    """-> (module, None) when the file cannot be used (every stock unverified, never zero coverage), else (None, (stocks, duplicate keys))."""
+    fname = STATE_FILES[kind]
+    doc, prob = d.state[kind]
+    if doc is None:
+        problems = ["%s is %s" % (fname, prob)]
+        if kind == "financials" and (d.state_dir / "financials.json").is_file():
+            problems.append("a file named financials.json is in the state folder; it is the published output, not the saved state, and was not read (the state is financials_cache.json)")
+        return _not_measurable(name, len(syms), _basis(scope), [fname], ["%s cannot be used (%s), so %s is NOT measured; no coverage is reported" % (fname, prob, name)],
+                               problems=problems, facts={"state_file": {"name": fname, "usable": False, "problem": prob}}), None
+    stocks = doc["stocks"]
+    return None, (stocks, set(getattr(stocks, "dups", ())))
+
+
+def _state_finish(name, kind, d, syms, scope, stocks, dups, tally, mis, inv, facts, freshness, unverified, extra_unverified=0):
+    n = len(syms)
+    counts = _counts(valid=tally["valid"], stale=tally["stale"], missing=tally["missing"], invalid=tally["invalid"], unverified=extra_unverified)
+    fname = STATE_FILES[kind]
+    in_scope = [s for s in syms if s in dups]
+    bad_keys = sum(1 for k in stocks if not (isinstance(k, str) and universe.SYMBOL_RE.match(k)))
+    facts = dict(facts)
+    facts["state_file"] = {"name": fname, "usable": True, "entries": len(stocks), "identified_by": 'the symbol key in "stocks"',
+                           "duplicate_symbol_keys": {"distinct": len(dups), "in_this_scope": len(in_scope), "symbols": sorted(x for x in dups if isinstance(x, str) and universe.SYMBOL_RE.match(x))[:OUTSIDE_LIST_LIMIT]},
+                           "keys_that_are_not_valid_symbols": bad_keys}
+    warnings = []
+    if dups:
+        warnings.append({"code": "duplicate_symbol_keys_in_state_file", "count": len(dups), "identifiers": facts["state_file"]["duplicate_symbol_keys"]["symbols"],
+                         "message": "%s repeats %d symbol key(s). A universe stock with a repeated key cannot be read unambiguously and is counted invalid; no entry was chosen over another." % (fname, len(dups))})
+    return _module(name, "partial", n, counts, [fname], basis=_basis(scope), freshness=freshness, facts=facts, missing_reasons=mis, invalid_reasons=inv,
+                   unverified=unverified, warnings=warnings)
+
+
+def _classify_all(syms, stocks, dups, classify, as_of):
+    tally = {"valid": 0, "stale": 0, "missing": 0, "invalid": 0, "unverified": 0}
+    mis, inv, unv, stl = {}, {}, {}, {}
+    for s in syms:
+        if s in dups:
+            st, why = "invalid", "duplicate_symbol_key"
+        else:
+            st, why = classify(s, stocks.get(s), as_of)
+        tally[st] += 1
+        if st == "missing":
+            _tally(mis, why)
+        elif st == "invalid":
+            _tally(inv, why)
+        elif st == "unverified":
+            _tally(unv, why)
+        elif st == "stale":
+            _tally(stl, why)
+    return tally, mis, inv, unv, stl
+
+
+def mod_fundamentals_state(d, syms, scope):
+    name = "fundamentals_state"
+    mod, ctx = _state_open(name, "fundamentals", d, syms, scope)
+    if mod:
+        return mod
+    stocks, dups = ctx
+    acc = {"all_six_metrics": 0, "some_metrics": 0, "no_metrics": 0, "with_recorded_error_but_data": 0, "data_but_not_listed_now": 0}
+
+    def classify(sym, e, as_of):
+        if e is None:
+            return "missing", "no_cache_entry"
+        if not isinstance(e, dict):
+            return "invalid", "entry_not_an_object"
+        if e.get("held_isin_change"):
+            return "unverified", "held_aside_after_isin_change"
+        for k in ("profile_fetched", "ratios_fetched", "last_attempt"):
+            if e.get(k) is not None:
+                day = _date(e.get(k))
+                if day is None or day > as_of:
+                    return "invalid", k + "_not_a_past_date"
+        if e.get("ratios_fetched"):
+            r = e.get("ratios")
+            if not isinstance(r, dict) or set(r) != set(FUNDAMENTALS_METRICS):
+                return "invalid", "ratios_not_exactly_the_six_metrics"
+            if any(v is not None and not _isnum(v) for v in r.values()):
+                return "invalid", "ratio_not_a_finite_number_or_null"
+            present = sum(1 for v in r.values() if v is not None)
+            acc["all_six_metrics" if present == len(FUNDAMENTALS_METRICS) else "no_metrics" if present == 0 else "some_metrics"] += 1
+            if e.get("last_error") == NOT_FOUND_ERROR:
+                acc["data_but_not_listed_now"] += 1
+            elif e.get("last_error"):
+                acc["with_recorded_error_but_data"] += 1
+            return ("stale", "ratios_older_than_threshold") if (as_of - _date(e["ratios_fetched"])).days >= FUNDAMENTALS_MAX_AGE_DAYS else ("valid", None)
+        if e.get("last_error") == NOT_FOUND_ERROR:
+            return "missing", "not_in_upstox"
+        if e.get("last_error"):
+            return "missing", "failed_last_attempt"
+        return "missing", "never_fetched"
+
+    tally, mis, inv, unv, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
+    facts = {"stocks_with_ratios": tally["valid"] + tally["stale"], "stale_reasons": _sorted_dict(stl), "ratio_completeness_of_stocks_with_ratios": acc,
+             "held_aside_after_isin_change": unv.get("held_aside_after_isin_change", 0),
+             "sector_label": "never read: it is private until the sector approval gate opens",
+             "batches_recorded": len(d.state["fundamentals"][0]["batches"]) if isinstance(d.state["fundamentals"][0].get("batches"), dict) else None}
+    unverified = [{"what": "whether the cached ratios were published", "count": tally["valid"] + tally["stale"],
+                   "reason": "a cache record is not proof of publication; out/fundamentals.json and the site are not part of the state folder"}]
+    if unv:
+        unverified.append({"what": "records held aside after an ISIN change", "count": sum(unv.values()),
+                           "reason": "which ISIN is right is a decision for a person; the held data is neither counted as usable nor as missing"})
+    return _state_finish(name, "fundamentals", d, syms, scope, stocks, dups, tally, mis, inv, facts,
+                         {"status": "configured", "threshold_days": FUNDAMENTALS_MAX_AGE_DAYS, "threshold_source": "fundamentals_updater.RATIOS_MAX_AGE_DAYS", "age_taken_from": "ratios_fetched"},
+                         unverified, extra_unverified=sum(unv.values()))
+
+
+def _quarterly_problem(e, as_of):
+    for k in ("last_attempt", "last_checked", "last_success"):
+        if e.get(k) is not None:
+            day = _date(e.get(k))
+            if day is None or day > as_of:
+                return k + "_not_a_past_date"
+    if e.get("basis") is not None and e.get("basis") not in BASES:
+        return "basis_not_recognised"
+    f = e.get("failures")
+    if f is not None and (isinstance(f, bool) or not isinstance(f, int) or f < 0):
+        return "failures_not_a_count"
+    qs = e.get("quarters")
+    if not isinstance(qs, dict):
+        return "quarters_not_an_object"
+    for pe, q in qs.items():
+        if _date(pe) is None:
+            return "quarter_key_not_a_date"
+        if not isinstance(q, dict) or not isinstance(q.get("values"), dict):
+            return "quarter_record_malformed"
+        if any(v is not None and not _isnum(v) for v in q["values"].values()):
+            return "quarter_value_not_a_number_or_null"
+    return None
+
+
+def _add_months(day, n):
+    """quarterly_results_updater.add_months: the month-end n months after the month-end `day`."""
+    m = day.month - 1 + n
+    y, m = day.year + m // 12, m % 12 + 1
+    ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+    return dt.date(ny, nm, 1) - dt.timedelta(days=1)
+
+
+def _retry_days(failures):
+    return min(2 ** (max(1, int(failures or 1)) - 1), MAX_RETRY_DAYS)
+
+
+def _quarterly_refresh_state(e, as_of):
+    """(in_backoff, results_pending, due), the updater's own rules (in_backoff / results_pending / needs_refresh) applied to the cache fields, for a record that holds quarters.
+    Evidence used: failures and last_attempt (back-off), the stored quarter-end dates (pending window), last_checked (due)."""
+    last = _date(e.get("last_attempt"))
+    backoff = bool(e.get("failures")) and last is not None and (as_of - last).days < _retry_days(e.get("failures"))
+    ends = sorted(k for k in e["quarters"] if _date(k))
+    start = _add_months(_date(ends[-1]), 3) + dt.timedelta(days=QUARTERLY_PENDING_FROM_DAYS)
+    pending = start <= as_of <= start + dt.timedelta(days=QUARTERLY_PENDING_FOR_DAYS)
+    lc = _date(e.get("last_checked"))
+    if backoff:
+        due = False
+    elif lc is None:
+        due = True
+    else:
+        due = (as_of - lc).days >= (QUARTERLY_PENDING_EVERY_DAYS if pending else QUARTERLY_STEADY_DAYS)
+    return backoff, pending, due
+
+
+def mod_quarterly_state(d, syms, scope):
+    name = "quarterly_results"
+    mod, ctx = _state_open(name, "quarterly", d, syms, scope)
+    if mod:
+        return mod
+    stocks, dups = ctx
+    per_stock, newest, basis = {}, {}, {}
+    acc = {"stocks_with_failed_requests": 0, "stocks_whose_last_check_returned_no_data": 0, "stocks_whose_last_check_was_rejected": 0}
+    states = {"in_retry_backoff": 0, "results_pending_window": 0, "neither": 0}
+    due_n = [0]
+
+    def classify(sym, e, as_of):
+        if e is None:
+            return "missing", "no_cache_entry"
+        if not isinstance(e, dict):
+            return "invalid", "entry_not_an_object"
+        bad = _quarterly_problem(e, as_of)
+        if bad:
+            return "invalid", bad
+        failed = bool(e.get("failures"))                    # only a failed request raises failures; no_data and rejected responses leave it at 0
+        acc["stocks_with_failed_requests"] += failed
+        if e.get("problem") == "no_data":
+            acc["stocks_whose_last_check_returned_no_data"] += 1
+        elif e.get("problem"):
+            acc["stocks_whose_last_check_was_rejected"] += 1
+        if not e["quarters"]:
+            if failed:
+                return "missing", "failed_last_attempt"
+            if e.get("problem") == "no_data":
+                return "missing", "checked_no_quarters_stored"
+            if e.get("problem"):
+                return "missing", "checked_result_rejected"
+            return "missing", ("checked_no_quarters_stored" if e.get("last_checked") else "never_checked")
+        _tally(per_stock, len(e["quarters"]))
+        _tally(newest, max(e["quarters"]))
+        _tally(basis, e.get("basis") or "unknown")
+        backoff, pending, due = _quarterly_refresh_state(e, as_of)
+        states["in_retry_backoff" if backoff else "results_pending_window" if pending else "neither"] += 1
+        due_n[0] += due
+        lc = _date(e.get("last_checked"))
+        if lc is not None and (as_of - lc).days < QUARTERLY_STEADY_DAYS:
+            return "valid", None
+        base = "no_check_date" if lc is None else "last_check_older_than_interval"
+        return "stale", ("stale_in_retry_backoff" if backoff else "stale_in_results_pending_window" if pending else base)
+
+    tally, mis, inv, _, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
+    facts = {"stocks_with_quarters": tally["valid"] + tally["stale"], "quarters_per_stock": _sorted_dict(per_stock), "newest_quarter_end_counts": _sorted_dict(newest),
+             "basis_counts": _sorted_dict(basis), "cache_schema_version": d.state["quarterly"][0].get("schema_version"), "stale_reasons": _sorted_dict(stl),
+             "refresh_states_of_stocks_with_quarters": states, "due_for_recheck_under_the_updaters_rule": due_n[0], **acc}
+    unverified = [{"what": "whether the cached quarterly results were published", "count": tally["valid"] + tally["stale"],
+                   "reason": "a cache record is not proof of publication; out/quarterly_results.json, the shards and the site are not part of the state folder"},
+                  {"what": "whether a new quarter has arrived inside a results-pending window", "count": states["results_pending_window"],
+                   "reason": "the window says a result is expected from the stored quarter-end dates; the cache does not say whether it has been published yet"}]
+    return _state_finish(name, "quarterly", d, syms, scope, stocks, dups, tally, mis, inv, facts,
+                         {"status": "configured", "threshold_days": QUARTERLY_STEADY_DAYS, "threshold_source": "quarterly_results_updater.STEADY_EVERY_DAYS (the steady re-check interval); "
+                          "valid/stale use it alone, the back-off and results-pending states are reported beside the counts", "age_taken_from": "last_checked"}, unverified)
+
+
+def _fin_section(sec, as_of):
+    """-> (state, reason): state is fresh / stale / outdated_schema / none / failed / invalid. A section the updater could use needs data, a known basis, the current schema and a
+    past fetch date. An OLDER (or absent) schema version is readable but the updater refetches it before use (needs_refresh), so it is outdated_schema, not invalid; a newer or
+    unrecognised version cannot be read with the current rules and is invalid."""
+    if sec is None:
+        return "none", None
+    if not isinstance(sec, dict):
+        return "invalid", "section_not_an_object"
+    for k in ("fetched", "attempted"):
+        if sec.get(k) is not None:
+            day = _date(sec.get(k))
+            if day is None or day > as_of:
+                return "invalid", k + "_not_a_past_date"
+    if not sec.get("data"):
+        return ("failed", None) if sec.get("error") else ("none", None)
+    if not isinstance(sec["data"], dict):
+        return "invalid", "data_not_an_object"
+    if sec.get("basis") not in BASES:
+        return "invalid", "basis_not_recognised"
+    v = sec.get("schema")
+    if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v > FIN_SCHEMA):
+        return "invalid", "schema_not_recognised"
+    f = _date(sec.get("fetched"))
+    if f is None:
+        return "invalid", "fetched_missing"
+    if v is None or v < FIN_SCHEMA:
+        return "outdated_schema", "schema_older_or_absent"
+    return ("stale", None) if (as_of - f).days >= STATEMENT_MAX_AGE_DAYS else ("fresh", None)
+
+
+def mod_financials_state(d, syms, scope):
+    name = "annual_financials_and_balance_sheet"
+    mod, ctx = _state_open(name, "financials", d, syms, scope)
+    if mod:
+        return mod
+    stocks, dups = ctx
+    sections = {s: {"fresh": 0, "stale": 0, "outdated_schema": 0, "none": 0, "failed": 0, "invalid": 0} for s in FIN_SECTIONS}
+    basis, partial = {}, {}
+
+    def classify(sym, e, as_of):
+        if e is None:
+            return "missing", "no_cache_entry"
+        if not isinstance(e, dict):
+            return "invalid", "entry_not_an_object"
+        st = {n: _fin_section(e.get(n), as_of) for n in FIN_SECTIONS}
+        for n, (state, _) in st.items():
+            sections[n][state] += 1
+        for n in FIN_SECTIONS:
+            if st[n][0] == "invalid":
+                return "invalid", "%s:%s" % (n, st[n][1])
+        usable = [n for n in FIN_SECTIONS if st[n][0] in ("fresh", "stale", "outdated_schema")]
+        if len(usable) == len(FIN_SECTIONS):
+            for n in FIN_SECTIONS:
+                _tally(basis, e[n]["basis"])
+            if any(st[n][0] == "outdated_schema" for n in FIN_SECTIONS):
+                return "stale", "a_section_has_an_older_schema"
+            return ("stale", "a_section_older_than_threshold") if any(st[n][0] == "stale" for n in FIN_SECTIONS) else ("valid", None)
+        if usable:
+            _tally(partial, "+".join(usable))
+            return "missing", "incomplete_sections"
+        if e.get("last_error") == NOT_FOUND_ERROR:
+            return "missing", "not_in_upstox"
+        if e.get("last_error") or any(st[n][0] == "failed" for n in FIN_SECTIONS):
+            return "missing", "failed_last_attempt"
+        return "missing", "never_fetched"
+
+    tally, mis, inv, _, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
+    facts = {"stocks_with_all_three_sections": tally["valid"] + tally["stale"], "required_sections": list(FIN_SECTIONS), "stale_reasons": _sorted_dict(stl),
+             "incomplete_statements": {"stocks": mis.get("incomplete_sections", 0), "sections_held": _sorted_dict(partial),
+                                       "meaning": "some but not all of the three statements are usable in this cache; not a statement about publication or about what the provider has"},
+             "section_states_counted_over_stocks_with_an_entry": sections, "basis_counts_of_complete_stocks": _sorted_dict(basis), "required_schema": FIN_SCHEMA}
+    unverified = [{"what": "whether the cached statements were published", "count": tally["valid"] + tally["stale"],
+                   "reason": "a cache record is not proof of publication; out/financials.json and the site are not part of the state folder"},
+                  {"what": "whether stocks with incomplete statements are published", "count": mis.get("incomplete_sections", 0),
+                   "reason": "the updater builds a published row from any usable section, so a stock counted missing here may still be published with fewer statements; the published file is not supplied"}]
+    return _state_finish(name, "financials", d, syms, scope, stocks, dups, tally, mis, inv, facts,
+                         {"status": "configured", "threshold_days": STATEMENT_MAX_AGE_DAYS, "threshold_source": "financials_updater.STATEMENT_MAX_AGE_DAYS",
+                          "age_taken_from": "each section's fetched date; the stock is stale when any section is, or when a section has an older schema version"}, unverified)
+
+
 # ---------------------------------------------------------------- the report
-def build_report(data_dir, as_of, scope="both", fundamentals_path=None):
+def build_report(data_dir, as_of, scope="both", fundamentals_path=None, state_dir=None):
     if scope not in ("first500", "all", "both"):
         raise ReportError("scope must be first500, all or both")
     if not isinstance(as_of, dt.date):
         raise ReportError("as_of must be a date")
     if not Path(data_dir).is_dir():
         raise ReportError("--data-branch is not a folder")
-    d = Data(data_dir, fundamentals_path, as_of)
+    if state_dir is not None and not Path(state_dir).is_dir():
+        raise ReportError("--state-dir is not a folder")
+    d = Data(data_dir, fundamentals_path, as_of, state_dir)
     d.load_universe()
     d.list_shards()
     symbols = d.symbols
@@ -892,6 +1271,10 @@ def build_report(data_dir, as_of, scope="both", fundamentals_path=None):
                 mod_cache_only("quarterly_results", d, syms, label, ["data/quarterly_cache.json", "out/by_symbol/quarterly_results/", "out/quarterly_results.json"]),
                 mod_cache_only("annual_financials_and_balance_sheet", d, syms, label, ["out/financials.json"]),
                 mod_detail(d, syms, label, cf, fh_mod, sh_mod)]
+        if d.state_dir is not None:          # measured from the supplied state files; without --state-dir the list above is the whole report
+            mods = [mod_quarterly_state(d, syms, label) if m["module"] == "quarterly_results" else mod_financials_state(d, syms, label)
+                    if m["module"] == "annual_financials_and_balance_sheet" else m for m in mods]
+            mods.insert([m["module"] for m in mods].index("fundamentals") + 1, mod_fundamentals_state(d, syms, label))
         warnings = [dict(w, module=m["module"]) for m in mods for w in m["warnings"]]
         isin = [w for w in warnings if w["code"] == "isin_differs_from_universe"]
         scopes[label] = {"warnings": warnings,
@@ -911,6 +1294,14 @@ def build_report(data_dir, as_of, scope="both", fundamentals_path=None):
         outside["historical_single_file"] = sorted(set(d.hist["stocks"]) - uni_set)
     if _fund_usable(d):
         outside["fundamentals_rows"] = sorted({r["symbol"] for r in d.fund["stocks"] if isinstance(r, dict) and isinstance(r.get("symbol"), str)} - uni_set)
+    state_report = None
+    if d.state_dir is not None:
+        state_report = {}
+        for kind, fname in STATE_FILES.items():
+            doc, prob = d.state[kind]
+            state_report[fname] = {"usable": doc is not None, "problem": prob, "entries": len(doc["stocks"]) if doc is not None else None}
+            if doc is not None:
+                outside["state:" + fname] = sorted({k for k in doc["stocks"] if isinstance(k, str) and universe.SYMBOL_RE.match(k)} - uni_set)
     inputs = d.inputs.listing()
     inputs.append({"path": "historical/shards/", "files": len(d.shard_names), "sha256": d.shard_hash})
     return {
@@ -922,6 +1313,7 @@ def build_report(data_dir, as_of, scope="both", fundamentals_path=None):
         "inputs": inputs,
         "reconciliation": {"present_in_stored_data_but_not_in_universe": {k: {"count": len(v), "first": v[:OUTSIDE_LIST_LIMIT]} for k, v in sorted(outside.items())}},
         "scopes": scopes,
+        **({"state_files": state_report} if state_report is not None else {}),
     }
 
 
@@ -998,6 +1390,7 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--scope", default="both", choices=("first500", "all", "both"))
     ap.add_argument("--fundamentals", default=None)
+    ap.add_argument("--state-dir", default=None)
     try:
         a = ap.parse_args(argv)
     except SystemExit as e:
@@ -1006,9 +1399,9 @@ def main(argv=None):
         as_of = _date(a.as_of)
         if as_of is None:
             raise ReportError("--as-of must be a real date written YYYY-MM-DD")
-        protected = [a.data_branch] + ([a.fundamentals] if a.fundamentals else [])
+        protected = [a.data_branch] + ([a.fundamentals] if a.fundamentals else []) + ([a.state_dir] if a.state_dir else [])
         out_dir = check_output_dir(a.out, protected)
-        report = build_report(a.data_branch, as_of, a.scope, a.fundamentals)
+        report = build_report(a.data_branch, as_of, a.scope, a.fundamentals, a.state_dir)
         write_outputs(out_dir, report)
     except (ReportError, OSError) as e:
         print("coverage_report: refused: %s" % e, file=sys.stderr)
