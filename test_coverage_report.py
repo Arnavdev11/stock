@@ -174,6 +174,155 @@ class SelectionAndCounts(Case):
         self.assertEqual((m["facts"]["duplicate_symbols"], m["facts"]["duplicate_isins"]), (0, 0))
 
 
+class DirectoryCrossCheck(Case):
+    """stock_directory.json: an unusable directory is never reported as verified coverage, and duplicate entries are reported, not overwritten away."""
+
+    def directory_row(self, report, scope="all"):
+        return self.mod(report, scope, "directory")
+
+    def test_a_usable_directory_is_the_positive_control(self):
+        self.make(6)
+        m = self.directory_row(self.build())
+        self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"], m["coverage_pct"]), (6, None, 100.0))
+        self.assertEqual(m["measurability"], "offline")
+        self.assertEqual(m["facts"]["directory_cross_check"], {"performed": True, "reason": None, "stocks_cross_checked": 6})
+        self.assertEqual(m["facts"]["universe_identifier_check"]["well_formed"], 6)
+        self.assertEqual(m["warnings"], [])
+
+    def test_a_missing_directory_is_unverified_never_one_hundred_percent(self):
+        self.make(600, with_directory=False)
+        r = self.build()
+        for scope, n in (("first_500", 500), ("all", 600)):
+            m = self.directory_row(r, scope)
+            self.assertEqual(m["counts"], {"valid": None, "stale": None, "missing": 0, "invalid": 0, "not_applicable": None, "unverified": n})
+            self.assertIsNone(m["coverage_pct"])
+            self.assertIsNone(m["fresh_pct"])
+            self.assertEqual(m["denominator"]["value"], n)
+            self.assertEqual(m["measurability"], "partial")
+            self.assertEqual(m["facts"]["directory_cross_check"], {"performed": False, "reason": "missing", "stocks_cross_checked": 0})
+            u = m["facts"]["universe_identifier_check"]
+            self.assertEqual((u["well_formed"], u["denominator"], u["pct"]), (n, n, 100.0))      # the universe-only figure is kept, and labelled as such
+            self.assertIn("not a directory cross-check", u["note"])
+            self.assertEqual(m["unverified"][0]["count"], n)
+            self.assertIn("NOT reported as verified", m["unverified"][0]["reason"])
+            self.assertIn("stock_directory.json is missing", m["problems"][0])
+        row = [ln for ln in C.render_markdown(r).splitlines() if ln.startswith("| directory |")][0]
+        self.assertEqual(row.split("|")[3].strip(), "n/a")          # Valid
+        self.assertEqual(row.split("|")[8].strip(), "n/a")          # Coverage %
+        self.assertNotIn("100", row)
+
+    def test_every_way_the_directory_can_be_unusable_gives_the_same_unverified_result(self):
+        cases = {"unreadable": None, "invalid_json": "{ not json", "not_an_object": "[1, 2]", "wrong_kind": json.dumps({"kind": "something_else", "symbols": [{"symbol": "S0000"}]}),
+                 "no_symbols_list": json.dumps({"kind": "stock_directory", "symbols": {"S0000": "x"}}), "empty_symbols_list": json.dumps({"kind": "stock_directory", "symbols": []})}
+        for reason, text in cases.items():
+            with self.subTest(reason=reason):
+                self.make(4, with_directory=False)
+                path = self.data / "stock_directory.json"
+                if text is None:
+                    path.mkdir()          # a folder where the file should be: not readable as a file
+                    expect = "missing"      # is_file() is False for a folder, so it is reported as missing
+                else:
+                    path.write_text(text, encoding="utf-8")
+                    expect = reason
+                m = self.directory_row(self.build())
+                self.assertEqual(m["facts"]["directory_cross_check"]["reason"], expect)
+                self.assertEqual((m["counts"]["valid"], m["counts"]["unverified"], m["coverage_pct"]), (None, 4, None))
+                self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 4)
+                self.assertEqual(m["facts"]["universe_identifier_check"]["well_formed"], 4)
+                if text is None:
+                    path.rmdir()
+
+    def test_a_stock_without_an_isin_is_missing_not_unverified(self):
+        self.make(5, with_directory=False)
+        doc = universe_doc(self.symbols)
+        doc["symbols"][1]["isin"] = None                  # no ISIN: there is nothing to cross-check
+        write(self.data / "universe.json", doc)
+        write(self.data / "stock_directory.json", {"kind": "stock_directory", "symbols": []})      # unusable
+        m = self.directory_row(self.build())
+        self.assertEqual(m["counts"], {"valid": None, "stale": None, "missing": 1, "invalid": 0, "not_applicable": None, "unverified": 4})
+        self.assertEqual(m["facts"]["universe_identifier_check"]["well_formed"], 4)
+        self.assertEqual(m["facts"]["directory_cross_check"]["performed"], False)
+
+    def test_duplicate_directory_symbols_are_reported_not_resolved_by_overwrite(self):
+        self.make(6)
+        d = directory_doc(self.symbols)
+        d["symbols"].append({"symbol": "S0001", "isin": isin(1), "name": "again"})               # an identical duplicate
+        d["symbols"].insert(0, {"symbol": "S0002", "isin": isin(888), "name": "first is wrong"})      # earlier entry wrong, later entry right
+        write(self.data / "stock_directory.json", d)
+        m = self.directory_row(self.build())
+        self.assertEqual(m["invalid_reasons"], {"duplicate_symbol_in_directory": 2})
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (4, 2))      # neither entry is chosen: S0001 and S0002 are not valid
+        dd = m["facts"]["directory_duplicates"]
+        self.assertEqual(dd["duplicate_symbols"], {"distinct": 2, "extra_entries": 2, "symbols": ["S0001", "S0002"]})
+        self.assertEqual(dd["duplicate_isins"], {"distinct": 1, "extra_entries": 1, "isins": [isin(1)]})      # the identical S0001 entry repeats its ISIN too
+        w = [x for x in m["warnings"] if x["code"] == "duplicate_symbols_in_directory"][0]
+        self.assertEqual((w["count"], w["identifiers"]), (2, ["S0001", "S0002"]))
+        self.assertEqual(m["coverage_pct"], round(100.0 * 4 / 6, 4))
+        md = C.render_markdown(self.build())
+        self.assertIn("more than once", md)
+        self.assertIn("Identifiers: S0001, S0002", md)
+
+    def test_duplicate_directory_isins_are_reported(self):
+        self.make(6)
+        d = directory_doc(self.symbols)
+        d["symbols"][2]["isin"] = isin(1)             # S0002 now carries S0001's ISIN in the directory
+        write(self.data / "stock_directory.json", d)
+        m = self.directory_row(self.build())
+        self.assertEqual(m["invalid_reasons"], {"duplicate_isin_in_directory": 1, "isin_differs_from_directory": 1})
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (4, 2))
+        dd = m["facts"]["directory_duplicates"]
+        self.assertEqual(dd["duplicate_isins"], {"distinct": 1, "extra_entries": 1, "isins": [isin(1)]})
+        self.assertEqual(dd["duplicate_symbols"]["distinct"], 0)
+        w = [x for x in m["warnings"] if x["code"] == "duplicate_isins_in_directory"][0]
+        self.assertEqual((w["count"], w["identifiers"]), (1, [isin(1)]))
+
+    def test_null_directory_isins_are_not_duplicates(self):
+        self.make(5)
+        d = directory_doc(self.symbols)
+        d["symbols"][1]["isin"] = None
+        d["symbols"][2]["isin"] = None
+        write(self.data / "stock_directory.json", d)
+        m = self.directory_row(self.build())
+        self.assertEqual(m["facts"]["directory_duplicates"]["duplicate_isins"], {"distinct": 0, "extra_entries": 0, "isins": []})
+        self.assertEqual(m["invalid_reasons"], {"isin_differs_from_directory": 2})      # a null directory ISIN does not match the universe's ISIN
+        self.assertFalse([x for x in m["warnings"] if x["code"] == "duplicate_isins_in_directory"])
+
+    def test_malformed_directory_entries_are_counted_and_the_rest_still_used(self):
+        self.make(5)
+        d = directory_doc(self.symbols)
+        d["symbols"] += ["junk", {"isin": isin(1)}, {"symbol": "S0001", "isin": 12345}]
+        write(self.data / "stock_directory.json", d)
+        m = self.directory_row(self.build())
+        self.assertEqual(m["facts"]["directory_duplicates"]["malformed_entries"], 3)
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (5, 0))      # the 3 unusable entries neither help nor hurt a stock
+        self.assertEqual([x["code"] for x in m["warnings"]], ["malformed_entries_in_directory"])
+
+    def test_duplicates_are_counted_per_scope_but_reported_for_the_whole_directory(self):
+        self.make(600)
+        d = directory_doc(self.symbols)
+        d["symbols"].append({"symbol": "S0550", "isin": isin(550), "name": "dup"})      # outside the first 500
+        write(self.data / "stock_directory.json", d)
+        r = self.build()
+        a, b = self.directory_row(r, "first_500"), self.directory_row(r, "all")
+        self.assertEqual((a["counts"]["valid"], a["counts"]["invalid"]), (500, 0))
+        self.assertEqual((b["counts"]["valid"], b["counts"]["invalid"]), (599, 1))
+        for m in (a, b):
+            self.assertEqual(m["facts"]["directory_duplicates"]["duplicate_symbols"]["symbols"], ["S0550"])      # the directory-level fact is the same in both
+            self.assertEqual(sum(v for v in m["counts"].values() if v is not None), m["denominator"]["value"])
+
+    def test_directory_checks_leave_universe_validation_and_existing_mappings_alone(self):
+        self.make(4)
+        d = directory_doc(self.symbols)
+        d["symbols"][3]["isin"] = isin(999)
+        d["symbols"].pop(0)
+        write(self.data / "stock_directory.json", d)
+        m = self.directory_row(self.build())
+        self.assertEqual(m["invalid_reasons"], {"isin_differs_from_directory": 1, "not_in_directory": 1})      # the same two reasons as before duplicate detection existed
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (2, 2))
+        write(self.data / "universe.json", {**universe_doc(self.symbols), "count": 99})            # an invalid universe still stops the run
+        self.assertEqual(self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out))[0], 2)
+
+
 class NullVersusZero(Case):
     def test_zero_is_present_and_counted_separately_null_is_never_zero(self):
         self.make(5)
@@ -596,6 +745,12 @@ class SameRulesAsTheUpdaters(unittest.TestCase):
                 import shareholding_updater as su
             except ImportError as e:
                 self.skipTest("an updater could not be imported here (%s)" % e)
+        try:
+            import stock_directory as sd
+        except ImportError:
+            sd = None
+        if sd is not None:
+            self.assertEqual(C.DIRECTORY_KIND, sd.KIND)
         self.assertEqual(C.FUNDAMENTALS_MAX_AGE_DAYS, fu.RATIOS_MAX_AGE_DAYS)
         self.assertEqual(C.NOT_FOUND_ERROR, fu.NOT_FOUND_ERROR)
         self.assertEqual(list(C.FUNDAMENTALS_METRICS), sorted(fu.METRICS, key=list(C.FUNDAMENTALS_METRICS).index))

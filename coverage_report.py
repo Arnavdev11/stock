@@ -62,6 +62,7 @@ SH_CATEGORIES = tuple(_sl.CATEGORIES)
 SH_STATUS = ("available", "unavailable")
 SH_QUARTER_ENDS = {(3, 31), (6, 30), (9, 30), (12, 31)}
 SH_QUALITY = ("ok", "flagged")
+DIRECTORY_KIND = "stock_directory"      # stock_directory.KIND
 # The stocks the shareholding collector may read: its default scope (shareholding_updater.collection_symbols with SHAREHOLDING_FOLLOW_UNIVERSE unset, which
 # no workflow in the repository sets): the 10 development stocks plus a fixed five-stock test set. A drift test pins this tuple to the collector's own list.
 SH_COLLECTOR_SCOPE = tuple(universe.TEST_SYMBOLS) + ("DOMS", "20MICRONS", "21STCENMGM", "360ONE", "3BBLACKBIO")
@@ -283,7 +284,51 @@ def _basis(scope):
 
 
 # ---------------------------------------------------------------- modules
+def _directory_state(d):
+    """What stock_directory.json lets us do, decided BEFORE any lookup table is built.
+    -> {"usable": False, "reason": ...} or {"usable": True, "entries": {symbol: isin} (first entry per symbol), "dup_symbols": [...], "dup_isins": [...],
+    "extra_symbol_entries": n, "extra_isin_entries": n, "malformed": n}. A symbol or ISIN that appears more than once is listed, never resolved by letting
+    a later entry overwrite an earlier one."""
+    if hasattr(d, "_directory_state"):
+        return d._directory_state
+    doc = d.directory
+    if d.directory_problem:
+        reason = d.directory_problem                      # missing / unreadable / invalid_json
+    elif not isinstance(doc, dict):
+        reason = "not_an_object"
+    elif doc.get("kind") != DIRECTORY_KIND:
+        reason = "wrong_kind"
+    elif not isinstance(doc.get("symbols"), list):
+        reason = "no_symbols_list"
+    elif not doc["symbols"]:
+        reason = "empty_symbols_list"
+    else:
+        reason = None
+    if reason:
+        st = {"usable": False, "reason": reason}
+    else:
+        entries, sym_n, isin_n, malformed = {}, {}, {}, 0
+        for x in doc["symbols"]:
+            if not isinstance(x, dict) or not isinstance(x.get("symbol"), str) or (x.get("isin") is not None and not isinstance(x.get("isin"), str)):
+                malformed += 1
+                continue
+            sym_n[x["symbol"]] = sym_n.get(x["symbol"], 0) + 1
+            if x.get("isin") is not None:
+                isin_n[x["isin"]] = isin_n.get(x["isin"], 0) + 1
+            entries.setdefault(x["symbol"], x.get("isin"))
+        st = {"usable": True, "entries": entries, "malformed": malformed,
+              "dup_symbols": sorted(k for k, v in sym_n.items() if v > 1), "dup_isins": sorted(k for k, v in isin_n.items() if v > 1),
+              "extra_symbol_entries": sum(v - 1 for v in sym_n.values() if v > 1), "extra_isin_entries": sum(v - 1 for v in isin_n.values() if v > 1)}
+    d._directory_state = st
+    return st
+
+
 def mod_directory(d, syms, scope):
+    """Two different things are counted and never mixed up:
+      * identifiers that are well formed in universe.json alone (reported as a fact, labelled universe-only), and
+      * identifiers CROSS-CHECKED against stock_directory.json (these are the 'valid' count).
+    When the directory cannot be used, nothing is cross-checked: 'valid' is not assessed (null), the well-formed identifiers are counted as unverified,
+    and the module reports no coverage percentage, so a missing directory can never show as 100%."""
     n = len(syms)
     seen_sym, seen_isin, dup_sym, dup_isin = set(), set(), 0, 0
     for s in syms:
@@ -293,17 +338,17 @@ def mod_directory(d, syms, scope):
         if i is not None:
             dup_isin += i in seen_isin
             seen_isin.add(i)
-    dir_map = None
-    dir_symbols = d.directory.get("symbols") if isinstance(d.directory, dict) else None
-    problems = []
-    if isinstance(dir_symbols, list):
-        dir_map = {x.get("symbol"): x.get("isin") for x in dir_symbols if isinstance(x, dict)}
+    st = _directory_state(d)
+    problems, warnings = [], []
+    if st["usable"]:
+        pass
     elif d.directory_problem:
         problems.append("stock_directory.json is " + d.directory_problem)
     else:
-        problems.append("stock_directory.json has no symbols list")
-    valid = invalid = missing = 0
+        problems.append("stock_directory.json is not usable (%s)" % st["reason"])
+    valid = invalid = missing = well_formed = checked = 0
     inv, mis = {}, {}
+    dup_s, dup_i = set(st.get("dup_symbols") or []), set(st.get("dup_isins") or [])
     for s in syms:
         i = d.isin.get(s)
         if i is None:
@@ -312,33 +357,69 @@ def mod_directory(d, syms, scope):
         elif not universe.ISIN_RE.match(i) or not universe.SYMBOL_RE.match(s):
             invalid += 1
             _tally(inv, "bad_symbol_or_isin")
-        elif dir_map is not None and s not in dir_map:
-            invalid += 1
-            _tally(inv, "not_in_directory")
-        elif dir_map is not None and dir_map[s] != i:
-            invalid += 1
-            _tally(inv, "isin_differs_from_directory")
         else:
-            valid += 1
-    facts = {"duplicate_symbols": dup_sym, "duplicate_isins": dup_isin}
+            well_formed += 1
+            if not st["usable"]:
+                continue
+            checked += 1
+            if s in dup_s:
+                invalid += 1
+                _tally(inv, "duplicate_symbol_in_directory")
+            elif s not in st["entries"]:
+                invalid += 1
+                _tally(inv, "not_in_directory")
+            elif st["entries"][s] != i:
+                invalid += 1
+                _tally(inv, "isin_differs_from_directory")
+            elif i in dup_i:
+                invalid += 1
+                _tally(inv, "duplicate_isin_in_directory")
+            else:
+                valid += 1
+    facts = {"duplicate_symbols": dup_sym, "duplicate_isins": dup_isin,
+             "universe_identifier_check": {"well_formed": well_formed, "denominator": n, "pct": _pct(well_formed, n),
+                                           "note": "checked against universe.json alone; this is not a directory cross-check"},
+             "directory_cross_check": {"performed": st["usable"], "reason": st.get("reason"),
+                                       "stocks_cross_checked": checked}}
     unverified = []
-    if isinstance(dir_symbols, list):
-        facts["directory_built_on"] = d.directory.get("built_on")
-        facts["directory_counts"] = _sorted_dict(d.directory.get("counts") or {}) if isinstance(d.directory.get("counts"), dict) else None
-        cl = d.directory.get("classification")
+    if st["usable"]:
+        dd = d.directory
+        facts["directory_built_on"] = dd.get("built_on")
+        facts["directory_counts"] = _sorted_dict(dd.get("counts") or {}) if isinstance(dd.get("counts"), dict) else None
+        cl = dd.get("classification")
         facts["directory_classification_counts"] = _sorted_dict(cl.get("counts") or {}) if isinstance(cl, dict) and isinstance(cl.get("counts"), dict) else None
         keys = set()
-        for x in dir_symbols:
+        for x in dd["symbols"]:
             if isinstance(x, dict):
                 keys |= set(x)
         facts["directory_entry_keys"] = sorted(keys)
+        facts["directory_duplicates"] = {
+            "duplicate_symbols": {"distinct": len(st["dup_symbols"]), "extra_entries": st["extra_symbol_entries"], "symbols": st["dup_symbols"][:OUTSIDE_LIST_LIMIT]},
+            "duplicate_isins": {"distinct": len(st["dup_isins"]), "extra_entries": st["extra_isin_entries"], "isins": st["dup_isins"][:OUTSIDE_LIST_LIMIT]},
+            "malformed_entries": st["malformed"]}
+        if st["dup_symbols"]:
+            warnings.append({"code": "duplicate_symbols_in_directory", "count": len(st["dup_symbols"]), "identifiers": st["dup_symbols"][:OUTSIDE_LIST_LIMIT],
+                             "message": "stock_directory.json lists %d symbol(s) more than once (%d extra entries). A universe stock with such a symbol cannot be cross-checked "
+                                        "unambiguously and is counted invalid; no entry was chosen over another." % (len(st["dup_symbols"]), st["extra_symbol_entries"])})
+        if st["dup_isins"]:
+            warnings.append({"code": "duplicate_isins_in_directory", "count": len(st["dup_isins"]), "identifiers": st["dup_isins"][:OUTSIDE_LIST_LIMIT],
+                             "message": "stock_directory.json lists %d ISIN(s) more than once (%d extra entries). A universe stock with such an ISIN cannot be cross-checked "
+                                        "unambiguously and is counted invalid." % (len(st["dup_isins"]), st["extra_isin_entries"])})
+        if st["malformed"]:
+            warnings.append({"code": "malformed_entries_in_directory", "count": st["malformed"],
+                             "message": "%d directory entr(y/ies) have no text symbol or a non-text ISIN and were not used." % st["malformed"]})
         if "series" not in keys:
             unverified.append({"what": "EQ/BE split of the published stocks", "count": n,
                                "reason": "the directory entries carry no series field, so the published stocks cannot be split between EQ and BE offline"})
-    return _module("directory", "offline" if dir_map is not None else "partial", n, _counts(valid=valid, missing=missing, invalid=invalid),
+    else:
+        unverified.append({"what": "identifier cross-check against stock_directory.json", "count": well_formed,
+                           "reason": "stock_directory.json cannot be used (%s), so no identifier was checked against it; the well-formed identifiers in universe.json are NOT "
+                                     "reported as verified" % st["reason"]})
+    return _module("directory", "offline" if st["usable"] else "partial", n,
+                   _counts(valid=valid if st["usable"] else None, missing=missing, invalid=invalid, unverified=None if st["usable"] else well_formed),
                    ["universe.json", "stock_directory.json"], basis=_basis(scope), source_as_of=d.universe_doc.get("as_of"),
                    freshness={"status": "not_assessed", "universe_as_of": d.universe_doc.get("as_of"), "directory_built_on": facts.get("directory_built_on")},
-                   facts=facts, missing_reasons=mis, invalid_reasons=inv, unverified=unverified, problems=problems)
+                   facts=facts, missing_reasons=mis, invalid_reasons=inv, unverified=unverified, problems=problems, warnings=warnings)
 
 
 def fundamentals_rows(d):
@@ -866,7 +947,7 @@ def render_markdown(report):
             out.append("### Warnings")
             out.append("")
             for w in sc["warnings"]:
-                out.append("- **%s**: %s%s" % (w["module"], w["message"], (" Stocks: %s." % ", ".join(w["symbols"])) if w.get("symbols") else ""))
+                out.append("- **%s**: %s%s" % (w["module"], w["message"], (" Stocks: %s." % ", ".join(w["symbols"])) if w.get("symbols") else (" Identifiers: %s." % ", ".join(w["identifiers"])) if w.get("identifiers") else ""))
             out.append("")
         for m in sc["modules"]:
             for u_ in m["unverified"]:
