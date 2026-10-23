@@ -756,6 +756,500 @@ class ReproducibleAndSafe(Case):
         self.assertFalse(self.out.exists())
 
 
+SECRET_FIN = 987654.321
+SECRET_Q = 555444.333
+SECRET_SECTOR = "ZZ PRIVATE SECTOR LABEL"
+SECRET_ERROR = "ZZ PROVIDER ERROR TEXT"
+METRIC_NAMES = ("pe", "pb", "roa", "roe", "roce", "ev_ebitda")
+
+
+def f_entry(i, fetched="2026-10-22", **kw):
+    e = {"isin": isin(i), "company_name": sym(i) + " LTD", "sector": SECRET_SECTOR, "ratios": {m: 20.5 + k for k, m in enumerate(METRIC_NAMES)},
+         "ratios_fetched": fetched, "profile_fetched": fetched, "last_attempt": None, "last_error": None}
+    e.update(kw)
+    return e
+
+
+def fin_section(fetched="2026-10-20", **kw):
+    s = {"data": {"revenue": SECRET_FIN, "net_profit": SECRET_FIN}, "basis": "consolidated", "fetched": fetched, "schema": 2, "error": None, "attempted": fetched, "failures": 0}
+    s.update(kw)
+    return s
+
+
+def fin_entry(i, fetched="2026-10-20", **kw):
+    e = {"isin": isin(i), "company_name": sym(i) + " LTD", "last_error": None, "income": fin_section(fetched), "balance_sheet": fin_section(fetched), "cash_flow": fin_section(fetched)}
+    e.update(kw)
+    return e
+
+
+def q_entry(checked="2026-10-20", **kw):
+    e = {"basis": "consolidated", "last_attempt": checked, "last_checked": checked, "last_success": checked, "problem": None,
+         "quarters": {"2026-06-30": {"quarter": "Q1", "retrieved_on": checked, "values": {"revenue": SECRET_Q, "profit_after_tax": None}, "checks": {}, "revisions": []}}}
+    e.update(kw)
+    return e
+
+
+def q_doc(stocks):
+    return {"schema_version": 1, "kind": "quarterly_cache", "stocks": stocks}
+
+
+class StateDirCase(Case):
+    def setUp(self):
+        super().setUp()
+        self.state = self.root / "state"
+        self.state.mkdir()
+
+    def put(self, name, doc):
+        write(self.state / name, doc)
+
+    def build_s(self, scope="all"):
+        return C.build_report(self.data, AS_OF, scope, None, self.state)
+
+    def sm(self, r, name, scope="all"):
+        return self.mod(r, scope, name)
+
+    def fixture10(self):
+        self.make(10)
+        self.put("fundamentals_cache.json", {"stocks": {
+            sym(0): f_entry(0), sym(1): f_entry(1, "2026-10-10"), sym(3): {}, sym(4): {"last_error": SECRET_ERROR, "last_attempt": "2026-10-22"},
+            sym(5): {"last_error": C.NOT_FOUND_ERROR}, sym(6): f_entry(6, ratios={"pe": 1.0}), sym(7): f_entry(7, "2026-12-01"),
+            sym(8): {"held_isin_change": {"isin": "INE000000001", "listed_isin": "INE000000002"}}, sym(9): f_entry(9, ratios={m: None for m in METRIC_NAMES})}})
+        self.put("quarterly_cache.json", q_doc({
+            sym(0): q_entry(), sym(1): q_entry("2026-09-01"), sym(3): q_entry(quarters={}), sym(4): q_entry(quarters={}, last_checked=None, last_success=None, last_attempt=None),
+            sym(5): q_entry(quarters={}, problem=SECRET_ERROR, failures=2), sym(6): q_entry(quarters={"2026-06-30": {"quarter": "Q1", "values": {"revenue": "12"}}}),
+            sym(7): q_entry("2026-12-01"), sym(8): q_entry(last_checked=None), sym(9): q_entry(basis="weird")}))
+        self.put("financials_cache.json", {"stocks": {
+            sym(0): fin_entry(0), sym(1): fin_entry(1, income=fin_section("2026-09-01")), sym(3): {"income": fin_section()},
+            sym(4): {"last_error": SECRET_ERROR, "income": {"error": SECRET_ERROR, "attempted": "2026-10-22", "failures": 1}},
+            sym(5): {"last_error": C.NOT_FOUND_ERROR}, sym(6): fin_entry(6, balance_sheet=fin_section(schema=1)), sym(7): {},
+            sym(8): fin_entry(8, cash_flow=fin_section("2027-01-01")), sym(9): fin_entry(9)}})
+
+
+class StateDirBackwardCompatible(StateDirCase):
+    def test_without_state_dir_nothing_changes_even_when_a_state_folder_exists(self):
+        self.fixture10()
+        r = self.build("all")
+        self.assertNotIn("state_files", r)
+        names = [m["module"] for m in r["scopes"]["all"]["modules"]]
+        self.assertEqual(names, ["directory", "fundamentals", "financial_history", "growth", "historical_candles", "technical_indicators", "sector", "shareholding",
+                                 "quarterly_results", "annual_financials_and_balance_sheet", "stock_detail_data"])
+        for n in ("quarterly_results", "annual_financials_and_balance_sheet"):
+            m = self.sm(r, n)
+            self.assertEqual((m["measurability"], m["counts"]["valid"], m["counts"]["unverified"], m["coverage_pct"]), ("not_measurable", None, 10, None))
+        self.assertNotIn("state:", json.dumps(r["inputs"]))
+        self.assertEqual(C.render_json(r), C.render_json(C.build_report(self.data, AS_OF, "all", None, None)))
+
+    def test_the_command_line_without_the_flag_is_unchanged(self):
+        self.fixture10()
+        a, b = self.root / "a", self.root / "b"
+        self.assertEqual(self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(a))[0], 0)
+        self.assertEqual(self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(b), "--scope", "both")[0], 0)
+        for n in C.OUTPUT_NAMES:
+            self.assertEqual((a / n).read_bytes(), (b / n).read_bytes())
+        self.assertNotIn("fundamentals_state", (a / "coverage_report.json").read_text())
+
+
+class StateDirClassification(StateDirCase):
+    def test_fundamentals_state_counts_and_reasons(self):
+        self.fixture10()
+        m = self.sm(self.build_s(), "fundamentals_state")
+        self.assertEqual(m["counts"], {"valid": 2, "stale": 1, "missing": 4, "invalid": 2, "not_applicable": None, "unverified": 1})
+        self.assertEqual(m["missing_reasons"], {"failed_last_attempt": 1, "never_fetched": 1, "no_cache_entry": 1, "not_in_upstox": 1})
+        self.assertEqual(m["invalid_reasons"], {"ratios_not_exactly_the_six_metrics": 1, "profile_fetched_not_a_past_date": 1})
+        self.assertEqual(m["denominator"]["value"], 10)
+        self.assertEqual((m["coverage_pct"], m["fresh_pct"]), (30.0, 20.0))
+        self.assertEqual(m["freshness"]["threshold_days"], 7)
+        self.assertEqual(m["facts"]["ratio_completeness_of_stocks_with_ratios"]["all_six_metrics"], 2)
+        self.assertEqual(m["facts"]["ratio_completeness_of_stocks_with_ratios"]["no_metrics"], 1)
+        self.assertEqual(m["facts"]["held_aside_after_isin_change"], 1)
+        self.assertTrue(any("not proof of publication" in u["reason"] for u in m["unverified"]))
+
+    def test_quarterly_counts_and_reasons(self):
+        self.fixture10()
+        m = self.sm(self.build_s(), "quarterly_results")
+        self.assertEqual(m["counts"], {"valid": 1, "stale": 2, "missing": 4, "invalid": 3, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["missing_reasons"], {"checked_no_quarters_stored": 1, "failed_last_attempt": 1, "never_checked": 1, "no_cache_entry": 1})
+        self.assertEqual(m["invalid_reasons"], {"basis_not_recognised": 1, "last_attempt_not_a_past_date": 1, "quarter_value_not_a_number_or_null": 1})
+        self.assertEqual(m["freshness"]["threshold_days"], 30)
+        self.assertEqual(m["facts"]["stocks_with_quarters"], 3)
+        self.assertEqual(m["facts"]["newest_quarter_end_counts"], {"2026-06-30": 3})
+        self.assertEqual(m["measurability"], "partial")
+
+    def test_financials_counts_and_reasons(self):
+        self.fixture10()
+        m = self.sm(self.build_s(), "annual_financials_and_balance_sheet")
+        self.assertEqual(m["counts"], {"valid": 2, "stale": 2, "missing": 5, "invalid": 1, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["missing_reasons"], {"failed_last_attempt": 1, "incomplete_sections": 1, "never_fetched": 1, "no_cache_entry": 1, "not_in_upstox": 1})
+        self.assertEqual(m["invalid_reasons"], {"cash_flow:fetched_not_a_past_date": 1})
+        self.assertEqual(m["facts"]["stale_reasons"], {"a_section_has_an_older_schema": 1, "a_section_older_than_threshold": 1})
+        self.assertEqual(m["freshness"]["threshold_days"], 30)
+        self.assertEqual(m["facts"]["required_sections"], ["income", "balance_sheet", "cash_flow"])
+        self.assertEqual(m["facts"]["stocks_with_all_three_sections"], 4)          # 2 valid + 2 stale (one by age, one by an older schema)
+
+    def test_fundamentals_state_is_added_after_fundamentals_and_the_other_modules_are_kept(self):
+        self.fixture10()
+        names = [m["module"] for m in self.build_s()["scopes"]["all"]["modules"]]
+        self.assertEqual(names[names.index("fundamentals") + 1], "fundamentals_state")
+        self.assertEqual(len(names), 12)
+        self.assertEqual(names.count("quarterly_results"), 1)
+        self.assertEqual(names.count("annual_financials_and_balance_sheet"), 1)
+
+    def test_counts_reconcile_in_both_scopes_with_the_right_denominators(self):
+        self.make(600)
+        self.put("fundamentals_cache.json", {"stocks": {sym(i): f_entry(i) for i in range(0, 600, 2)}})
+        self.put("quarterly_cache.json", q_doc({sym(i): q_entry() for i in range(0, 600, 3)}))
+        self.put("financials_cache.json", {"stocks": {sym(i): fin_entry(i) for i in range(0, 600, 5)}})
+        r = self.build_s("both")
+        for scope, n in (("first_500", 500), ("all", 600)):
+            for name in ("fundamentals_state", "quarterly_results", "annual_financials_and_balance_sheet"):
+                m = self.sm(r, name, scope)
+                self.assertEqual(m["denominator"]["value"], n, name)
+                self.assertEqual(sum(v for v in m["counts"].values() if v is not None), n, (scope, name))
+        self.assertEqual(self.sm(r, "fundamentals_state", "first_500")["counts"]["valid"], 250)
+        self.assertEqual(self.sm(r, "quarterly_results", "all")["counts"]["valid"], 200)
+        self.assertEqual(self.sm(r, "annual_financials_and_balance_sheet", "first_500")["counts"]["valid"], 100)
+        self.assertEqual(self.sm(r, "annual_financials_and_balance_sheet", "first_500")["coverage_pct"], 20.0)
+
+    def test_entries_for_stocks_outside_the_universe_are_listed_not_counted(self):
+        self.make(5)
+        self.put("quarterly_cache.json", q_doc({sym(0): q_entry(), "ZZOUT": q_entry(), "bad key!": q_entry()}))
+        r = self.build_s()
+        m = self.sm(r, "quarterly_results")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["missing"], m["denominator"]["value"]), (1, 4, 5))
+        self.assertEqual(r["reconciliation"]["present_in_stored_data_but_not_in_universe"]["state:quarterly_cache.json"], {"count": 1, "first": ["ZZOUT"]})
+        self.assertEqual(m["facts"]["state_file"]["keys_that_are_not_valid_symbols"], 1)
+        self.assertNotIn("bad key!", json.dumps(r))
+
+
+class StateDirUnavailable(StateDirCase):
+    def assert_unmeasured(self, m, n, text):
+        self.assertEqual((m["measurability"], m["counts"]["valid"], m["counts"]["stale"], m["counts"]["unverified"]), ("not_measurable", None, None, n))
+        self.assertIsNone(m["coverage_pct"])
+        self.assertIsNone(m["fresh_pct"])
+        self.assertEqual(sum(v for v in m["counts"].values() if v is not None), n)
+        self.assertTrue(any(text in p for p in m["problems"]), m["problems"])
+        self.assertIn("NOT measured", m["unverified"][0]["reason"])
+
+    def test_missing_files_are_unverified_never_zero_coverage(self):
+        self.make(7)
+        r = self.build_s()
+        for name in ("fundamentals_state", "quarterly_results", "annual_financials_and_balance_sheet"):
+            self.assert_unmeasured(self.sm(r, name), 7, "is missing")
+
+    def test_one_usable_file_does_not_rescue_the_others(self):
+        self.make(7)
+        self.put("quarterly_cache.json", q_doc({sym(0): q_entry()}))
+        r = self.build_s()
+        self.assertEqual(self.sm(r, "quarterly_results")["counts"]["valid"], 1)
+        self.assert_unmeasured(self.sm(r, "fundamentals_state"), 7, "fundamentals_cache.json is missing")
+        self.assert_unmeasured(self.sm(r, "annual_financials_and_balance_sheet"), 7, "financials_cache.json is missing")
+
+    def test_a_genuine_read_failure_is_unreadable(self):
+        self.make(4)
+        self.put("quarterly_cache.json", q_doc({sym(0): q_entry()}))
+        real = Path.read_bytes
+
+        def flaky(p, *a, **k):
+            if p.name == "quarterly_cache.json":
+                raise PermissionError(13, "simulated")
+            return real(p, *a, **k)
+        with mock.patch.object(Path, "read_bytes", flaky):
+            r = self.build_s()
+        self.assert_unmeasured(self.sm(r, "quarterly_results"), 4, "quarterly_cache.json is unreadable")
+        self.assertFalse(r["state_files"]["quarterly_cache.json"]["usable"])
+
+    def test_malformed_json_is_reported(self):
+        self.make(4)
+        (self.state / "fundamentals_cache.json").write_text("{ not json", encoding="utf-8")
+        (self.state / "quarterly_cache.json").write_text('{"stocks": {"S0000": NaN}}', encoding="utf-8")
+        (self.state / "financials_cache.json").write_bytes(b"\xff\xfe\x00")
+        r = self.build_s()
+        for name, f in (("fundamentals_state", "fundamentals_cache.json"), ("quarterly_results", "quarterly_cache.json"), ("annual_financials_and_balance_sheet", "financials_cache.json")):
+            self.assert_unmeasured(self.sm(r, name), 4, f + " is invalid_json")
+
+    def test_unsupported_schemas_are_reported(self):
+        self.make(4)
+        cases = [("fundamentals_cache.json", [1, 2], "not a JSON object"), ("financials_cache.json", {"stocks": [1]}, "no stocks object"),
+                 ("quarterly_cache.json", {"kind": "something_else", "stocks": {}}, "wrong kind")]
+        for fname, doc, why in cases:
+            self.put(fname, doc)
+        r = self.build_s()
+        self.assert_unmeasured(self.sm(r, "fundamentals_state"), 4, "unsupported_schema: not a JSON object")
+        self.assert_unmeasured(self.sm(r, "annual_financials_and_balance_sheet"), 4, "unsupported_schema: no stocks object")
+        self.assert_unmeasured(self.sm(r, "quarterly_results"), 4, "unsupported_schema: wrong kind")
+        for doc in ({"schema_version": 2, "kind": "quarterly_cache", "stocks": {}}, {"schema_version": True, "kind": "quarterly_cache", "stocks": {}}):
+            self.put("quarterly_cache.json", doc)
+            self.assert_unmeasured(self.sm(self.build_s(), "quarterly_results"), 4, "schema_version is not 1")
+
+    def test_an_empty_stocks_object_is_a_supported_schema_with_every_stock_missing(self):
+        self.make(4)
+        self.put("quarterly_cache.json", q_doc({}))
+        m = self.sm(self.build_s(), "quarterly_results")
+        self.assertEqual(m["counts"], {"valid": 0, "stale": 0, "missing": 4, "invalid": 0, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["missing_reasons"], {"no_cache_entry": 4})
+
+    def test_the_published_financials_file_is_not_mistaken_for_the_state(self):
+        self.make(4)
+        self.put("financials.json", {"schema": 2, "stocks": [{"symbol": sym(0)}]})
+        m = self.sm(self.build_s(), "annual_financials_and_balance_sheet")
+        self.assertEqual(m["measurability"], "not_measurable")
+        self.assertTrue(any("published output, not the saved state" in p for p in m["problems"]))
+        self.assertNotIn("state:financials.json", json.dumps(self.build_s()["inputs"]))      # it is not read or hashed
+
+    def test_a_state_folder_that_is_not_a_folder_is_refused(self):
+        self.make(3)
+        rc, _, err = self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out), "--state-dir", str(self.root / "nope"))
+        self.assertEqual(rc, 2)
+        self.assertIn("refused", err)
+        self.assertFalse(self.out.exists())
+
+
+class StateDirDuplicatesAndPrivacy(StateDirCase):
+    def test_duplicate_symbol_keys_are_invalid_and_reported(self):
+        self.make(5)
+        e0, e1 = json.dumps(q_entry()), json.dumps(q_entry("2026-09-01"))
+        (self.state / "quarterly_cache.json").write_text('{"schema_version": 1, "kind": "quarterly_cache", "stocks": {"S0001": %s, "S0001": %s, "S0002": %s}}' % (e0, e1, e0), encoding="utf-8")
+        r = self.build_s()
+        m = self.sm(r, "quarterly_results")
+        self.assertEqual(m["counts"], {"valid": 1, "stale": 0, "missing": 3, "invalid": 1, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["invalid_reasons"], {"duplicate_symbol_key": 1})
+        self.assertEqual(m["facts"]["state_file"]["duplicate_symbol_keys"], {"distinct": 1, "in_this_scope": 1, "symbols": ["S0001"]})
+        w = [x for x in m["warnings"] if x["code"] == "duplicate_symbol_keys_in_state_file"][0]
+        self.assertEqual((w["count"], w["identifiers"]), (1, ["S0001"]))
+        self.assertEqual(m["facts"]["state_file"]["entries"], 2)          # the parsed object holds one entry per distinct key
+        self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 5)
+        md = C.render_markdown(r)
+        self.assertIn("S0001", md)
+
+    def test_duplicates_in_fundamentals_and_financials_are_invalid_too(self):
+        self.make(3)
+        (self.state / "fundamentals_cache.json").write_text('{"stocks": {"S0000": %s, "S0000": {}}}' % json.dumps(f_entry(0)), encoding="utf-8")
+        (self.state / "financials_cache.json").write_text('{"stocks": {"S0000": %s, "S0000": {}}}' % json.dumps(fin_entry(0)), encoding="utf-8")
+        r = self.build_s()
+        for n in ("fundamentals_state", "annual_financials_and_balance_sheet"):
+            m = self.sm(r, n)
+            self.assertEqual(m["invalid_reasons"], {"duplicate_symbol_key": 1}, n)
+            self.assertEqual(m["counts"]["valid"], 0)
+
+    def test_the_report_holds_no_cache_value_error_text_or_record(self):
+        self.fixture10()
+        self.assertEqual(self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out), "--state-dir", str(self.state))[0], 0)
+        for n in C.OUTPUT_NAMES:
+            t = (self.out / n).read_text(encoding="utf-8")
+            for secret in (str(SECRET_FIN), "987654", str(SECRET_Q), "555444", SECRET_SECTOR, SECRET_ERROR, "company_name", " LTD", "20.5"):
+                self.assertNotIn(secret, t, (n, secret))
+            self.assertNotIn(isin(1), t)                  # no ISIN is copied from the cache
+        self.assertIn("fundamentals_state", (self.out / "coverage_report.md").read_text())
+
+    def test_no_network_or_process_call_is_made(self):
+        self.fixture10()
+
+        def boom(*a, **k):
+            raise AssertionError("a network or process call was attempted")
+        with mock.patch.object(socket.socket, "connect", boom), mock.patch.object(socket, "create_connection", boom), mock.patch.object(socket, "getaddrinfo", boom), \
+                mock.patch.object(subprocess, "Popen", boom):
+            rc, out, err = self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(self.out), "--state-dir", str(self.state))
+        self.assertEqual(rc, 0, err)
+
+    def test_state_files_are_hashed_unchanged_and_runs_are_identical(self):
+        self.fixture10()
+        before = self.tree(self.state)
+        a, b = self.root / "a", self.root / "b"
+        for o in (a, b):
+            self.assertEqual(self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(o), "--state-dir", str(self.state))[0], 0)
+        self.assertEqual(self.tree(self.state), before)
+        for n in C.OUTPUT_NAMES:
+            self.assertEqual((a / n).read_bytes(), (b / n).read_bytes())
+        by = {i["path"]: i for i in json.loads((a / "coverage_report.json").read_text())["inputs"]}
+        for fname in C.STATE_FILES.values():
+            self.assertEqual(by["state:" + fname]["sha256"], hashlib.sha256((self.state / fname).read_bytes()).hexdigest())
+        self.assertNotIn(str(self.state), (a / "coverage_report.json").read_text())      # no local path
+
+    def test_an_output_folder_inside_or_equal_to_the_state_folder_is_refused(self):
+        self.fixture10()
+        for bad in (self.state, self.state / "out", self.root):
+            rc, _, err = self.run_main("--data-branch", str(self.data), "--as-of", "2026-10-23", "--out", str(bad), "--state-dir", str(self.state))
+            self.assertEqual(rc, 2, str(bad))
+            self.assertIn("refused", err)
+
+    def test_the_state_module_imports_stay_standard_library(self):
+        tree = ast.parse((HERE / "coverage_report.py").read_text(encoding="utf-8"))
+        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+        self.assertEqual(names & {"requests", "urllib", "socket", "subprocess", "Popen", "urlopen", "environ", "getenv", "Upstox"}, set())
+
+
+def _updater():
+    def boom(*a, **k):
+        raise AssertionError("network attempted")
+    with mock.patch.object(socket.socket, "connect", boom), mock.patch.object(socket, "getaddrinfo", boom):
+        try:
+            import quarterly_results_updater as qu
+        except ImportError as e:
+            raise unittest.SkipTest("the quarterly updater could not be imported here (%s)" % e)
+    return qu
+
+
+def q_body(*periods):
+    """A response the real parse_quarterly accepts: quarterly summary lines for the given 'Mon YYYY' periods."""
+    return {"data": {"time_period": "quarterly", "income_statement": [{"category": "revenue", "history": [{"period": p, "value": "100"} for p in periods]}]}}
+
+
+class StateDirRealUpdaterPaths(StateDirCase):
+    """The quarterly cache here is written by the updater's own run_batch / parse_quarterly with a fake fetch, not typed by hand."""
+
+    def run_updater(self, qu, cache, bodies, day, n=4):
+        entries = {sym(i): {"symbol": sym(i), "isin": isin(i), "name": sym(i)} for i in range(n)}
+        calls = []
+
+        def fetch(isin_, basis):
+            calls.append((isin_, basis))
+            return bodies.get(isin_, (None, "HTTP 500"))
+
+        def blocked(*a, **k):
+            raise AssertionError("network attempted")
+        with mock.patch.object(socket.socket, "connect", blocked), mock.patch.object(socket, "getaddrinfo", blocked):
+            summary = qu.run_batch(entries, cache, fetch, day, 50)
+        return summary, calls
+
+    def save(self, qu, cache):
+        self.put("quarterly_cache.json", {"schema_version": qu.SCHEMA_VERSION, "kind": "quarterly_cache", "stocks": cache})
+
+    def test_failure_no_data_rejected_and_success_are_four_different_things(self):
+        qu = _updater()
+        self.make(4)
+        cache = {}
+        bodies = {isin(0): (None, "HTTP 500"), isin(1): ({"data": None}, None), isin(2): ({"data": {"time_period": "yearly"}}, None), isin(3): (q_body("Mar 2026", "Jun 2026"), None)}
+        self.run_updater(qu, cache, bodies, dt.date(2026, 10, 20))
+        self.assertEqual((cache[sym(0)]["failures"], cache[sym(0)]["problem"], cache[sym(0)]["last_checked"]), (1, None, None))          # what the updater really writes
+        self.assertEqual((cache[sym(1)]["failures"], cache[sym(1)]["problem"]), (0, "no_data"))
+        self.assertEqual((cache[sym(2)]["failures"], cache[sym(2)]["problem"]), (0, "not_quarterly"))
+        self.assertEqual((cache[sym(3)]["failures"], cache[sym(3)]["problem"], len(cache[sym(3)]["quarters"])), (0, None, 2))
+        self.save(qu, cache)
+        r = self.build_s()
+        m = self.sm(r, "quarterly_results")
+        self.assertEqual(m["counts"], {"valid": 1, "stale": 0, "missing": 3, "invalid": 0, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["missing_reasons"], {"failed_last_attempt": 1, "checked_no_quarters_stored": 1, "checked_result_rejected": 1})
+        self.assertEqual((m["facts"]["stocks_with_failed_requests"], m["facts"]["stocks_whose_last_check_returned_no_data"], m["facts"]["stocks_whose_last_check_was_rejected"]), (1, 1, 1))
+        self.assertNotIn("with_a_recorded_problem", m["facts"])
+        self.assertNotIn("not_quarterly", json.dumps(r))          # the updater's problem text is never copied
+
+    def test_back_off_after_failures_with_old_quarters_is_reported_beside_stale(self):
+        qu = _updater()
+        self.make(1)
+        cache = {}
+        ok, bad = {isin(0): (q_body("Mar 2026", "Jun 2026"), None)}, {}
+        self.run_updater(qu, cache, ok, dt.date(2026, 8, 1), 1)
+        self.run_updater(qu, cache, bad, dt.date(2026, 10, 19), 1)
+        self.run_updater(qu, cache, bad, dt.date(2026, 10, 20), 1)
+        rec = cache[sym(0)]
+        self.assertEqual((rec["failures"], rec["last_checked"], rec["last_attempt"], len(rec["quarters"])), (2, "2026-08-01", "2026-10-20", 2))      # old quarters kept
+        _, calls = self.run_updater(qu, cache, bad, dt.date(2026, 10, 20), 1)
+        self.assertEqual(calls, [])          # the updater itself waits: the stock is in back-off today
+        self.save(qu, cache)
+        m = self.sm(C.build_report(self.data, dt.date(2026, 10, 21), "all", None, self.state), "quarterly_results")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["stale"]), (0, 1))
+        self.assertEqual(m["facts"]["stale_reasons"], {"stale_in_retry_backoff": 1})
+        self.assertEqual(m["facts"]["refresh_states_of_stocks_with_quarters"], {"in_retry_backoff": 1, "results_pending_window": 0, "neither": 0})
+        self.assertEqual(m["facts"]["due_for_recheck_under_the_updaters_rule"], 0)
+        self.assertEqual(m["facts"]["stocks_with_failed_requests"], 1)
+        later = self.sm(C.build_report(self.data, dt.date(2026, 10, 25), "all", None, self.state), "quarterly_results")      # the retry date has passed
+        self.assertEqual(later["facts"]["refresh_states_of_stocks_with_quarters"]["in_retry_backoff"], 0)
+        self.assertEqual(later["facts"]["due_for_recheck_under_the_updaters_rule"], 1)
+
+    def test_results_pending_window_is_derived_from_stored_quarter_ends(self):
+        qu = _updater()
+        self.make(3)
+        cache = {}
+        self.run_updater(qu, cache, {isin(0): (q_body("Jun 2026"), None), isin(1): (q_body("Jun 2026"), None), isin(2): (q_body("Mar 2026"), None)}, dt.date(2026, 10, 15), 3)
+        cache[sym(1)]["last_checked"] = cache[sym(1)]["last_attempt"] = "2026-10-22"          # checked yesterday
+        self.save(qu, cache)
+        m = self.sm(self.build_s(), "quarterly_results")           # as of 2026-10-23
+        self.assertEqual(m["counts"]["valid"], 3)          # all checked within 30 days: the steady rule alone
+        self.assertEqual(m["facts"]["refresh_states_of_stocks_with_quarters"], {"in_retry_backoff": 0, "results_pending_window": 2, "neither": 1})      # Jun-2026 stocks: window 2026-10-10..2027-01-08
+        self.assertEqual(m["facts"]["due_for_recheck_under_the_updaters_rule"], 1)          # 8 days since the check, 2-day rule inside the window; yesterday's is not due; the Mar stock is not due
+        self.assertTrue(any("whether a new quarter has arrived" in u["what"] for u in m["unverified"]))
+        for sy in (sym(0), sym(1), sym(2)):
+            rec = cache[sy]
+            self.assertEqual(qu.results_pending(rec, AS_OF), sy in (sym(0), sym(1)))      # the updater agrees on the window
+
+    def test_the_copied_refresh_rules_agree_with_the_updater_over_a_grid(self):
+        qu = _updater()
+        for ends in (["2026-03-31"], ["2026-06-30"], ["2025-12-31", "2026-03-31"], ["2026-09-30"]):
+            for failures in (0, 1, 2, 3, 6):
+                for att in (0, 1, 2, 3, 5, 8, 40):
+                    for chk in (None, 0, 1, 2, 3, 29, 30, 31):
+                        rec = {"basis": "consolidated", "failures": failures, "problem": None, "quarters": {e: {"values": {}} for e in ends},
+                               "last_attempt": (AS_OF - dt.timedelta(days=att)).isoformat(),
+                               "last_checked": None if chk is None else (AS_OF - dt.timedelta(days=chk)).isoformat()}
+                        backoff, pending, due = C._quarterly_refresh_state(rec, AS_OF)
+                        self.assertEqual(backoff, bool(qu.in_backoff(rec, AS_OF)), rec)
+                        self.assertEqual(pending, bool(qu.results_pending(rec, AS_OF)), rec)
+                        self.assertEqual(due, bool(qu.needs_refresh(rec, AS_OF)), rec)
+
+
+class StateDirBoundariesAndFinancials(StateDirCase):
+    def days_ago(self, n):
+        return (AS_OF - dt.timedelta(days=n)).isoformat()
+
+    def test_freshness_boundaries_are_6_7_and_29_30_days(self):
+        self.make(6)
+        self.put("fundamentals_cache.json", {"stocks": {sym(0): f_entry(0, self.days_ago(6)), sym(1): f_entry(1, self.days_ago(7))}})
+        self.put("financials_cache.json", {"stocks": {sym(0): fin_entry(0, self.days_ago(29)), sym(1): fin_entry(1, self.days_ago(30))}})
+        self.put("quarterly_cache.json", q_doc({sym(0): q_entry(self.days_ago(29), quarters={"2026-03-31": q_entry()["quarters"]["2026-06-30"]}),
+                                                 sym(1): q_entry(self.days_ago(30), quarters={"2026-03-31": q_entry()["quarters"]["2026-06-30"]})}))
+        r = self.build_s()
+        for name in ("fundamentals_state", "annual_financials_and_balance_sheet", "quarterly_results"):
+            m = self.sm(r, name)
+            self.assertEqual((m["counts"]["valid"], m["counts"]["stale"], m["counts"]["missing"]), (1, 1, 4), name)
+        self.assertEqual(self.sm(r, "quarterly_results")["facts"]["stale_reasons"], {"last_check_older_than_interval": 1})
+
+    def test_an_older_financial_schema_is_stale_not_invalid(self):
+        self.make(6)
+        old, absent = fin_entry(0), fin_entry(1)
+        old["income"]["schema"] = 1
+        del absent["balance_sheet"]["schema"]
+        newer, odd = fin_entry(2), fin_entry(3)
+        newer["cash_flow"]["schema"] = 3
+        odd["income"]["schema"] = True
+        self.put("financials_cache.json", {"stocks": {sym(0): old, sym(1): absent, sym(2): newer, sym(3): odd, sym(4): fin_entry(4)}})
+        m = self.sm(self.build_s(), "annual_financials_and_balance_sheet")
+        self.assertEqual(m["counts"], {"valid": 1, "stale": 2, "missing": 1, "invalid": 2, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["facts"]["stale_reasons"], {"a_section_has_an_older_schema": 2})
+        self.assertEqual(m["invalid_reasons"], {"cash_flow:schema_not_recognised": 1, "income:schema_not_recognised": 1})
+        self.assertEqual(m["facts"]["section_states_counted_over_stocks_with_an_entry"]["income"]["outdated_schema"], 1)
+        self.assertEqual(sum(v for v in m["counts"].values() if v is not None), 6)
+        self.assertEqual(m["coverage_pct"], 50.0)
+
+    def test_incomplete_statements_are_distinguishable_and_make_no_publication_claim(self):
+        self.make(5)
+        two = fin_entry(1)
+        del two["balance_sheet"]
+        self.put("financials_cache.json", {"stocks": {sym(0): fin_entry(0), sym(1): two, sym(2): {"income": fin_section()}, sym(3): {"cash_flow": fin_section()}}})
+        m = self.sm(self.build_s(), "annual_financials_and_balance_sheet")
+        self.assertEqual(m["counts"], {"valid": 1, "stale": 0, "missing": 4, "invalid": 0, "not_applicable": None, "unverified": 0})
+        self.assertEqual(m["missing_reasons"], {"incomplete_sections": 3, "no_cache_entry": 1})
+        inc = m["facts"]["incomplete_statements"]
+        self.assertEqual((inc["stocks"], inc["sections_held"]), (3, {"cash_flow": 1, "income": 1, "income+cash_flow": 1}))
+        self.assertEqual(m["facts"]["stocks_with_all_three_sections"], 1)
+        note = [u for u in m["unverified"] if "incomplete" in u["what"]][0]
+        self.assertEqual(note["count"], 3)
+        self.assertIn("may still be published", note["reason"])
+        self.assertIn("not a statement about publication", inc["meaning"])
+        self.assertNotIn("unpublished", json.dumps(m))
+
+    def test_a_repeated_top_level_stocks_key_makes_the_file_unusable(self):
+        self.make(3)
+        body = json.dumps(q_entry())
+        (self.state / "quarterly_cache.json").write_text('{"schema_version": 1, "kind": "quarterly_cache", "stocks": {"S0000": %s}, "stocks": {}}' % body, encoding="utf-8")
+        (self.state / "fundamentals_cache.json").write_text('{"stocks": {}, "stocks": {"S0000": %s}}' % json.dumps(f_entry(0)), encoding="utf-8")
+        (self.state / "financials_cache.json").write_text('{"stocks": {"S0000": %s}, "stocks": {}}' % json.dumps(fin_entry(0)), encoding="utf-8")
+        r = self.build_s()
+        for name, f in (("quarterly_results", "quarterly_cache.json"), ("fundamentals_state", "fundamentals_cache.json"), ("annual_financials_and_balance_sheet", "financials_cache.json")):
+            m = self.sm(r, name)
+            self.assertEqual((m["measurability"], m["counts"]["valid"], m["counts"]["unverified"], m["coverage_pct"]), ("not_measurable", None, 3, None), name)
+            self.assertTrue(any("the stocks key appears more than once" in p for p in m["problems"]), m["problems"])
+
+
 class SameRulesAsTheUpdaters(unittest.TestCase):
     """Drift guard: the constants copied into the report must still equal the updaters' own. The updaters are imported here only, with the network blocked."""
 
@@ -785,6 +1279,33 @@ class SameRulesAsTheUpdaters(unittest.TestCase):
         self.assertEqual(list(C.SH_CATEGORIES), su.CATEGORIES)
         self.assertEqual(list(C.SH_COLLECTOR_SCOPE), su.collection_symbols({}))      # the collector's own default scope (no FOLLOW_UNIVERSE), 15 stocks
         self.assertEqual(len(C.SH_COLLECTOR_SCOPE), 15)
+
+    def test_state_constants_match_the_updaters(self):
+        def boom(*a, **k):
+            raise AssertionError("network attempted")
+        with mock.patch.object(socket.socket, "connect", boom), mock.patch.object(socket, "getaddrinfo", boom):
+            try:
+                import financials_updater as fin
+                import processing_state as ps
+                import quarterly_results_updater as qu
+            except ImportError as e:
+                self.skipTest("an updater could not be imported here (%s)" % e)
+        self.assertEqual(C.STATE_FILES, {k: v for k, v in ps.KINDS.items()})
+        self.assertEqual(C.FIN_SCHEMA, fin.SCHEMA_VERSION)
+        self.assertEqual(C.STATEMENT_MAX_AGE_DAYS, fin.STATEMENT_MAX_AGE_DAYS)
+        self.assertEqual(C.FIN_SECTIONS, tuple(x[0] for x in fin.SECTIONS))
+        self.assertEqual(C.QUARTERLY_SCHEMA, qu.SCHEMA_VERSION)
+        self.assertEqual(C.QUARTERLY_STEADY_DAYS, qu.STEADY_EVERY_DAYS)
+        self.assertEqual(C.BASES, qu.BASES)
+        self.assertEqual((C.QUARTERLY_PENDING_FROM_DAYS, C.QUARTERLY_PENDING_FOR_DAYS, C.QUARTERLY_PENDING_EVERY_DAYS), (qu.PENDING_FROM_DAYS, qu.PENDING_FOR_DAYS, qu.PENDING_EVERY_DAYS))
+        self.assertEqual((C.MAX_RETRY_DAYS, C.MAX_RETRY_DAYS), (qu.MAX_RETRY_DAYS, fin.MAX_RETRY_DAYS))
+        for y in (2024, 2025, 2026, 2027):
+            for mo in range(1, 13):
+                for n in (0, 1, 3, 9, 12):
+                    day = dt.date(y, mo, 15)
+                    self.assertEqual(C._add_months(day, n), qu.add_months(day, n), (day, n))
+        for f in range(0, 9):
+            self.assertEqual(C._retry_days(f), qu.retry_days(f))
 
 
 if __name__ == "__main__":
