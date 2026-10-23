@@ -1,0 +1,117 @@
+name: Validate cache coverage
+
+# A ONE-OFF, manual (workflow_dispatch only) check of `coverage_report.py --state-dir` against the REAL saved updater state. See CACHE_VALIDATION.md.
+#
+# WHAT IT DOES
+#   1. Lists the repository's cache METADATA (no content) and picks the newest cache whose key is exactly nse-data-<digits> (cache_validation.py select).
+#      The caches of other workflows that share the prefix (nse-data-shp-..., nse-data-sector-...) never match. No cache that fits = the run fails.
+#   2. Restores THAT KEY ONLY (no restore-keys, fail-on-cache-miss) with the same path set as the daily run (data, out), because the cache version is derived from the paths.
+#   3. Refuses unless fundamentals_cache.json, financials_cache.json and quarterly_cache.json are all there.
+#   4. Runs the merged coverage report offline against the data branch's universe and `--state-dir data`. Its output stays on the runner.
+#   5. Writes ONLY the job summary, built new from an explicit allowlist (cache_validation.py summarize): counts, reason counts, file status, hashes, provenance.
+#
+# WHAT IT NEVER DOES
+#   * It saves no cache, uploads no artifact, deploys nothing, touches no GitHub Pages and writes nothing to any branch.
+#   * It calls no provider and uses no secret: the only token is the workflow's own read-only one, to list cache metadata.
+#   * It prints no cache content, record, identifier, symbol or path. A refusal prints a fixed code.
+#
+# THE RESULT IS CACHE COVERAGE, NOT PUBLICATION STATUS. Creating this workflow validates nothing; a successful RUN of it is what would.
+#
+# GitHub runs a workflow_dispatch workflow only when the file is on the default branch, so this file must be merged before it can be started.
+# It shares the stocklens-ledger group with every workflow that writes the saved caches, so it never overlaps one, and it never cancels one.
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read            # only to list cache metadata
+
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require the default branch
+        env:
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ -z "$DEFAULT_BRANCH" ] || [ "$REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::This check runs on the default branch only, because the cache it reads belongs to that branch."; exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out the data branch (the universe)
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: List cache metadata (no content)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh api --paginate "repos/$REPO/actions/caches?ref=refs/heads/$DEFAULT_BRANCH&per_page=100" > "$RUNNER_TEMP/caches.json" 2>/dev/null \
+            || { echo "::error::The cache list could not be read, so no cache can be identified. Nothing was restored."; exit 1; }
+
+      - name: Select the newest cache with an exact nse-data-<digits> key
+        id: select
+        run: python cache_validation.py select "$RUNNER_TEMP/caches.json"
+
+      - name: Restore that cache only (never saved)
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: ${{ steps.select.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Check that exactly the selected cache was restored
+        env:
+          WANTED: ${{ steps.select.outputs.key }}
+          MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
+          HIT: ${{ steps.restore.outputs.cache-hit }}
+        run: |
+          if [ "$HIT" != "true" ] || [ -z "$WANTED" ] || [ "$MATCHED" != "$WANTED" ]; then
+            echo "::error::The restore did not resolve to exactly the selected cache."; exit 1
+          fi
+
+      - name: Check the three state files
+        run: python cache_validation.py check-files data
+
+      - name: Coverage report (offline, output stays on the runner)
+        run: |
+          day="$(date -u +%F)"
+          echo "CV_AS_OF=$day" >> "$GITHUB_ENV"          # one date for the report and the summary, even across midnight UTC
+          python coverage_report.py --data-branch ledger-branch --as-of "$day" --out "$RUNNER_TEMP/report" --state-dir data --scope both > /dev/null 2>&1 \
+            || { echo "::error::The coverage report was refused or failed (details withheld)."; exit 1; }
+
+      - name: Job summary (allowlisted aggregate only)
+        env:
+          CV_MATCHED_KEY: ${{ steps.select.outputs.key }}
+          CV_RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          CV_CREATED_AT: ${{ steps.select.outputs.created_at }}
+          CV_LAST_ACCESSED_AT: ${{ steps.select.outputs.last_accessed_at }}
+          CV_SIZE: ${{ steps.select.outputs.size }}
+          CV_RUN_ID: ${{ github.run_id }}
+          CV_MAIN_SHA: ${{ github.sha }}
+        run: |
+          export CV_DATA_BRANCH_SHA="$(git -C ledger-branch rev-parse HEAD)"
+          python cache_validation.py summarize "$RUNNER_TEMP/report/coverage_report.json" data "$GITHUB_STEP_SUMMARY"
