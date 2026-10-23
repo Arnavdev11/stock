@@ -31,6 +31,28 @@ and `run_attempt`. So the owner of a cache cannot be read; it can only be **corr
 The **cache version** (a hash derived from the paths and compression) is not recomputed here. Restoring with the daily run's path set and `fail-on-cache-miss` is the check:
 a cache with a different version cannot be restored under that set. The list's `version` is recorded in the summary.
 
+## The provenance marker (Tier 1)
+
+The rule above only corroborates. To bind a cache to its run by **content**, the daily workflow (`update.yml`, in the separate daily-workflow pull request) removes any restored
+marker before it updates data and writes `data/cache_provenance.json` as its last step (atomically, in `data/`, never in `out/`, never published). It records the workflow,
+repository, ref, commit, run id, **run attempt**, cache key, UTC time, the data status, the outcome of each data step, and the byte size and SHA-256 of the three state files.
+
+After restoring the exact cache this workflow **refuses unless** the marker is present and agrees with the selected run on every one of those: repository, workflow, workflow ref,
+branch, run id, cache key, event, commit, and the run's **latest attempt**; was written inside the run and just before the cache was saved; says the data update was usable
+(`data_ok` true, status `complete` or `incomplete`, and the fundamentals, financials and quarterly steps all succeeded); and matches the size and SHA-256 of all three restored
+state files. An `incomplete` status is shown in the summary as **not a full data refresh**. The marker is read as untrusted input: capped at 16 KiB, no symlink, no duplicate keys,
+exact fields and types, fixed refusal codes only.
+
+**Re-runs (verified against how Actions caches behave).** A cache is immutable and a new one is saved only on a miss. A re-run of the same run id hits its own key, restores it
+and saves nothing, so the cache keeps the **first attempt's** marker. The marker's attempt must equal the run's latest attempt, so a cache left by an earlier attempt is refused
+rather than trusted; an attempt that is the first to succeed (an earlier attempt having failed and saved nothing) is accepted. A marker from an earlier run can never match a newer
+cache, because the run id, cache key, commit, attempt and file hashes must all agree.
+
+**Limits.** The marker is **not signed (Tier 1)**. It defends against a mix-up between workflows, runs and attempts, and against a modified or truncated state file. It does not
+defend against someone who can already edit a workflow or write the cache; **Tier 2** (an attestation) is not part of this change. **No existing cache has a marker.** The first
+cache this workflow can accept appears after the first **scheduled daily run** that follows the daily-workflow pull request being merged; until then it refuses with
+`marker_missing`. Do not dispatch the daily workflow for this: it spends provider quota.
+
 ## What the workflow does
 
 `.github/workflows/cache_validation.yml` ("Validate cache coverage") is manual only (`workflow_dispatch`).
@@ -38,7 +60,8 @@ a cache with a different version cannot be restored under that set. The list's `
 1. Reads the daily workflow's metadata, the cache metadata (no content) and the metadata of the newest candidate runs (read-only `GET` requests with the workflow's own token).
 2. Selects the cache by the rule above.
 3. Restores that key only. Nothing is saved.
-4. Fails unless `fundamentals_cache.json`, `financials_cache.json` and `quarterly_cache.json` are all present, non-empty regular files.
+4. Fails unless `fundamentals_cache.json`, `financials_cache.json` and `quarterly_cache.json` are all present, non-empty regular files, and unless the provenance marker
+   verifies (see above).
 5. Runs `coverage_report.py --state-dir data` offline against the universe on the `stocklens-data` branch. The report stays on the runner.
 6. Writes the **job summary only**, built new from an allowlist (`cache_validation.py summarize`).
 
@@ -56,10 +79,7 @@ a cache with a different version cannot be restored under that set. The list's `
 * **Seven days** is the eviction horizon for an unused cache; a cache older than that, or one the daily workflow has not refreshed, stops the run.
 * If a cache is saved by a daily run that later failed (for example in the deploy job), the run's conclusion is `failure` and the run stops rather than using it.
 
-**Safer alternative, for review (not implemented, because it changes a production workflow).** Have `update.yml` write a small provenance marker file into `data/` just before
-it saves its cache (workflow name, run id, commit, time). The validation would then read the marker after the restore and require it to match the key, which links the cache
-to its run by **content**, not by a naming convention. A second option is for the daily run itself to publish the allowlisted summary at its end. Either needs a separate
-decision to change `update.yml`.
+**The marker closes most of this gap** (see the section above) once the daily-workflow pull request is merged and a scheduled daily run has saved a cache. It is unsigned.
 
 ## What the job summary contains and never contains
 
@@ -76,7 +96,7 @@ warning name must be a plain lower-case token. Anything else, or a report that d
 
 * **It must be on the default branch.** GitHub: "To trigger the `workflow_dispatch` event, your workflow must be in the default branch." It cannot be started from this
   pull request's branch; merging is a separate decision.
-* **A cache must exist.** Caches are removed after 7 days without access or at the 10 GB repository limit, and none has been confirmed. If none matches, the run fails
+* **A cache with a valid marker must exist.** That needs the daily-workflow pull request merged and one scheduled daily run after it. Caches are removed after 7 days without access or at the 10 GB repository limit, and none has been confirmed. If none matches, the run fails
   with a clear message and changes nothing.
 * **The selected cache is the newest one saved by a successful daily run**, found by the rule above. If a batch saved a newer cache, it is skipped and counted. If the daily
   run's metadata cannot be matched, the run fails and says only a fixed code.

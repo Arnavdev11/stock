@@ -34,6 +34,43 @@ DAILY_WF_ID, BATCH_WF_ID = 111, 222
 BATCH_PATH = ".github/workflows/fundamentals_batch.yml"
 
 
+REPOSITORY = "acme/stock"
+MARKER_SOURCE_ENV = {"CV_VERSION": "d" * 64, "CV_CACHE_REF": REF, "CV_SOURCE_RUN_ID": "123", "CV_SOURCE_RUN_EVENT": "schedule", "CV_SOURCE_RUN_HEAD_SHA": "e" * 40,
+                     "CV_SOURCE_RUN_ATTEMPT": "1", "CV_SOURCE_RUN_CREATED_AT": "2026-10-20T09:50:00Z", "CV_SOURCE_RUN_UPDATED_AT": "2026-10-20T10:20:00Z",
+                     "CV_SKIPPED_BATCH_CACHES": "2", "CV_REPOSITORY": REPOSITORY}
+
+
+def good_marker(files=None, **kw):
+    """What cache_provenance.py writes for the run the Provenance fixtures describe (run 123, attempt 1, cache created 10:00)."""
+    m = {"schema": 1, "kind": "cache_provenance", "repository": REPOSITORY, "workflow": V.DAILY_WORKFLOW_NAME,
+         "workflow_ref": "%s/%s@%s" % (REPOSITORY, V.DAILY_WORKFLOW_PATH, REF), "run_id": "123", "run_attempt": 1, "event": "schedule", "ref": REF, "sha": "e" * 40,
+         "cache_key": "nse-data-123", "paths": ["data", "out"], "written_at": "2026-10-20T09:58:00Z", "data_status": "complete", "data_ok": True,
+         "step_outcomes": {n: "success" for n in V.MARKER_STEPS}, "files": files or {}}
+    m.update(kw)
+    return m
+
+
+def make_data_dir(root, marker=True, contents=None, **marker_kw):
+    """A synthetic restored data folder: the three state files and, unless MARKER is False, a marker that matches them (then changed by MARKER_KW)."""
+    import hashlib
+    d = Path(root)
+    d.mkdir(parents=True, exist_ok=True)
+    files = {}
+    for n in V.STATE_FILES:
+        b = (contents or {}).get(n, ('{"synthetic": "%s"}' % n).encode())
+        (d / n).write_bytes(b)
+        files[n] = {"bytes": len(b), "sha256": hashlib.sha256(b).hexdigest()}
+    if marker:
+        m = good_marker(files)
+        m.update(marker_kw)
+        (d / V.MARKER_NAME).write_text(json.dumps(m), encoding="utf-8")
+    return d
+
+
+def marker_selection():
+    return V.selection_from_env(dict(Provenance.OK))[0]
+
+
 def page(caches, total=None):
     return json.dumps({"total_count": len(caches) if total is None else total, "actions_caches": caches})
 
@@ -337,7 +374,8 @@ class RealReportCase(unittest.TestCase):
 
     def render(self, report=None):
         s = V.sanitize(report if report is not None else self.report, AS_OF)
-        return s, V.render(s, V.provenance_from_env(self.prov()), {n: {"bytes": 1, "sha256": "c" * 64} for n in V.STATE_FILES})
+        return s, V.render(s, V.provenance_from_env(self.prov()), {n: {"bytes": 1, "sha256": "c" * 64} for n in V.STATE_FILES},
+                                 {"written_at": "2026-10-20T09:58:00Z", "run_attempt": 1, "data_status": "complete", "feeding": {n: "success" for n in V.FEEDING_STEPS}})
 
 
 class Allowlist(RealReportCase):
@@ -507,7 +545,7 @@ class SchemaFailsClosed(RealReportCase):
 
 class Provenance(unittest.TestCase):
     SOURCE = {"CV_VERSION": "d" * 64, "CV_CACHE_REF": REF, "CV_SOURCE_RUN_ID": "123", "CV_SOURCE_RUN_EVENT": "schedule", "CV_SOURCE_RUN_HEAD_SHA": "e" * 40, "CV_SOURCE_RUN_ATTEMPT": "1",
-              "CV_SOURCE_RUN_CREATED_AT": "2026-10-20T09:50:00Z", "CV_SOURCE_RUN_UPDATED_AT": "2026-10-20T10:20:00Z", "CV_SKIPPED_BATCH_CACHES": "2"}
+              "CV_SOURCE_RUN_CREATED_AT": "2026-10-20T09:50:00Z", "CV_SOURCE_RUN_UPDATED_AT": "2026-10-20T10:20:00Z", "CV_SKIPPED_BATCH_CACHES": "2", "CV_REPOSITORY": REPOSITORY}
     OK = {"CV_MATCHED_KEY": "nse-data-123", "CV_RESTORE_HIT": "true", "CV_RUN_ID": "456", "CV_MAIN_SHA": "a" * 40, "CV_DATA_BRANCH_SHA": "b" * 40, "CV_AS_OF": AS_OF,
           "CV_CREATED_AT": "2026-10-20T10:00:00Z", "CV_LAST_ACCESSED_AT": "2026-10-22T10:00:00.123Z", "CV_SIZE": "1234", **SOURCE}
 
@@ -515,7 +553,7 @@ class Provenance(unittest.TestCase):
         self.assertEqual(V.provenance_from_env(self.OK), self.OK)
         for name, bad in (("CV_MATCHED_KEY", "nse-data-shp-1"), ("CV_MATCHED_KEY", "nse-data-1\n"), ("CV_RESTORE_HIT", "false"), ("CV_RUN_ID", "12 34"), ("CV_MAIN_SHA", "A" * 40),
                           ("CV_DATA_BRANCH_SHA", "b" * 39), ("CV_AS_OF", "yesterday"), ("CV_CREATED_AT", "<script>"), ("CV_SIZE", "12.5"), ("CV_SIZE", ""), ("CV_SOURCE_RUN_EVENT", "push"), ("CV_SOURCE_RUN_HEAD_SHA", "zz"), ("CV_VERSION", "d" * 63),
-                          ("CV_CACHE_REF", "refs/pull/1/merge"), ("CV_SKIPPED_BATCH_CACHES", "-1"), ("CV_SOURCE_RUN_ATTEMPT", "x")):
+                          ("CV_CACHE_REF", "refs/pull/1/merge"), ("CV_SKIPPED_BATCH_CACHES", "-1"), ("CV_SOURCE_RUN_ATTEMPT", "x"), ("CV_REPOSITORY", "no-slash"), ("CV_REPOSITORY", "a/b\n")):
             with self.subTest(name=name, bad=bad):
                 with self.assertRaises(V.Refused):
                     V.provenance_from_env(dict(self.OK, **{name: bad}))
@@ -523,6 +561,198 @@ class Provenance(unittest.TestCase):
         del env["CV_RUN_ID"]
         with self.assertRaises(V.Refused):
             V.provenance_from_env(env)
+
+
+class MarkerVerification(unittest.TestCase):
+    """The cache's own provenance marker must agree with the run the cache was selected from, and with the three restored files. All data here is synthetic."""
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.sel = marker_selection()
+
+    def verify(self, d, sel=None, repository=REPOSITORY, ref=REF):
+        return V.verify_marker(d, sel or self.sel, repository, ref)
+
+    def refuses(self, d, code, **kw):
+        with self.assertRaises(V.Refused) as cm:
+            self.verify(d, **kw)
+        self.assertEqual(cm.exception.code, code)
+
+    def case(self, name, code, **marker_kw):
+        with self.subTest(name=name):
+            d = make_data_dir(self.root / name, **marker_kw)
+            self.refuses(d, code)
+
+    def test_a_valid_marker_passes_and_returns_only_the_allowed_facts(self):
+        facts = self.verify(make_data_dir(self.root / "ok"))
+        self.assertEqual(facts, {"written_at": "2026-10-20T09:58:00Z", "run_attempt": 1, "data_status": "complete", "feeding": {n: "success" for n in V.FEEDING_STEPS}})
+
+    def test_an_incomplete_but_ok_status_passes_and_is_reported_as_incomplete(self):
+        facts = self.verify(make_data_dir(self.root / "inc", data_status="incomplete"))
+        self.assertEqual(facts["data_status"], "incomplete")
+
+    def test_a_missing_marker_is_refused(self):
+        self.refuses(make_data_dir(self.root / "none", marker=False), "marker_missing")
+
+    def test_a_marker_from_an_earlier_run_or_with_the_wrong_run_id_is_refused(self):
+        self.case("old_run", "marker_wrong_run_id", run_id="122", cache_key="nse-data-122")
+        self.case("run_id_only", "marker_wrong_run_id", run_id="124")
+        self.case("key_only", "marker_wrong_cache_key", cache_key="nse-data-124")
+        self.case("run_id_int", "marker_wrong_run_id", run_id=123)
+
+    def test_attempts_other_than_the_runs_latest_are_refused(self):
+        sel = dict(self.sel, run_attempt=2)
+        self.refuses(make_data_dir(self.root / "rerun", run_attempt=1), "marker_attempt_not_the_latest", sel=sel)
+        self.verify(make_data_dir(self.root / "same", run_attempt=2), sel=sel)
+        self.refuses(make_data_dir(self.root / "higher", run_attempt=3), "marker_attempt_not_the_latest", sel=sel)
+        for bad in (0, -1, "1", True, 1.0, None):
+            with self.subTest(attempt=bad):
+                self.refuses(make_data_dir(self.root / ("a%r" % (bad,)).replace(".", "_").replace("-", "m"), run_attempt=bad), "marker_wrong_run_attempt")
+
+    def test_wrong_workflow_ref_sha_repository_event_or_paths_are_refused(self):
+        self.case("workflow", "marker_wrong_workflow", workflow="Fundamentals coverage batch")
+        self.case("wf_ref", "marker_wrong_workflow_ref", workflow_ref="%s/.github/workflows/fundamentals_batch.yml@%s" % (REPOSITORY, REF))
+        self.case("wf_ref_branch", "marker_wrong_workflow_ref", workflow_ref="%s/%s@refs/heads/other" % (REPOSITORY, V.DAILY_WORKFLOW_PATH))
+        self.case("ref", "marker_wrong_ref", ref="refs/heads/other")
+        self.case("sha", "marker_wrong_sha", sha="f" * 40)
+        self.case("repo", "marker_wrong_repository", repository="evil/stock")
+        self.case("event", "marker_wrong_event", event="workflow_dispatch")
+        self.case("paths", "marker_wrong_paths", paths=["data"])
+        self.case("schema", "marker_wrong_schema", schema=2)
+        self.case("schema_bool", "marker_wrong_schema", schema=True)
+        self.case("kind", "marker_wrong_schema", kind="other")
+
+    def test_the_verifier_also_judges_the_repository_and_ref_it_is_given(self):
+        d = make_data_dir(self.root / "r")
+        self.refuses(d, "marker_wrong_repository", repository="acme/other")
+        self.refuses(d, "marker_wrong_workflow_ref", ref="refs/heads/other")
+
+    def test_missing_modified_or_absent_state_files_are_refused(self):
+        d = make_data_dir(self.root / "mod")
+        (d / "financials_cache.json").write_bytes(b'{"changed": true}')
+        self.refuses(d, "marker_state_file_changed_financials")
+        d = make_data_dir(self.root / "same_size")
+        raw = (d / "quarterly_cache.json").read_bytes()
+        (d / "quarterly_cache.json").write_bytes(raw[:-2] + b"X}")             # same length, different bytes
+        self.assertEqual(len(raw), len((d / "quarterly_cache.json").read_bytes()))
+        self.refuses(d, "marker_state_file_changed_quarterly")
+        d = make_data_dir(self.root / "gone")
+        (d / "fundamentals_cache.json").unlink()
+        with self.assertRaises((V.Refused, OSError)):
+            self.verify(d)                                                       # check-files runs first in the workflow; the verifier must not pass either
+        d = make_data_dir(self.root / "null")
+        m = json.loads((d / V.MARKER_NAME).read_text())
+        m["files"]["quarterly_cache.json"] = None
+        (d / V.MARKER_NAME).write_text(json.dumps(m))
+        self.refuses(d, "marker_state_file_absent_at_write_quarterly")
+
+    def test_a_malformed_files_block_is_refused(self):
+        d = make_data_dir(self.root / "f")
+        good = json.loads((d / V.MARKER_NAME).read_text())["files"]
+        for name, files in (("list", []), ("short", {k: good[k] for k in list(good)[:2]}), ("extra", dict(good, **{"other.json": good["fundamentals_cache.json"]})),
+                            ("entry_shape", dict(good, **{"quarterly_cache.json": {"bytes": 1}})), ("bytes_type", dict(good, **{"quarterly_cache.json": {"bytes": "1", "sha256": "0" * 64}})),
+                            ("sha_type", dict(good, **{"quarterly_cache.json": {"bytes": 1, "sha256": "Z" * 64}})), ("entry_str", dict(good, **{"quarterly_cache.json": "x"}))):
+            self.case("files_" + name, "marker_bad_files_block", files=files)
+
+    def test_invalid_oversized_or_symlinked_markers_are_refused(self):
+        d = make_data_dir(self.root / "bad_json")
+        (d / V.MARKER_NAME).write_text("{not json", encoding="utf-8")
+        self.refuses(d, "marker_not_json")
+        d = make_data_dir(self.root / "bad_utf8")
+        (d / V.MARKER_NAME).write_bytes(b"\xff\xfe{}")
+        self.refuses(d, "marker_not_json")
+        d = make_data_dir(self.root / "deep")
+        (d / V.MARKER_NAME).write_text("[" * 5000, encoding="utf-8")
+        self.refuses(d, "marker_not_json")
+        d = make_data_dir(self.root / "big")
+        (d / V.MARKER_NAME).write_text(" " * (V.MARKER_MAX_BYTES + 1) + "{}", encoding="utf-8")
+        self.refuses(d, "marker_too_large")
+        d = make_data_dir(self.root / "list")
+        (d / V.MARKER_NAME).write_text("[]", encoding="utf-8")
+        self.refuses(d, "marker_unexpected_shape")
+        d = make_data_dir(self.root / "link", marker=False)
+        real = self.root / "elsewhere.json"
+        real.write_text(json.dumps(good_marker({})), encoding="utf-8")
+        (d / V.MARKER_NAME).symlink_to(real)
+        self.refuses(d, "marker_missing")
+        d = make_data_dir(self.root / "dir", marker=False)
+        (d / V.MARKER_NAME).mkdir()
+        self.refuses(d, "marker_missing")
+
+    def test_duplicate_extra_or_missing_fields_are_refused(self):
+        d = make_data_dir(self.root / "dup")
+        text = (d / V.MARKER_NAME).read_text()
+        (d / V.MARKER_NAME).write_text(text.replace('"run_id": "123"', '"run_id": "122", "run_id": "123"'), encoding="utf-8")
+        self.refuses(d, "marker_not_json")
+        d = make_data_dir(self.root / "extra", extra_field="x")
+        self.refuses(d, "marker_unexpected_shape")
+        d = make_data_dir(self.root / "missing")
+        m = json.loads((d / V.MARKER_NAME).read_text())
+        del m["sha"]
+        (d / V.MARKER_NAME).write_text(json.dumps(m))
+        self.refuses(d, "marker_unexpected_shape")
+
+    def test_time_checks(self):
+        self.case("before_run", "marker_written_outside_the_run", written_at="2026-10-20T09:00:00Z")
+        self.case("after_run", "marker_written_outside_the_run", written_at="2026-10-21T10:00:00Z")
+        self.case("after_cache", "marker_newer_than_the_cache", written_at="2026-10-20T10:06:00Z")
+        self.verify(make_data_dir(self.root / "slack", written_at="2026-10-20T10:04:00Z"))
+        self.case("not_a_time", "marker_time_invalid", written_at="yesterday")
+        self.case("no_zone", "marker_time_invalid", written_at="2026-10-20T09:58:00")
+        self.case("offset_form", "marker_time_invalid", written_at="2026-10-20T09:58:00+00:00")
+        self.case("int_time", "marker_time_invalid", written_at=5)
+        sel = dict(self.sel, run_created_at="2026-10-20T07:00:00Z", created_at="2026-10-20T10:00:00Z")
+        self.refuses(make_data_dir(self.root / "too_old", written_at="2026-10-20T08:30:00Z"), "marker_older_than_the_cache_by_more_than_an_hour", sel=sel)
+
+    def test_a_failed_partial_or_unknown_update_is_not_a_successful_refresh(self):
+        for status in ("failed", "unknown", "complete!", None, 1):
+            self.case("status_%s" % (status,), "marker_data_status_not_usable", data_status=status)
+        for ok in (False, "true", 1, None):
+            self.case("ok_%r" % (ok,), "marker_data_status_not_usable", data_ok=ok)
+        for step in V.FEEDING_STEPS:
+            for outcome in ("failure", "cancelled", "skipped", "unknown"):
+                out = {n: "success" for n in V.MARKER_STEPS}
+                out[step] = outcome
+                self.case("step_%s_%s" % (step, outcome), "marker_data_step_not_successful", step_outcomes=out)
+
+    def test_a_step_that_does_not_feed_the_state_files_may_have_failed(self):
+        out = {n: "success" for n in V.MARKER_STEPS}
+        out.update(shareholding="failure", market="skipped", validate="failure")
+        self.verify(make_data_dir(self.root / "side", step_outcomes=out))
+
+    def test_bad_step_outcome_blocks_are_refused(self):
+        full = {n: "success" for n in V.MARKER_STEPS}
+        for name, so in (("list", []), ("short", {k: "success" for k in V.FEEDING_STEPS}), ("extra", dict(full, other="success")), ("bad_value", dict(full, market="ok")),
+                         ("non_string", dict(full, market=None))):
+            self.case("so_" + name, "marker_bad_step_outcomes", step_outcomes=so)
+
+    def test_the_marker_of_an_earlier_cache_cannot_be_accepted_for_a_newer_one(self):
+        old = make_data_dir(self.root / "old", run_id="100", cache_key="nse-data-100", sha="d" * 40)
+        self.refuses(old, "marker_wrong_run_id")
+        newer = dict(self.sel, key="nse-data-124", run_id="124")
+        self.refuses(make_data_dir(self.root / "same_content"), "marker_wrong_run_id", sel=newer)
+
+    def test_refusal_codes_carry_no_marker_text(self):
+        d = make_data_dir(self.root / "hostile", repository=HOSTILE[0], run_id=HOSTILE[1])
+        with self.assertRaises(V.Refused) as cm:
+            self.verify(d)
+        self.assertRegex(cm.exception.code, r"^[a-z_]+$")
+
+    def test_the_real_writer_and_this_verifier_agree(self):
+        """Compatibility with cache_provenance.py (added by the daily-workflow pull request). Skipped where that file is not in the tree."""
+        try:
+            import cache_provenance as P
+        except ImportError:
+            self.skipTest("cache_provenance.py is not in this tree")
+        d = make_data_dir(self.root / "real", marker=False)
+        env = {"GITHUB_REPOSITORY": REPOSITORY, "GITHUB_WORKFLOW": V.DAILY_WORKFLOW_NAME, "GITHUB_REF": REF, "GITHUB_WORKFLOW_REF": "%s/%s@%s" % (REPOSITORY, V.DAILY_WORKFLOW_PATH, REF),
+               "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "schedule", "GITHUB_SHA": "e" * 40, "CP_DATA_STATUS": "complete", "CP_DATA_OK": "true",
+               **{"CP_OUTCOME_" + n.upper(): "success" for n in V.MARKER_STEPS}}
+        when = dt.datetime(2026, 10, 20, 9, 58, tzinfo=dt.timezone.utc)
+        P.write_marker(d, P.build_marker(d, env, when))
+        self.assertEqual(self.verify(d)["data_status"], "complete")
+        self.assertEqual(set(json.loads((d / V.MARKER_NAME).read_text())), set(V.MARKER_FIELDS))
 
 
 class CommandLine(RealReportCase):
@@ -536,9 +766,7 @@ class CommandLine(RealReportCase):
         rep = self.root / "r"
         rep.mkdir()
         (rep / "coverage_report.json").write_text(C.render_json(self.report), encoding="utf-8")
-        for n in V.STATE_FILES:
-            (self.root / "datadir").mkdir(exist_ok=True)
-            (self.root / "datadir" / n).write_text("{}", encoding="utf-8")
+        make_data_dir(self.root / "datadir")
         summary = self.root / "summary.md"
         rc, out = self.run_cli(["summarize", str(rep / "coverage_report.json"), str(self.root / "datadir"), str(summary)], self.prov())
         self.assertEqual((rc, out.strip()), (0, "cache_validation: summary written"))
@@ -547,14 +775,48 @@ class CommandLine(RealReportCase):
             self.assertNotIn(bad, text + out)
         self.assertIn("not publication status", text)
 
+    def test_verify_marker_command(self):
+        d = make_data_dir(self.root / "vm")
+        rc, out = self.run_cli(["verify-marker", str(d)], Provenance.OK)
+        self.assertEqual(rc, 0, out)
+        d2 = make_data_dir(self.root / "vm2", marker=False)
+        rc, out = self.run_cli(["verify-marker", str(d2)], Provenance.OK)
+        self.assertEqual((rc, out.strip()), (1, "cache_validation: refused (marker_missing)"))
+        rc, out = self.run_cli(["verify-marker", str(d)], dict(Provenance.OK, CV_REPOSITORY="evil/stock"))
+        self.assertEqual((rc, out.strip()), (1, "cache_validation: refused (marker_wrong_repository)"))
+        rc, out = self.run_cli(["verify-marker", str(d)], {})
+        self.assertEqual((rc, out.strip()), (1, "cache_validation: refused (provenance_missing_or_malformed)"))
+
+    def test_summarize_refuses_without_a_valid_marker_and_writes_nothing(self):
+        rep = self.root / "rm"
+        rep.mkdir()
+        (rep / "coverage_report.json").write_text(C.render_json(self.report), encoding="utf-8")
+        for name, d in (("nomarker", make_data_dir(self.root / "dn", marker=False)), ("stale", make_data_dir(self.root / "ds", run_id="122", cache_key="nse-data-122"))):
+            out_md = self.root / (name + ".md")
+            rc, out = self.run_cli(["summarize", str(rep / "coverage_report.json"), str(d), str(out_md)], self.prov())
+            self.assertEqual(rc, 1)
+            self.assertRegex(out.strip(), r"^cache_validation: refused \(marker_[a-z_]+\)$")
+            self.assertFalse(out_md.exists())
+
+    def test_the_summary_states_the_marker_facts_and_flags_an_incomplete_refresh(self):
+        rep = self.root / "ri"
+        rep.mkdir()
+        (rep / "coverage_report.json").write_text(C.render_json(self.report), encoding="utf-8")
+        d = make_data_dir(self.root / "di", data_status="incomplete")
+        out_md = self.root / "i.md"
+        rc, _ = self.run_cli(["summarize", str(rep / "coverage_report.json"), str(d), str(out_md)], self.prov())
+        self.assertEqual(rc, 0)
+        text = out_md.read_text(encoding="utf-8")
+        self.assertIn("verified by the cache's own marker (not signed)", text)
+        self.assertIn("NOT a full data refresh", text)
+        self.assertIn("fundamentals=success", text)
+
     def test_a_refusal_writes_nothing_and_prints_only_a_fixed_code(self):
         rep = self.root / "r.json"
         bad = copy.deepcopy(self.report)
         bad["scopes"]["all"]["modules"][0]["counts"] = HOSTILE[0]
         rep.write_text(json.dumps(bad), encoding="utf-8")
-        for n in V.STATE_FILES:
-            (self.root / "d").mkdir(exist_ok=True)
-            (self.root / "d" / n).write_text("{}", encoding="utf-8")
+        make_data_dir(self.root / "d")
         summary = self.root / "summary.md"
         rc, out = self.run_cli(["summarize", str(rep), str(self.root / "d"), str(summary)], self.prov())
         self.assertEqual(rc, 0)                                         # the unrelated module was not read: only the three state modules are
@@ -652,6 +914,35 @@ class WorkflowControls(unittest.TestCase):
         self.assertEqual(mine, daily)
         self.assertEqual(mine, {frozenset({"data", "out"})})
 
+    def test_the_marker_is_verified_after_the_restore_and_before_the_report_and_cannot_be_skipped(self):
+        names = [st.get("name", "") for st in self.steps]
+        i = next(k for k, n in enumerate(names) if n.startswith("Verify the provenance marker"))
+        self.assertLess(names.index("Check the three state files"), i)
+        self.assertLess(i, next(k for k, n in enumerate(names) if n.startswith("Coverage report")))
+        self.assertLess(i, next(k for k, n in enumerate(names) if n.startswith("Job summary")))
+        st = self.steps[i]
+        self.assertNotIn("continue-on-error", st)
+        self.assertNotIn("if", st)
+        self.assertIn("python cache_validation.py verify-marker data", st["run"])
+        self.assertTrue(all("continue-on-error" not in s2 and "if" not in s2 for s2 in self.steps))
+
+    def test_every_step_that_reads_the_provenance_passes_the_same_values(self):
+        by = {st.get("name", ""): st for st in self.steps}
+        verify = next(v for n, v in by.items() if n.startswith("Verify the provenance marker"))
+        summary = next(v for n, v in by.items() if n.startswith("Job summary"))
+        derived_in_script = {"CV_AS_OF", "CV_DATA_BRANCH_SHA"}
+        wanted = set(V.PROVENANCE_ENV) - derived_in_script
+        self.assertEqual(set(verify["env"]), wanted)
+        self.assertEqual(set(summary["env"]), wanted)
+        self.assertEqual(verify["env"], summary["env"])
+        self.assertEqual(summary["env"]["CV_REPOSITORY"], "${{ github.repository }}")
+        self.assertIn("CV_AS_OF", verify["run"])
+        self.assertIn("CV_DATA_BRANCH_SHA", verify["run"])
+
+    def test_the_marker_is_never_uploaded_or_written_anywhere(self):
+        self.assertNotIn("cache_provenance.json", self.code)
+        self.assertNotIn("cache_provenance.py", self.code)
+
     def test_it_is_a_restore_only_member_of_the_ledger_group_and_breaks_the_isolation_rules_nowhere(self):
         mine = ISO.caches(self.doc)
         self.assertEqual([(kind, prefixes, group) for _, kind, _, prefixes, _, group in mine], [("restore", [], ISO.LEDGER)])
@@ -723,7 +1014,8 @@ class DocumentationStatesTheLimits(unittest.TestCase):
     def test_the_document_says_what_the_result_is_and_is_not(self):
         text = (HERE / "CACHE_VALIDATION.md").read_text(encoding="utf-8")
         for needle in ("cache coverage, not publication status", "has not been run", "default branch", "No artifact", "nse-data-", "fundamentals_batch.yml", "corroborated",
-                       "does not record which run", "Update data and publish site", "7 days", "fail", "marker"):
+                       "does not record which run", "Update data and publish site", "7 days", "fail", "marker",
+                       "cache_provenance.json", "not signed", "attempt", "first attempt", "Tier 2", "No existing cache"):
             self.assertIn(needle, text)
 
 

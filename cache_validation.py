@@ -13,6 +13,9 @@ It does a few small jobs and nothing else. It makes no network call, imports no 
                                or workflow_dispatch, and the cache must have been created during that run and be at most 7 days old. A cache whose run is positively a
                                fundamentals-batch run is skipped; anything else that does not check out refuses the run. The list must be complete and a key may appear once.
   check-files DATA_DIR         Refuse unless the three saved-state files exist as ordinary, non-empty files.
+  verify-marker DATA_DIR       Refuse unless data/cache_provenance.json (written by the daily run as its last data step) agrees with the selected run: repository, workflow,
+                               ref, run id, ATTEMPT (it must be the run's latest), commit, cache key, event, times, data status, the steps that fill the state files, and
+                               the byte size and SHA-256 of all three state files. The marker is unsigned (Tier 1): it is not a defence against a malicious workflow author.
   summarize REPORT_JSON DATA_DIR OUT_MD
                                Build the public job summary from the coverage report. The summary is built NEW from an explicit allowlist: every number and every
                                name is checked and copied one by one. Nothing from the report is passed through. Anything unexpected (a missing field, a wrong type, a
@@ -56,8 +59,20 @@ PROVENANCE_ENV = {                                                      # name -
     "CV_AS_OF": r"[0-9]{4}-[0-9]{2}-[0-9]{2}", "CV_CREATED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_LAST_ACCESSED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_SIZE": r"[0-9]{1,15}",
     "CV_VERSION": r"[0-9a-f]{64}", "CV_CACHE_REF": r"refs/heads/[A-Za-z0-9._/\-]{1,100}", "CV_SOURCE_RUN_ID": r"[0-9]{1,20}", "CV_SOURCE_RUN_EVENT": r"schedule|workflow_dispatch",
     "CV_SOURCE_RUN_HEAD_SHA": r"[0-9a-f]{40}", "CV_SOURCE_RUN_ATTEMPT": r"[0-9]{1,3}", "CV_SOURCE_RUN_CREATED_AT": r"[0-9T:.+\-Z]{10,40}",
-    "CV_SOURCE_RUN_UPDATED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_SKIPPED_BATCH_CACHES": r"[0-9]{1,2}",
+    "CV_SOURCE_RUN_UPDATED_AT": r"[0-9T:.+\-Z]{10,40}", "CV_SKIPPED_BATCH_CACHES": r"[0-9]{1,2}", "CV_REPOSITORY": r"[A-Za-z0-9._\-]{1,100}/[A-Za-z0-9._\-]{1,100}",
 }
+
+
+MARKER_NAME = "cache_provenance.json"                                       # written by cache_provenance.py (feat/cache-provenance-marker) as the daily run's last data step
+MARKER_MAX_BYTES = 16 * 1024
+MARKER_FUTURE_SLACK = dt.timedelta(minutes=5)
+MARKER_TO_CACHE_MAX = dt.timedelta(minutes=60)                              # the marker is written, then the job ends and the cache is saved
+MARKER_STEPS = ("nse", "fundamentals", "financials", "financial_history", "shareholding", "quarterly", "validate", "market")
+FEEDING_STEPS = ("fundamentals", "financials", "quarterly")                 # the three steps that fill the three state files; each must have succeeded
+MARKER_OUTCOMES = ("success", "failure", "cancelled", "skipped", "unknown")
+MARKER_FIELDS = ("schema", "kind", "repository", "workflow", "workflow_ref", "run_id", "run_attempt", "event", "ref", "sha", "cache_key", "paths", "written_at",
+                 "data_status", "data_ok", "step_outcomes", "files")
+REPO_RE = re.compile(r"[A-Za-z0-9._\-]{1,100}/[A-Za-z0-9._\-]{1,100}", re.ASCII)
 
 
 class Refused(Exception):
@@ -244,6 +259,114 @@ def file_facts(data_dir):
     return out
 
 
+# ---------------------------------------------------------------- the provenance marker
+# GitHub does not record which run made a cache, so the cache carries its own evidence: cache_provenance.json, written by the daily run as its last data step. It is
+# read here as untrusted input (size-capped, no symlink, duplicate keys refused, exact field set, exact types) and must agree with the cache that was selected from the
+# run metadata. The marker is NOT signed: it binds a cache to a run for a repository whose workflows are trusted; it does not defend against a malicious workflow author.
+def _no_duplicates(pairs):
+    d = {}
+    for k, v in pairs:
+        if k in d:
+            raise ValueError("duplicate key")
+        d[k] = v
+    return d
+
+
+def _load_marker(data_dir):
+    p = Path(data_dir) / MARKER_NAME
+    if p.is_symlink() or not p.is_file():
+        raise Refused("marker_missing")
+    if p.stat().st_size > MARKER_MAX_BYTES:
+        raise Refused("marker_too_large")
+    try:
+        raw = p.read_bytes()
+        if len(raw) > MARKER_MAX_BYTES:
+            raise Refused("marker_too_large")
+        doc = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_duplicates)
+    except Refused:
+        raise
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        raise Refused("marker_not_json") from None
+    if not isinstance(doc, dict) or set(doc) != set(MARKER_FIELDS):
+        raise Refused("marker_unexpected_shape")
+    return doc
+
+
+def verify_marker(data_dir, sel, repository, ref):
+    """Check the restored cache's marker against the selection (SEL: the select outputs) and the three state files. Returns the facts the summary may show, or Refused."""
+    m = _load_marker(data_dir)
+    if m["schema"] != 1 or isinstance(m["schema"], bool) or m["kind"] != "cache_provenance":
+        raise Refused("marker_wrong_schema")
+    if m["repository"] != repository or not isinstance(repository, str) or not REPO_RE.fullmatch(repository):
+        raise Refused("marker_wrong_repository")
+    if m["workflow"] != DAILY_WORKFLOW_NAME:
+        raise Refused("marker_wrong_workflow")
+    if m["workflow_ref"] != "%s/%s@%s" % (repository, DAILY_WORKFLOW_PATH, ref):
+        raise Refused("marker_wrong_workflow_ref")
+    if m["ref"] != ref:
+        raise Refused("marker_wrong_ref")
+    if m["run_id"] != sel["run_id"] or not isinstance(m["run_id"], str):
+        raise Refused("marker_wrong_run_id")
+    if m["cache_key"] != sel["key"] or m["cache_key"] != "nse-data-" + m["run_id"]:
+        raise Refused("marker_wrong_cache_key")
+    if m["event"] != sel["run_event"]:
+        raise Refused("marker_wrong_event")
+    if m["sha"] != sel["run_head_sha"]:
+        raise Refused("marker_wrong_sha")
+    if m["paths"] != ["data", "out"]:
+        raise Refused("marker_wrong_paths")
+    attempt = m["run_attempt"]
+    if not _int(attempt) or attempt < 1:
+        raise Refused("marker_wrong_run_attempt")
+    if attempt != sel["run_attempt"]:
+        # A re-run of the same run id hits its own cache key, restores it and saves nothing, so the cache keeps the FIRST attempt's content. A marker whose attempt is not
+        # the run's latest attempt therefore belongs to an earlier attempt and is never accepted.
+        raise Refused("marker_attempt_not_the_latest")
+    try:
+        written = _when(m["written_at"])
+    except Refused:
+        raise Refused("marker_time_invalid") from None
+    if not (isinstance(m["written_at"], str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", m["written_at"], re.ASCII)):
+        raise Refused("marker_time_invalid")
+    r_created, r_updated, c_created = _when(sel["run_created_at"]), _when(sel["run_updated_at"]), _when(sel["created_at"])
+    if not (r_created <= written <= r_updated + WINDOW_SLACK):
+        raise Refused("marker_written_outside_the_run")
+    if written > c_created + MARKER_FUTURE_SLACK:
+        raise Refused("marker_newer_than_the_cache")
+    if c_created - written > MARKER_TO_CACHE_MAX:
+        raise Refused("marker_older_than_the_cache_by_more_than_an_hour")
+    status = m["data_status"]
+    if m["data_ok"] is not True or status not in ("complete", "incomplete"):
+        raise Refused("marker_data_status_not_usable")
+    out = m["step_outcomes"]
+    if not isinstance(out, dict) or set(out) != set(MARKER_STEPS) or any(v not in MARKER_OUTCOMES for v in out.values()):
+        raise Refused("marker_bad_step_outcomes")
+    for step in FEEDING_STEPS:
+        if out[step] != "success":
+            raise Refused("marker_data_step_not_successful")
+    files = m["files"]
+    if not isinstance(files, dict) or set(files) != set(STATE_FILES):
+        raise Refused("marker_bad_files_block")
+    now_facts = file_facts(data_dir)
+    for name in STATE_FILES:
+        f, kind = files[name], name.split("_")[0]
+        if f is None:
+            raise Refused("marker_state_file_absent_at_write_" + kind)
+        if not isinstance(f, dict) or set(f) != {"bytes", "sha256"} or not _int(f["bytes"]) or not isinstance(f["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", f["sha256"], re.ASCII):
+            raise Refused("marker_bad_files_block")
+        if f["bytes"] != now_facts[name]["bytes"] or f["sha256"] != now_facts[name]["sha256"]:
+            raise Refused("marker_state_file_changed_" + kind)
+    return {"written_at": m["written_at"], "run_attempt": attempt, "data_status": status, "feeding": {s: out[s] for s in FEEDING_STEPS}}
+
+
+def selection_from_env(env):
+    """The select outputs, rebuilt from the validated environment so the marker is judged against exactly what the summary shows."""
+    prov = provenance_from_env(env)
+    return {"key": prov["CV_MATCHED_KEY"], "run_id": prov["CV_SOURCE_RUN_ID"], "run_event": prov["CV_SOURCE_RUN_EVENT"], "run_head_sha": prov["CV_SOURCE_RUN_HEAD_SHA"],
+            "run_attempt": int(prov["CV_SOURCE_RUN_ATTEMPT"]), "run_created_at": prov["CV_SOURCE_RUN_CREATED_AT"], "run_updated_at": prov["CV_SOURCE_RUN_UPDATED_AT"],
+            "created_at": prov["CV_CREATED_AT"]}, prov
+
+
 # ---------------------------------------------------------------- the allowlist
 def _count(v, hi=MAX_COUNT):
     if isinstance(v, bool) or not isinstance(v, int) or v < 0 or v > hi:
@@ -379,7 +502,7 @@ def provenance_from_env(env):
     return out
 
 
-def render(summary, prov, hashes):
+def render(summary, prov, hashes, marker):
     """Markdown built from the sanitised object only: numbers and plain tokens."""
     L = ["# Cache coverage validation", "",
          "**This is cache coverage, not publication status.** It counts what the saved updater caches hold. A cached record is not proof that anything reached the website, "
@@ -392,6 +515,10 @@ def render(summary, prov, hashes):
          "against that run. %s newer cache(s) with an exact key belonged to `fundamentals_batch.yml` runs and were skipped."
          % (prov["CV_SOURCE_RUN_ID"], prov["CV_SOURCE_RUN_ATTEMPT"], prov["CV_SOURCE_RUN_EVENT"], prov["CV_SOURCE_RUN_HEAD_SHA"], prov["CV_SOURCE_RUN_CREATED_AT"],
             prov["CV_SOURCE_RUN_UPDATED_AT"], DAILY_WORKFLOW_NAME, prov["CV_SKIPPED_BATCH_CACHES"]),
+         "- **origin, verified by the cache's own marker (not signed):** `%s` was found in the restored cache and agreed with the run's metadata (run id, attempt %d, workflow, "
+         "branch, commit, cache key) and with the byte size and SHA-256 of all three state files, written %s. Data status recorded by the run: **%s**%s. Steps feeding the state files: %s."
+         % (MARKER_NAME, marker["run_attempt"], marker["written_at"], marker["data_status"],
+            " - NOT a full data refresh" if marker["data_status"] != "complete" else "", ", ".join("%s=%s" % kv for kv in marker["feeding"].items())),
          "- this validation: run %s, repository commit `%s`, data branch commit `%s`" % (prov["CV_RUN_ID"], prov["CV_MAIN_SHA"], prov["CV_DATA_BRANCH_SHA"]), "",
          "| State file | Usable | Entries | Problem | Bytes | SHA-256 |", "|---|---|---|---|---|---|"]
     for name in STATE_FILES:
@@ -461,15 +588,21 @@ def main(argv, env=None):
             check_files(argv[2])
             print("cache_validation: the three state files are present")
             return 0
+        if cmd == "verify-marker" and len(argv) == 3:
+            sel, prov = selection_from_env(env)
+            verify_marker(argv[2], sel, prov["CV_REPOSITORY"], prov["CV_CACHE_REF"])
+            print("cache_validation: the provenance marker and the three state files agree with the selected run")
+            return 0
         if cmd == "summarize" and len(argv) == 5:
-            prov = provenance_from_env(env)
+            sel, prov = selection_from_env(env)
+            marker = verify_marker(argv[3], sel, prov["CV_REPOSITORY"], prov["CV_CACHE_REF"])      # verified again here: the summary never states an origin it did not check
             summary = sanitize(_read_report(argv[2]), prov["CV_AS_OF"])
-            text = render(summary, prov, file_facts(argv[3]))
+            text = render(summary, prov, file_facts(argv[3]), marker)
             with open(argv[4], "a", encoding="utf-8") as fh:
                 fh.write(text)
             print("cache_validation: summary written")
             return 0
-        print("cache_validation: usage: candidates LIST REF OUT | select LIST WORKFLOW RUNS_DIR REF NOW | check-files DIR | summarize REPORT DIR OUT")
+        print("cache_validation: usage: candidates LIST REF OUT | select LIST WORKFLOW RUNS_DIR REF NOW | check-files DIR | verify-marker DIR | summarize REPORT DIR OUT")
         return 2
     except Refused as e:
         print("cache_validation: refused (%s)" % e.code)

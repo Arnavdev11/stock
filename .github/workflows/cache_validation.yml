@@ -9,7 +9,8 @@ name: Validate cache coverage
 #      id is fetched and must be a completed, successful run of the daily workflow (by workflow id and path) on the default branch, and the cache must have been created
 #      during that run and be at most 7 days old. A cache whose run is positively a fundamentals-batch run is skipped; anything else that does not check out fails the run.
 #   3. Restores THAT KEY ONLY (no restore-keys, fail-on-cache-miss) with the same path set as the daily run (data, out), because the cache version is derived from the paths.
-#   4. Refuses unless fundamentals_cache.json, financials_cache.json and quarterly_cache.json are all there.
+#   4. Refuses unless fundamentals_cache.json, financials_cache.json and quarterly_cache.json are all there, and unless the cache's own provenance marker
+#      (data/cache_provenance.json) agrees with the selected run and with the size and SHA-256 of all three files. A cache without a valid marker is refused.
 #   5. Runs the merged coverage report offline against the data branch's universe and `--state-dir data`. Its output stays on the runner.
 #   6. Writes ONLY the job summary, built new from an explicit allowlist (cache_validation.py summarize): counts, reason counts, file status, hashes, provenance.
 #
@@ -125,6 +126,29 @@ jobs:
       - name: Check the three state files
         run: python cache_validation.py check-files data
 
+      - name: Verify the provenance marker and the state files' hashes
+        env:
+          CV_MATCHED_KEY: ${{ steps.select.outputs.key }}
+          CV_RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          CV_CREATED_AT: ${{ steps.select.outputs.created_at }}
+          CV_LAST_ACCESSED_AT: ${{ steps.select.outputs.last_accessed_at }}
+          CV_SIZE: ${{ steps.select.outputs.size_in_bytes }}
+          CV_VERSION: ${{ steps.select.outputs.version }}
+          CV_CACHE_REF: ${{ steps.select.outputs.ref }}
+          CV_SOURCE_RUN_ID: ${{ steps.select.outputs.run_id }}
+          CV_SOURCE_RUN_EVENT: ${{ steps.select.outputs.run_event }}
+          CV_SOURCE_RUN_HEAD_SHA: ${{ steps.select.outputs.run_head_sha }}
+          CV_SOURCE_RUN_ATTEMPT: ${{ steps.select.outputs.run_attempt }}
+          CV_SOURCE_RUN_CREATED_AT: ${{ steps.select.outputs.run_created_at }}
+          CV_SOURCE_RUN_UPDATED_AT: ${{ steps.select.outputs.run_updated_at }}
+          CV_SKIPPED_BATCH_CACHES: ${{ steps.select.outputs.skipped_batch_caches }}
+          CV_RUN_ID: ${{ github.run_id }}
+          CV_MAIN_SHA: ${{ github.sha }}
+          CV_REPOSITORY: ${{ github.repository }}
+        run: |
+          export CV_AS_OF="$(date -u +%F)" CV_DATA_BRANCH_SHA="$(git -C ledger-branch rev-parse HEAD)"     # only so the shared environment check passes; not used by this step
+          python cache_validation.py verify-marker data
+
       - name: Coverage report (offline, output stays on the runner)
         run: |
           day="$(date -u +%F)"
@@ -150,6 +174,7 @@ jobs:
           CV_SKIPPED_BATCH_CACHES: ${{ steps.select.outputs.skipped_batch_caches }}
           CV_RUN_ID: ${{ github.run_id }}
           CV_MAIN_SHA: ${{ github.sha }}
+          CV_REPOSITORY: ${{ github.repository }}
         run: |
           export CV_DATA_BRANCH_SHA="$(git -C ledger-branch rev-parse HEAD)"
           python cache_validation.py summarize "$RUNNER_TEMP/report/coverage_report.json" data "$GITHUB_STEP_SUMMARY"
