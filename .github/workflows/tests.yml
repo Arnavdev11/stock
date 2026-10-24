@@ -1,0 +1,49 @@
+name: Python tests
+
+# Runs the repository's OFFLINE unit tests on every pull request that targets main, on every push to main, and by hand.
+# It only reads the code and runs `python -m unittest`. It starts no updater, calls no data provider, uses no secret, writes no cache, publishes nothing
+# and deploys nothing. The tests use synthetic data and need no credentials or network access.
+#
+# Not part of the ledger/cache group on purpose: it touches no ledger and no saved cache, so it must never wait behind (or delay) a data refresh.
+
+"on":
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unittest:
+    name: unittest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # some guard tests compare workflow files with the commit history
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"      # the version every production workflow uses
+
+      - name: Install the test dependencies
+        run: pip install pandas requests pyyaml
+
+      # test_first_500_priority.py arrives with the first-500 change (PR #40); until it is on a branch this step is skipped rather than failing.
+      - name: Focused tests (first-500 refresh priority)
+        if: hashFiles('test_first_500_priority.py') != ''
+        run: python -m unittest test_first_500_priority
+
+      - name: Full offline suite
+        run: python -m unittest discover -p 'test_*.py'
