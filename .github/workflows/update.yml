@@ -168,6 +168,12 @@ jobs:
           curl -fsSL --retry 3 --max-time 120 "$url" -o recovery_fundamentals.json || { echo "::error::$url could not be downloaded. Remedy: re-run once the site responds; nothing is recovered from anything else. Nothing was published and nothing was changed."; exit 1; }
           python fundamentals_updater.py seed recovery_fundamentals.json
 
+      # Provenance marker (see cache_provenance.py). A restored cache brings back the marker of an EARLIER run; it is deleted here, before any updater runs, so
+      # it can never be saved into this run's cache. Non-blocking: if this step fails, the stale marker still names another run id and is refused by the check.
+      - name: Remove any restored provenance marker
+        continue-on-error: true
+        run: python cache_provenance.py remove data
+
       - run: python nse_updater.py
         id: nse
 
@@ -330,6 +336,26 @@ jobs:
           OUTCOME_VALIDATE: ${{ steps.validate.outcome }}
           OUTCOME_MARKET: ${{ steps.market.outcome }}
         run: python report_run_status.py
+
+      # Provenance marker: the LAST step of the job, after the last change to data/ and after the data-step report. It records this run's identity, the data
+      # status and the hashes of the three state files, atomically, in data/ (never in out/, which is what the site copies from). GitHub caches are immutable: the
+      # cache above is saved by its post step only on a miss of this run's own key and only if the job succeeded; after a re-run of the same run id the cache keeps
+      # the first attempt's content and marker. Non-blocking: a failure here never changes the site build; a missing or invalid marker makes the validation refuse.
+      - name: Write the provenance marker (last step)
+        id: provenance
+        continue-on-error: true
+        env:
+          CP_DATA_STATUS: ${{ steps.datastatus.outputs.data_status }}
+          CP_DATA_OK: ${{ steps.datastatus.outputs.data_ok }}
+          CP_OUTCOME_NSE: ${{ steps.nse.outcome }}
+          CP_OUTCOME_FUNDAMENTALS: ${{ steps.fundamentals.outcome }}
+          CP_OUTCOME_FINANCIALS: ${{ steps.financials.outcome }}
+          CP_OUTCOME_FINANCIAL_HISTORY: ${{ steps.financial_history.outcome }}
+          CP_OUTCOME_SHAREHOLDING: ${{ steps.shareholding.outcome }}
+          CP_OUTCOME_QUARTERLY: ${{ steps.quarterly.outcome }}
+          CP_OUTCOME_VALIDATE: ${{ steps.validate.outcome }}
+          CP_OUTCOME_MARKET: ${{ steps.market.outcome }}
+        run: python cache_provenance.py write data
 
   # Fails the run (after the site was published) when a data step failed, so continue-on-error cannot make a failed update look successful.
   data-status:
