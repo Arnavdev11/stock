@@ -489,12 +489,16 @@ def quality_of(entry):
 
 
 def priority(stocks, symbols, instruments, day=None):
-    """The eligible symbols in processing order: invalid, missing, failed (due), stale; inside each group the stalest first, ties alphabetical."""
+    """Eligible order: keep invalid, missing, failed-due and stale groups; within each group protect the first 500 universe symbols, then sort by staleness."""
     by = {s: state_of(stocks.get(s), instruments.get(s), day) for s in symbols}
+    core = set(symbols[:500])
     out = []
     for st in ELIGIBLE:
         group = [s for s in symbols if by[s] == st]
-        out += universe.order_stalest(group, {s: staleness_key(stocks.get(s)) for s in group})
+        # The first-500 cohort is defined by universe file order, matching coverage_report.py.
+        # Do not let a newer out-of-cohort record displace a due core record; within each cohort,
+        # retain the existing oldest-first ordering and alphabetical tie-break.
+        out += sorted(group, key=lambda s: (s not in core, staleness_key(stocks.get(s)), s))
     return out, by
 
 
