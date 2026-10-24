@@ -33,7 +33,7 @@ a cache with a different version cannot be restored under that set. The list's `
 
 ## The provenance marker (Tier 1)
 
-The rule above only corroborates. To bind a cache to its run by **content**, the daily workflow (`update.yml`, in the separate daily-workflow pull request) removes any restored
+The rule above only corroborates. To bind a cache to its run by **content**, the daily workflow (`update.yml`, merged to `main` in PR #39) removes any restored
 marker before it updates data and writes `data/cache_provenance.json` as its last step (atomically, in `data/`, never in `out/`, never published). It records the workflow,
 repository, ref, commit, run id, **run attempt**, cache key, UTC time, the data status, the outcome of each data step, and the byte size and SHA-256 of the three state files.
 
@@ -50,7 +50,7 @@ cache, because the run id, cache key, commit, attempt and file hashes must all a
 
 **Limits.** The marker is **not signed (Tier 1)**. It defends against a mix-up between workflows, runs and attempts, and against a modified or truncated state file. It does not
 defend against someone who can already edit a workflow or write the cache; **Tier 2** (an attestation) is not part of this change. **No existing cache has a marker.** The first
-cache this workflow can accept appears after the first **scheduled daily run** that follows the daily-workflow pull request being merged; until then it refuses with
+cache this workflow can accept appears after the first **scheduled daily run** that follows the merge of PR #39 (a run that started before it saved a cache without one); until then it refuses with
 `marker_missing`. Do not dispatch the daily workflow for this: it spends provider quota.
 
 ## What the workflow does
@@ -79,7 +79,7 @@ cache this workflow can accept appears after the first **scheduled daily run** t
 * **Seven days** is the eviction horizon for an unused cache; a cache older than that, or one the daily workflow has not refreshed, stops the run.
 * If a cache is saved by a daily run that later failed (for example in the deploy job), the run's conclusion is `failure` and the run stops rather than using it.
 
-**The marker closes most of this gap** (see the section above) once the daily-workflow pull request is merged and a scheduled daily run has saved a cache. It is unsigned.
+**The marker closes most of this gap** (see the section above) once a scheduled daily run after PR #39 has saved a cache. It is unsigned.
 
 ## What the job summary contains and never contains
 
@@ -96,7 +96,7 @@ warning name must be a plain lower-case token. Anything else, or a report that d
 
 * **It must be on the default branch.** GitHub: "To trigger the `workflow_dispatch` event, your workflow must be in the default branch." It cannot be started from this
   pull request's branch; merging is a separate decision.
-* **A cache with a valid marker must exist.** That needs the daily-workflow pull request merged and one scheduled daily run after it. Caches are removed after 7 days without access or at the 10 GB repository limit, and none has been confirmed. If none matches, the run fails
+* **A cache with a valid marker must exist.** That needs one scheduled daily run after PR #39 was merged. Caches are removed after 7 days without access or at the 10 GB repository limit, and none has been confirmed. If none matches, the run fails
   with a clear message and changes nothing.
 * **The selected cache is the newest one saved by a successful daily run**, found by the rule above. If a batch saved a newer cache, it is skipped and counted. If the daily
   run's metadata cannot be matched, the run fails and says only a fixed code.
