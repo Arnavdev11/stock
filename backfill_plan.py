@@ -53,34 +53,35 @@ OUTPUT_NAMES = ("backfill_plan.json", "backfill_plan.md")
 MAX_PREVIOUS_BYTES = 8 * 1024 * 1024
 MAX_PRIORITY_BYTES = 1024 * 1024
 RETRY_FACTOR = 3                 # upstox_common.RETRIES: one request may be attempted up to three times
-SECONDS_PER_CALL = 2.3           # fundamentals_updater / quarterly_results_updater comments: measured; the pacing delay itself is 2.0 s
+SECONDS_PER_CALL = 2.3           # default: fundamentals_updater / quarterly_results_updater comments: measured; the pacing delay itself is 2.0 s
+HISTORICAL_SECONDS_PER_CALL = 2.0   # historical_updater paces at 1.0 s; historical_batch.SECONDS_PER_CALL plans 2.0 s per call
 
 # Per-dataset cost model. Every number is read from the updaters and workflows named in "source" (tests pin them to the code). "calls_*" are first attempts: retries add up to RETRY_FACTOR.
 # default_calls_per_run: what the normal scheduled or default run spends. ceiling_calls_per_run: the largest run the code or workflow enforces or documents (None = none documented).
 DATASETS = {
     "historical_candles": {
         "workflow": "historical.yml (manual, batch_size up to 500, max_calls)", "module": "historical_candles",
-        "calls_missing": 6, "calls_stale": 1, "calls_invalid": 6, "worst_missing": 12,
+        "seconds_per_call": 2.0, "calls_missing": 6, "calls_stale": 1, "calls_invalid": 6, "worst_missing": 12,
         "default_calls_per_run": 150, "ceiling_calls_per_run": 2700,
         "source": "historical_batch.py (CALL_CEILING 3000 x HEADROOM 0.9; a first fill is about 6 calls) and historical_updater.MAX_CALLS_PER_RUN 150"},
     "financial_history": {
         "workflow": "financial_history.yml (manual, max_calls) and the daily run", "module": "financial_history",
-        "calls_missing": 2, "calls_stale": 2, "calls_invalid": 2, "worst_missing": 4,
+        "seconds_per_call": 2.3, "calls_missing": 2, "calls_stale": 2, "calls_invalid": 2, "worst_missing": 4,
         "default_calls_per_run": 120, "ceiling_calls_per_run": None,
         "source": "financial_history_updater.py (2 calls, 4 when consolidated has no data; DEFAULT_MAX_CALLS 120; no maximum is documented)"},
     "fundamentals": {
         "workflow": "fundamentals_batch.yml (manual, batches with validation) and the daily run", "module": "fundamentals_state",
-        "calls_missing": 2, "calls_stale": 1, "calls_invalid": 2, "worst_missing": 2,
+        "seconds_per_call": 2.3, "calls_missing": 2, "calls_stale": 1, "calls_invalid": 2, "worst_missing": 2,
         "default_calls_per_run": 150, "ceiling_calls_per_run": 1500,
         "source": "fundamentals_updater.calls_needed (profile + key-ratios; stale = 1) and fundamentals_batch.yml (max_calls 1-1500)"},
     "quarterly_results": {
         "workflow": "the daily run (QUARTERLY_MAX_CALLS) or update.yml dispatch with quarterly_calls", "module": "quarterly_results",
-        "calls_missing": 1, "calls_stale": 1, "calls_invalid": 1, "worst_missing": 2,
+        "seconds_per_call": 2.3, "calls_missing": 1, "calls_stale": 1, "calls_invalid": 1, "worst_missing": 2,
         "default_calls_per_run": 100, "ceiling_calls_per_run": 330,
         "source": "quarterly_results_updater.py (consolidated, then standalone when empty; MAX_ALLOWED_CALLS 330 from the step's 15-minute timeout)"},
     "annual_financials": {
         "workflow": "the daily run (FINANCIALS_MAX_CALLS) or update.yml dispatch with financials_calls", "module": "annual_financials_and_balance_sheet",
-        "calls_missing": 3, "calls_stale": 3, "calls_invalid": 3, "worst_missing": 6,
+        "seconds_per_call": 2.3, "calls_missing": 3, "calls_stale": 3, "calls_invalid": 3, "worst_missing": 6,
         "default_calls_per_run": 120, "ceiling_calls_per_run": 1500,
         "source": "financials_updater.py (income, balance sheet, cash flow; consolidated then standalone) and update.yml's financials_calls description (about 1500 / 50 minutes; documentation, not enforced)"},
 }
@@ -237,12 +238,12 @@ def build_plan(data_dir, as_of, state_dir=None, batch_size=MAX_BATCH, datasets=D
             r_def, r_ceil = runs_needed(nominal, model["default_calls_per_run"], model["ceiling_calls_per_run"])
             t.update({"complete": all(p["complete"] for p in parts), "remaining": sum(p["remaining"] for p in parts), "calls_nominal": nominal, "calls_worst_case": worst,
                       "coverage_pct": round(100.0 * t["valid"] / len(order), 2) if order else None,
-                      "hours_at_%.1fs_per_call" % SECONDS_PER_CALL: round(nominal * SECONDS_PER_CALL / 3600.0, 2),
+                      "seconds_per_call": model["seconds_per_call"], "hours": round(nominal * model["seconds_per_call"] / 3600.0, 2),
                       "runs_at_default_budget": r_def, "runs_at_ceiling_budget": r_ceil})
         else:
             t.update({"complete": False, "reason": next((p["reason"] for p in parts if not p["measurable"]), "no stocks"),
                       "calls_if_nothing_were_stored_nominal": len(order) * model["calls_missing"]})
-        t["cost_model"] = {k: model[k] for k in ("workflow", "calls_missing", "calls_stale", "calls_invalid", "default_calls_per_run", "ceiling_calls_per_run", "source")}
+        t["cost_model"] = {k: model[k] for k in ("workflow", "calls_missing", "calls_stale", "calls_invalid", "seconds_per_call", "default_calls_per_run", "ceiling_calls_per_run", "source")}
         totals[name] = t
     all_complete = bool(order) and all(totals[n]["measurable"] and totals[n]["complete"] for n in wanted)
     blocking = [n for n in wanted if not totals[n]["measurable"]] + [n for n in wanted if totals[n]["measurable"] and not totals[n]["complete"]]
@@ -315,7 +316,7 @@ def render_markdown(plan):
     for name in plan["datasets_requested"]:
         t = plan["totals"][name]
         if t["measurable"]:
-            hours = t["hours_at_%.1fs_per_call" % SECONDS_PER_CALL]
+            hours = t["hours"]
             L.append("| %s | yes | %d | %d | %d | %d | %d | %s | %d | %d | %s | %s | %s |" % (name, t["valid"], t["stale"], t["missing"], t["invalid"], t["unverified"], t["coverage_pct"],
                                                                                          t["calls_nominal"], t["calls_worst_case"], hours, t["runs_at_default_budget"],
                                                                                          "n/a" if t["runs_at_ceiling_budget"] is None else t["runs_at_ceiling_budget"]))
