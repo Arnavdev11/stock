@@ -1,0 +1,152 @@
+name: Backfill - plan or verify the next run (read-only)
+
+# READ-ONLY helper for the bounded, resumable backfill. It fetches NO data, uses NO secret, writes NOTHING to any branch or cache, publishes nothing and
+# DISPATCHES NOTHING. It only runs backfill_controller.py on a checkout of the data branch and uploads a small report.
+#   mode = next    : which existing workflow to run next, with which inputs and which cohort (up to 500 stocks), or why there is nothing to do.
+#   mode = verify  : compares the data branch before and after a run, classifies each stock of the cohort, FAILS when saved data was lost,
+#                    and reports the next cohort or the stopping reason.
+# The fetching stays in the existing workflows (historical.yml, financial_history.yml), started by a person, each with its own pacing, retries, call budget,
+# timeout and concurrency group. A cohort of 500 is a selection of stocks, not 500 requests at once.
+#
+# Manual start only: this file has NO schedule, no push trigger and no way to start another workflow. A scheduled continuation is deliberately NOT configured;
+# adding one needs a separate, explicit approval (see BACKFILL.md).
+# Pause: set the repository variable BACKFILL_PAUSED to true; every run then reports "paused" and plans nothing. Set it to anything else (or delete it) to resume.
+# Only the datasets whose progress is saved on the data branch are offered. Fundamentals, quarterly results and annual financials keep their only state in the
+# evictable Actions cache, so they are not offered.
+
+"on":
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "next = plan the next run; verify = check a finished run"
+        type: choice
+        options:
+          - next
+          - verify
+        default: next
+      dataset:
+        description: "Dataset to plan or verify"
+        type: choice
+        options:
+          - historical_candles
+          - financial_history
+        default: historical_candles
+      batch_size:
+        description: "Cohort size, 1-500 (a selection of stocks, not simultaneous requests)"
+        required: false
+        default: "500"
+      max_calls:
+        description: "Provider call budget to plan for. Empty = the updater's own default (candles 150, financial history 120). Never raised automatically."
+        required: false
+        default: ""
+      priority_symbols:
+        description: "Optional comma list of symbols to plan first (for example a reviewed NIFTY 500 list). Every symbol must be in the universe."
+        required: false
+        default: ""
+      before_ref:
+        description: "verify only: the stocklens-data commit SHA recorded before the run"
+        required: false
+        default: ""
+      cohort:
+        description: "verify only: the comma list of symbols the run was given (copy it from the next report)"
+        required: false
+        default: ""
+      calls_used:
+        description: "verify only, optional: calls the run used (from its own status summary)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Never overlaps another run of this helper; it writes nothing, so it also never waits on or blocks the data refreshes (their own groups guard the real writes).
+concurrency:
+  group: stocklens-backfill-plan
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check the inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          BATCH: ${{ inputs.batch_size }}
+          CALLS: ${{ inputs.max_calls }}
+          BEFORE: ${{ inputs.before_ref }}
+          COHORT: ${{ inputs.cohort }}
+          USED: ${{ inputs.calls_used }}
+        run: |
+          echo "$BATCH" | grep -Eq '^[0-9]{1,3}$' && [ "$BATCH" -ge 1 ] && [ "$BATCH" -le 500 ] || { echo "::error::batch_size must be 1-500"; exit 1; }
+          if [ -n "$CALLS" ]; then echo "$CALLS" | grep -Eq '^[0-9]{1,5}$' && [ "$CALLS" -ge 1 ] || { echo "::error::max_calls must be a whole number"; exit 1; }; fi
+          if [ -n "$USED" ]; then echo "$USED" | grep -Eq '^[0-9]{1,8}$' || { echo "::error::calls_used must be a whole number"; exit 1; }; fi
+          if [ "$MODE" = "verify" ]; then
+            echo "$BEFORE" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::verify needs before_ref: the 40-character stocklens-data commit SHA recorded before the run"; exit 1; }
+            [ -n "$COHORT" ] || { echo "::error::verify needs the cohort"; exit 1; }
+          fi
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - name: Check out the data branch as it was before the run
+        if: inputs.mode == 'verify'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.before_ref }}
+          path: before-branch
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the libraries the readers import
+        run: pip install pandas requests pyyaml
+
+      - name: Plan the next run or verify the finished one
+        env:
+          MODE: ${{ inputs.mode }}
+          DATASET: ${{ inputs.dataset }}
+          BATCH: ${{ inputs.batch_size }}
+          CALLS: ${{ inputs.max_calls }}
+          PRIORITY: ${{ inputs.priority_symbols }}
+          COHORT: ${{ inputs.cohort }}
+          USED: ${{ inputs.calls_used }}
+          BACKFILL_PAUSED: ${{ vars.BACKFILL_PAUSED }}
+        run: |
+          AS_OF="$(TZ=Asia/Kolkata date +%F)"
+          mkdir -p report
+          args=""
+          if [ "$MODE" = "next" ]; then
+            if [ -n "$PRIORITY" ]; then printf '%s' "$PRIORITY" | tr ',' '\n' | tr -d ' ' > priority.txt; args="--priority-file priority.txt"; fi
+            if [ -n "$CALLS" ]; then args="$args --max-calls $CALLS"; fi
+            python backfill_controller.py next --data-branch ledger-branch --dataset "$DATASET" --as-of "$AS_OF" --batch-size "$BATCH" --out report $args | tee report/stdout.txt
+          else
+            if [ -n "$USED" ]; then args="--calls-used $USED"; fi
+            python backfill_controller.py verify --before before-branch --after ledger-branch --dataset "$DATASET" --cohort "$COHORT" --as-of "$AS_OF" --out report $args | tee report/stdout.txt
+          fi
+
+      - name: Show the report in the run summary
+        if: always()
+        run: |
+          if ls report/backfill_*.md >/dev/null 2>&1; then cat report/backfill_*.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-report-${{ inputs.mode }}-${{ inputs.dataset }}
+          path: report
+          if-no-files-found: ignore
+          retention-days: 14
