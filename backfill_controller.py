@@ -37,6 +37,7 @@ SCHEMA_VERSION = 1
 KIND_NEXT = "backfill_next"
 KIND_VERIFY = "backfill_verify"
 MAX_COHORT = 500
+MAX_PRIORITY = 500
 REVIEW_AFTER = 3                       # a candle batch that failed this many times for one stock needs a person to look (attempts.json count)
 FH_DEFAULT_CALLS = 120                 # financial_history_updater.DEFAULT_MAX_CALLS
 FH_CALL_CEILING = 1500                 # this tool's own refusal limit (about 50 minutes at 2 s per call, the figure update.yml documents for financials); not an updater limit
@@ -96,6 +97,50 @@ def _coverage(data_dir, as_of, dataset):
 def _fh_sections(entry):
     fs = entry.get("fetch_state") if isinstance(entry, dict) else None
     return fs if isinstance(fs, dict) else {}
+
+
+SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _sha_arg(value, name):
+    if value is None:
+        return None
+    if not isinstance(value, str) or not SHA_RE.fullmatch(value):
+        raise ControllerError("%s must be a 40-character lowercase commit SHA" % name)
+    return value
+
+
+def parse_priority(tokens, universe_symbols, what):
+    """Validated priority symbols, in the order given. Every refusal names the position, never the text: a bad entry cannot be echoed or mistaken for an option."""
+    known, out, seen = set(universe_symbols), [], set()
+    if len(tokens) > MAX_PRIORITY:
+        raise ControllerError("%s names more than %d symbols" % (what, MAX_PRIORITY))
+    for i, t in enumerate(tokens, 1):
+        if not isinstance(t, str) or not BP.SYMBOL_RE.fullmatch(t):
+            raise ControllerError("%s: entry %d is not a valid upper-case symbol" % (what, i))
+        if t not in known:
+            raise ControllerError("%s: entry %d is not in the universe" % (what, i))
+        if t in seen:
+            raise ControllerError("%s: entry %d repeats an earlier symbol" % (what, i))
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def priority_from_text(text, universe_symbols):
+    """A comma/space/newline separated list (the workflow input). An empty entry between commas is ignored; anything else must be a symbol."""
+    return parse_priority([t for t in re.split(r"[,\s]+", (text or "").strip()) if t], universe_symbols, "--priority-symbols")
+
+
+def priority_from_file(path, universe_symbols):
+    p = Path(path)
+    if p.is_symlink() or not p.is_file() or p.stat().st_size > BP.MAX_PRIORITY_BYTES:
+        raise ControllerError("--priority-file is not a readable regular file of reasonable size")
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        raise ControllerError("--priority-file cannot be read as text") from None
+    return parse_priority([l.strip() for l in lines if l.strip() and not l.strip().startswith("#")], universe_symbols, "--priority-file")
 
 
 # ---------------------------------------------------------------- next
@@ -217,13 +262,16 @@ def _next_fh(data_dir, as_of, batch_size, max_calls, priority):
     return status, reason, run, cohort, queue, {"included": len(pri[:batch_size]), "skipped": {"not_needing_work_or_not_in_universe": len([s for s in priority if s not in set(needy)])}}
 
 
-def next_plan(data_dir, dataset, as_of, batch_size=MAX_COHORT, max_calls=None, priority_file=None, paused=False):
+def next_plan(data_dir, dataset, as_of, batch_size=MAX_COHORT, max_calls=None, priority_file=None, paused=False, priority_text=None, data_sha=None):
     if not isinstance(as_of, dt.date):
         raise ControllerError("as_of must be a date")
     _int_arg(batch_size, "--batch-size", 1, MAX_COHORT)
+    _sha_arg(data_sha, "--data-sha")
+    if priority_file and priority_text:
+        raise ControllerError("give --priority-file or --priority-symbols, not both")
     spec = _cap_dataset(dataset)
     base = {"schema_version": SCHEMA_VERSION, "kind": KIND_NEXT, "dataset": dataset, "generated_for": as_of.isoformat(),
-            "tool": {"name": "backfill_controller.py", "reads_only": True, "provider_calls": 0, "dispatches_workflows": False}}
+            "tool": {"name": "backfill_controller.py", "reads_only": True, "provider_calls": 0, "dispatches_workflows": False}, "data_branch_sha": data_sha}
     if spec is None:
         base.update({"status": "not_automatic", "stop_reason": MANUAL_ONLY[dataset], "automatic_continuation": False, "run": None, "cohort": []})
         return base
@@ -239,7 +287,7 @@ def next_plan(data_dir, dataset, as_of, batch_size=MAX_COHORT, max_calls=None, p
         base.update({"status": "paused", "stop_reason": "paused by the operator (--paused / BACKFILL_PAUSED); nothing was planned", "run": None, "cohort": []})
         return base
     symbols = cover["batches"] and [s for b in cover["batches"] for s in b["symbols"]] or []
-    priority = BP.read_priority(priority_file, symbols) if priority_file else []
+    priority = priority_from_file(priority_file, symbols) if priority_file else (priority_from_text(priority_text, symbols) if priority_text else [])
     try:
         fn = _next_candles if dataset == "historical_candles" else _next_fh
         status, reason, run, cohort, queue, pri = fn(data_dir, as_of, batch_size, max_calls, priority)
@@ -253,51 +301,68 @@ def next_plan(data_dir, dataset, as_of, batch_size=MAX_COHORT, max_calls=None, p
 
 
 # ---------------------------------------------------------------- verify
-def _candle_snapshot(data_dir, symbols):
+def _candle_snapshot(data_dir):
+    """Everything saved for candles, for EVERY stock (a loss outside the cohort must be seen too): last date, candle count, damaged files, the benchmark's last date, attempts."""
     saved = Path(data_dir) / "historical"
-    last, _, damaged = HB.saved_state(saved)
+    last, bench, damaged = HB.saved_state(saved)
     count = {}
-    for s in symbols:
-        p = saved / "shards" / (s + ".json")
-        try:
-            count[s] = len(json.loads(p.read_text(encoding="utf-8"))["stocks"][s]["candles"])
-        except (OSError, ValueError, KeyError, TypeError):
-            pass
-    return {"last": last, "damaged": set(damaged), "count": count, "attempts": HB.load_attempts(saved)}
+    sdir = saved / "shards"
+    if sdir.is_dir():
+        for p in sorted(sdir.glob("*.json")):
+            try:
+                count[p.stem] = len(json.loads(p.read_text(encoding="utf-8"))["stocks"][p.stem]["candles"])
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+    return {"last": last, "bench": bench, "damaged": set(damaged), "count": count, "attempts": HB.load_attempts(saved)}
 
 
-def _verify_candles(before, after, symbols):
-    b, a = _candle_snapshot(before, symbols), _candle_snapshot(after, symbols)
-    out, lost = {}, []
-    for s in symbols:
+def _verify_candles(before, after, cohort):
+    b, a = _candle_snapshot(before), _candle_snapshot(after)
+    lost, regressed, changed = [], set(), set()
+    for s in sorted(set(b["last"]) | set(a["last"]) | b["damaged"] | a["damaged"]):
         bl, al = b["last"].get(s), a["last"].get(s)
-        if bl and (not al or s in a["damaged"] or al < bl or a["count"].get(s, 0) < b["count"].get(s, 0)):
+        if bl and (not al or s in a["damaged"]):
+            regressed.add(s)
+            lost.append("%s: the saved candle file is missing or damaged" % s)
+        elif bl and (al < bl or a["count"].get(s, 0) < b["count"].get(s, 0)):
+            regressed.add(s)
+            lost.append("%s: saved candles were lost or the history was shortened" % s)
+        if bl != al or b["count"].get(s) != a["count"].get(s):
+            changed.add(s)
+    if b["bench"] and (not a["bench"] or a["bench"] < b["bench"]):
+        lost.append("benchmark: its saved history was lost or shortened")
+    for s in set(b["attempts"]) | set(a["attempts"]):
+        if b["attempts"].get(s) != a["attempts"].get(s):
+            changed.add(s)
+    out = {}
+    for s in cohort:
+        bl, al = b["last"].get(s), a["last"].get(s)
+        att = a["attempts"].get(s)
+        if s in regressed:
             out[s] = "regressed"
-            lost.append("%s: saved candles were lost or shortened" % s)
         elif al and (not bl or al > bl):
             out[s] = "improved" if not bl else "refreshed"
-        elif s in a["attempts"] and a["attempts"][s].get("count", 0) >= REVIEW_AFTER:
+        elif att and att.get("count", 0) >= REVIEW_AFTER and att != b["attempts"].get(s):
             out[s] = "needs_review"
-        elif s in a["attempts"] and a["attempts"][s] != b["attempts"].get(s):
+        elif att and att != b["attempts"].get(s):
             out[s] = "retryable_failed"
-        elif al:
-            out[s] = "unchanged_up_to_date"
         else:
-            out[s] = "still_missing"
-    return out, lost
+            out[s] = "not_reached"
+    return out, lost, changed
 
 
-def _verify_fh(before, after, symbols):
+def _verify_fh(before, after, cohort):
     def load(d):
         doc = _read_json(Path(d) / "financial_history_ledger.json", 200_000_000)
         if not isinstance(doc, dict) or not isinstance(doc.get("stocks"), dict):
             raise ControllerError("financial_history_ledger.json is not shaped like a ledger")
         return doc
     b, a = load(before), load(after)
-    lost = list(ledger_storage.no_loss_problems(b, a))[:50]
+    lost = list(ledger_storage.no_loss_problems(b, a))[:50]             # checks EVERY stock, not just the cohort
     bad = {x.split(" ")[0].rstrip(":") for x in lost}
+    changed = {s for s in set(b["stocks"]) | set(a["stocks"]) if b["stocks"].get(s) != a["stocks"].get(s)}
     out = {}
-    for s in symbols:
+    for s in cohort:
         be, ae = b["stocks"].get(s), a["stocks"].get(s)
         by = {y.get("fy") for y in (be or {}).get("years") or [] if isinstance(y, dict)}
         ay = {y.get("fy") for y in (ae or {}).get("years") or [] if isinstance(y, dict)}
@@ -305,17 +370,16 @@ def _verify_fh(before, after, symbols):
             out[s] = "regressed"
         elif ay - by:
             out[s] = "improved"
-        elif ae is None:
-            out[s] = "still_missing"
-        elif _fh_sections(ae) != _fh_sections(be):
-            err = any(isinstance(x, dict) and x.get("error") for x in _fh_sections(ae).values())
-            out[s] = "retryable_failed" if err else "refreshed"
+        elif s not in changed:
+            out[s] = "not_reached"
+        elif any(isinstance(x, dict) and x.get("error") for x in _fh_sections(ae).values()):
+            out[s] = "retryable_failed"
         else:
-            out[s] = "unchanged_up_to_date" if ay else "still_missing"
-    return out, lost
+            out[s] = "refreshed"
+    return out, lost, changed
 
 
-def verify_run(before, after, plan, as_of, calls_used=None):
+def verify_run(before, after, plan, as_of, calls_used=None, paused=False, before_sha=None, after_sha=None):
     if not isinstance(plan, dict) or plan.get("kind") != KIND_NEXT or plan.get("schema_version") != SCHEMA_VERSION or plan.get("dataset") not in AUTOMATIC:
         raise ControllerError("--plan is not a plan written by `next` for an automatic dataset")
     cohort = plan.get("cohort")
@@ -323,25 +387,36 @@ def verify_run(before, after, plan, as_of, calls_used=None):
         raise ControllerError("--plan has no valid cohort of up to %d symbols" % MAX_COHORT)
     if calls_used is not None:
         _int_arg(calls_used, "--calls-used", 0, 10_000_000)
+    _sha_arg(before_sha, "--before-sha")
+    _sha_arg(after_sha, "--after-sha")
+    planned_sha = plan.get("data_branch_sha")
+    if before_sha and planned_sha and before_sha != planned_sha:
+        raise ControllerError("--before-sha differs from the data-branch SHA recorded in the plan: the plan was made for a different snapshot")
     dataset = plan["dataset"]
-    outcomes, lost = (_verify_candles if dataset == "historical_candles" else _verify_fh)(before, after, cohort)
+    outcomes, lost, changed = (_verify_candles if dataset == "historical_candles" else _verify_fh)(before, after, cohort)
     tally = {}
     for v in outcomes.values():
         tally[v] = tally.get(v, 0) + 1
+    in_cohort = set(cohort)
+    outside = sorted(changed - in_cohort)
     ok = not lost and not tally.get("regressed")
     cover_before, cover_after = _coverage(before, as_of, dataset)["totals"][dataset], _coverage(after, as_of, dataset)["totals"][dataset]
-    nxt = next_plan(after, dataset, as_of, plan.get("batch_size", MAX_COHORT), plan.get("max_calls"), None, False) if ok else None
-    gained = None
-    if cover_before.get("measurable") and cover_after.get("measurable"):
-        gained = cover_after["valid"] - cover_before["valid"]
+    nxt = next_plan(after, dataset, as_of, plan.get("batch_size", MAX_COHORT), plan.get("max_calls"), None, paused, data_sha=after_sha) if ok else None
+    gained = cover_after["valid"] - cover_before["valid"] if cover_before.get("measurable") and cover_after.get("measurable") else None
+    processed = sum(v for k, v in tally.items() if k != "not_reached")
     return {"schema_version": SCHEMA_VERSION, "kind": KIND_VERIFY, "dataset": dataset, "generated_for": as_of.isoformat(),
             "tool": {"name": "backfill_controller.py", "reads_only": True, "provider_calls": 0, "dispatches_workflows": False},
-            "verification": "passed" if ok else "failed", "problems": lost,
+            "data_branch_sha_before": before_sha, "data_branch_sha_after": after_sha,
+            "verification": "passed" if ok else "failed", "problems": lost[:100],
+            "checked": "every saved stock and the benchmark (not only the cohort) for lost files, shortened history and lost values",
             "publish_or_continue": "allowed: no saved data was lost" if ok else "BLOCKED: saved data was lost or shortened; do not continue, do not publish; inspect the data branch history",
             "cohort_size": len(cohort), "outcomes": dict(sorted(tally.items())), "per_stock": outcomes,
+            "processed": {"cohort_stocks_with_evidence_of_processing": processed, "cohort_stocks_not_reached": tally.get("not_reached", 0),
+                          "changed_outside_the_planned_cohort": len(outside), "changed_outside_examples": outside[:20],
+                          "note": "The workflow re-plans on its own day (and filters stocks Upstox does not serve), so its real cohort can differ from the printed one. This compares what actually changed in the data with the printed list."},
             "calls_used": calls_used if calls_used is not None else None,
             "calls_used_note": None if calls_used is not None else "not recorded in the data; read it from the run's own status summary and pass --calls-used",
-            "failures_in_cohort": tally.get("retryable_failed", 0) + tally.get("needs_review", 0) + tally.get("still_missing", 0),
+            "failures_in_cohort": tally.get("retryable_failed", 0) + tally.get("needs_review", 0),
             "coverage_before": cover_before, "coverage_after": cover_after, "valid_gained": gained,
             "progress_pct": cover_after.get("coverage_pct") if cover_after.get("measurable") else None,
             "next": ({"status": nxt["status"], "stop_reason": nxt["stop_reason"], "cohort_size": nxt.get("cohort_size", 0), "run": nxt.get("run"), "queue": nxt.get("queue")} if nxt else None),
@@ -357,7 +432,8 @@ def render_json(doc):
 def render_markdown(doc):
     if doc["kind"] == KIND_NEXT:
         L = ["# StockLens backfill - next run", "", "Dataset: **%s**. Generated for %s. Read-only: nothing was fetched or dispatched." % (doc["dataset"], doc["generated_for"]), "",
-             "**Status: %s.**%s" % (doc["status"], (" " + doc["stop_reason"]) if doc.get("stop_reason") else "")]
+             "**Status: %s.**%s" % (doc["status"], (" " + doc["stop_reason"]) if doc.get("stop_reason") else ""),
+             "Data branch checked: %s." % (doc.get("data_branch_sha") or "SHA not supplied (pass --data-sha to record it)")]
         run = doc.get("run")
         if run:
             L += ["", "Run the existing workflow **%s** with these inputs:" % run["workflow"], ""] + ["- `%s`: %s" % (k, v if len(str(v)) < 160 else str(v)[:157] + "...") for k, v in sorted(run["inputs"].items())]
@@ -371,7 +447,9 @@ def render_markdown(doc):
         L += ["", "## Limits", ""] + ["- " + x for x in doc.get("limits", [])]
     else:
         L = ["# StockLens backfill - run verification", "", "Dataset: **%s**. Verification: **%s**. %s" % (doc["dataset"], doc["verification"], doc["publish_or_continue"]), ""]
-        L += ["Cohort %d stock(s): %s." % (doc["cohort_size"], ", ".join("%d %s" % (v, k) for k, v in doc["outcomes"].items())),
+        L += ["Data branch before: %s; after: %s." % (doc.get("data_branch_sha_before") or "not supplied", doc.get("data_branch_sha_after") or "not supplied"),
+              "Cohort %d stock(s): %s." % (doc["cohort_size"], ", ".join("%d %s" % (v, k) for k, v in doc["outcomes"].items())),
+              "Actually processed: %d of the cohort; %d not reached; %d stock(s) changed outside the printed cohort." % (doc["processed"]["cohort_stocks_with_evidence_of_processing"], doc["processed"]["cohort_stocks_not_reached"], doc["processed"]["changed_outside_the_planned_cohort"]),
               "Calls used: %s. Failures in the cohort: %d. Valid records gained: %s. Progress: %s%%." % (doc["calls_used"] if doc["calls_used"] is not None else "unknown (%s)" % doc["calls_used_note"], doc["failures_in_cohort"], doc["valid_gained"], doc["progress_pct"])]
         if doc["problems"]:
             L += ["", "Problems:"] + ["- " + p for p in doc["problems"][:30]]
@@ -395,6 +473,10 @@ def write_outputs(out_dir, files):
         os.replace(str(tmp), str(target))
 
 
+def _is_paused(flag):
+    return bool(flag) or os.environ.get("BACKFILL_PAUSED", "").strip().lower() == "true"
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="backfill_controller.py", description="Plans and verifies bounded backfill runs. Fetches nothing, starts nothing.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -406,6 +488,8 @@ def main(argv=None):
     n.add_argument("--batch-size", type=int, default=MAX_COHORT)
     n.add_argument("--max-calls", type=int, default=None)
     n.add_argument("--priority-file", default=None)
+    n.add_argument("--priority-symbols", default=None, help="comma list of symbols to plan first (validated against the universe)")
+    n.add_argument("--data-sha", default=None, help="the 40-character stocklens-data commit SHA this checkout is at; recorded in the plan")
     n.add_argument("--paused", action="store_true")
     n.add_argument("--dry-run", action="store_true")
     v = sub.add_parser("verify")
@@ -417,6 +501,9 @@ def main(argv=None):
     v.add_argument("--as-of", required=True)
     v.add_argument("--out", required=True)
     v.add_argument("--calls-used", type=int, default=None)
+    v.add_argument("--before-sha", default=None)
+    v.add_argument("--after-sha", default=None)
+    v.add_argument("--paused", action="store_true")
     v.add_argument("--dry-run", action="store_true")
     try:
         a = ap.parse_args(argv)
@@ -438,7 +525,7 @@ def main(argv=None):
         except C.ReportError as e:
             raise ControllerError(str(e)) from None
         if a.cmd == "next":
-            doc = next_plan(a.data_branch, a.dataset, as_of, a.batch_size, a.max_calls, a.priority_file, a.paused or os.environ.get("BACKFILL_PAUSED", "").strip().lower() == "true")
+            doc = next_plan(a.data_branch, a.dataset, as_of, a.batch_size, a.max_calls, a.priority_file, _is_paused(a.paused), a.priority_symbols, a.data_sha)
             name = "backfill_next"
         else:
             if a.plan:
@@ -446,7 +533,7 @@ def main(argv=None):
             else:
                 _cap_dataset(a.dataset or "")
                 plan = {"schema_version": SCHEMA_VERSION, "kind": KIND_NEXT, "dataset": a.dataset, "cohort": [x.strip().upper() for x in a.cohort.split(",") if x.strip()]}
-            doc = verify_run(a.before, a.after, plan, as_of, a.calls_used)
+            doc = verify_run(a.before, a.after, plan, as_of, a.calls_used, _is_paused(a.paused), a.before_sha, a.after_sha)
             name = "backfill_verify"
         if not a.dry_run:
             write_outputs(out_dir, {name + ".json": render_json(doc), name + ".md": render_markdown(doc)})

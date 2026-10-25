@@ -34,41 +34,47 @@ counted as zero, no value is invented, and a stock the provider cannot serve sta
 
 ## Per-stock outcomes (`verify`)
 
-`improved` (new data for a stock that had none or new years) - `refreshed` (newer candles or a newer fetch) - `unchanged_up_to_date` - `retryable_failed` (failed, will be retried after
-the cooldown / later in the order) - `needs_review` (candles: failed 3 or more times, `attempts.json`) - `still_missing` - `regressed` (saved data lost or shortened: **verification fails**,
-the next step is blocked, nothing should be published).
+`verify` checks **every saved stock and the benchmark**, not only the cohort: a lost file, a shortened candle history, a lost year or a value turning null anywhere fails the run
+(**verification: failed**, exit 1, the next step is blocked, nothing should be published). Then it classifies each stock of the cohort from what actually changed in the data:
+
+`improved` (new data for a stock that had none, or new years) - `refreshed` (newer candles or a newer fetch) - `retryable_failed` (the candle `attempts.json` recorded a failure, or the
+ledger recorded a fetch error; it is retried after the cooldown / later in the order) - `needs_review` (candles: 3 or more recorded failures) - `not_reached` (no evidence the run
+processed it: the budget ended first, or the workflow's own plan did not include it) - `regressed`.
+
+It also counts the stocks that changed **outside** the printed cohort, because the workflow re-plans on its own day and can pick a different set. `not_reached` is not a failure.
 
 Financial history revisions follow the repository's own rule (`ledger_storage.no_loss_problems`): a changed value is fine only if the old value is recorded as a revision; a lost year
-or a value turning null is a regression. Consolidated and standalone year records are keyed separately by that same check.
+or a value turning null is a regression. Consolidated and standalone year records are keyed separately by that same check. Candle gaps inside a history are not re-measured by `verify`
+(it checks the count and last date); `coverage_report.py` is the tool for period gaps.
 
 ## Stop conditions
 
 `nothing_to_do` (every stock up to date or damaged), `waiting_cooldown` (everything left failed recently; the wake-up date is printed), `paused`, `not_automatic`, a refusal (bad input,
 unreadable ledger, budget above the cap), or `verification: failed`. There is no recursion: no run starts another.
 
-## How to operate it
+## The manual cycle (nothing here starts a production run for you)
 
-All commands are read-only. Use a checkout of the `stocklens-data` branch (here `DATA`).
+All of these steps are performed by a person. The helper workflow and the controller only read.
 
-```
-# dry run: prints the plan and writes nothing
-python3 backfill_controller.py next --data-branch DATA --dataset historical_candles --as-of 2026-10-25 --out OUT --dry-run
+1. **Plan.** Actions -> *Backfill - plan or verify the next run (read-only)* -> mode `next`, pick the dataset (and optionally `max_calls`, `batch_size`, `priority_symbols`). Or locally:
+   `python3 backfill_controller.py next --data-branch DATA --dataset historical_candles --as-of YYYY-MM-DD --out OUT --data-sha <40-char SHA of DATA> [--max-calls N] [--priority-symbols A,B,C]`.
+   Add `--dry-run` to print without writing. The report ends in the exact existing workflow, its inputs and the cohort.
+2. **Record the snapshot.** Write down the line `Data branch checked: <40-character SHA>`. That is the "before" snapshot. If you later find the SHA moved (a scheduled refresh saved something in between), plan again.
+3. **Read the plan.** Check the workflow name, the call budget (never above the ceiling: candles 3,000, financial history 1,500 - both are refused above it), the estimated minutes and the cohort.
+4. **Start the existing workflow by hand** (`historical.yml` or `financial_history.yml`) with the printed inputs. Do not start two data workflows at once; the concurrency groups protect their
+   own files, not your judgment about overlap.
+5. **Wait for it to finish and for its save job to complete.** The data only counts once it is on `stocklens-data`.
+6. **Verify.** Mode `verify` with `before_ref` = the SHA from step 2, `cohort` = the cohort from step 1 and, optionally, `calls_used` from the run's own status summary. The workflow proves the
+   SHA is an ancestor on `stocklens-data`, checks out both snapshots and runs `verify`. Locally:
+   `python3 backfill_controller.py verify --before DATA_BEFORE --after DATA --dataset NAME --cohort A,B,C --before-sha SHA1 --after-sha SHA2 --as-of YYYY-MM-DD --out OUT2`.
+7. **Resume only if `verification: passed`.** On a pass the report gives the next cohort or the stopping reason: go back to step 1. On a fail, stop and inspect the data branch history.
 
-# plan one bounded run (writes OUT/backfill_next.json and .md only)
-python3 backfill_controller.py next --data-branch DATA --dataset financial_history --as-of 2026-10-25 --out OUT --max-calls 120 [--priority-file FILE]
-
-# after the existing workflow has finished and saved: verify, with DATA_BEFORE = a checkout of the data branch from before the run
-python3 backfill_controller.py verify --before DATA_BEFORE --after DATA --plan OUT/backfill_next.json --as-of 2026-10-25 --out OUT2 [--calls-used N]
-```
-
-Or run **Backfill - plan or verify the next run (read-only)** from the Actions tab (mode `next`, then `verify` with the `before_ref` SHA of `stocklens-data` recorded before the run).
-
-* **One bounded run:** plan, start the printed existing workflow by hand with the printed inputs, verify.
-* **Resume:** plan again; it starts from the real coverage.
-* **Pause:** set the repository variable `BACKFILL_PAUSED` to `true` (or pass `--paused`); every plan then returns `paused`. **Restart:** remove it or set it to anything else. No progress is lost,
+* **Pause / restart:** set the repository variable `BACKFILL_PAUSED` to `true` (or pass `--paused`); `next` and the "next" part of `verify` then report `paused`. Remove it to resume. No progress is lost,
   because none is stored apart from the data.
-* **Priority:** `--priority-file` (or the workflow's `priority_symbols`) lists symbols to plan first. Every symbol must be in the universe, or the plan is refused. The default order is the
-  universe file's, which is **alphabetical**, so "the first 500" are not the largest companies. A NIFTY 500 priority list must come from NSE's official list (see below); none is bundled.
+* **Priority:** `priority_symbols` / `--priority-symbols` / `--priority-file` list UPPER-CASE symbols to plan first. A bad entry refuses the whole plan and names its position, never its text.
+  The default order is the universe file's, which is **alphabetical**. A NIFTY 500 list is optional and none is bundled (see the last limitation).
+* **Cohort differences:** the printed cohort is a plan. `historical.yml` re-plans on its own day (and filters stocks Upstox does not serve); `financial_history.yml` processes the listed symbols
+  stalest first and stops at its budget. `verify` therefore reports what really changed, not what was printed.
 
 ## Scheduled continuation is deliberately not configured
 
@@ -92,6 +98,9 @@ Worst case with retries is up to 3x these figures. These are estimates, not prom
   Stocks Upstox does not list as NSE equity cost no calls but also cannot be detected offline.
 * The candle workflow re-plans on the day it runs (and filters stocks Upstox does not serve), so its cohort can differ slightly from the printed one.
 * `historical.yml` and `financial_history.yml` use different concurrency groups (`stocklens-historical`, `stocklens-ledger`); they save different files. This tool changes neither.
+  Do not run them at the same time by hand.
+* The controller cannot steer the candle workflow's own choice: a stock that keeps failing (`needs_review`) is still re-planned by `historical_batch.py` after its 3-day cooldown, at up to 6 calls each.
+  The controller lists such stocks; parking them would need a change to the production selector, which is not made here.
 * `calls_used` is not recorded in the data; pass it to `verify` from the run's own status summary.
 * No NIFTY 500 list is bundled. Build one from NSE's `ind_nifty500list.csv` with `python3 universe.py build --mode nifty500 --csv FILE --instruments FILE --as-of DATE --out SEPARATE_FILE`
   (offline when both files are supplied; never the live `universe.json`), and review the symbols it drops before using them as a priority list.
