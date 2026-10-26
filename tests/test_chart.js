@@ -137,8 +137,21 @@ const titles = (t) => t.charts.flatMap((c) => c.series.map((s) => s.opts.title |
   const real = JSON.parse(JSON.stringify(HIST)); real.stocks.TCS.candles = walk(1305, 3500, 13, "2021-10-04"); real.benchmark.candles = walk(1305, 20000, 7, "2021-10-04");
   const mr = S.prepare(real, "TCS", "5Y"); ok(mr.tfs.includes("3Y") && mr.tfs.includes("5Y") && mr.tf === "5Y", "3Y and 5Y offered when the daily candles cover 5 years (as the live file does)"); ok(mr.candles.length > 1200 && mr.rs && mr.avail.dma200, "5Y range shows the full history with indicators");
   // 13/14/15. missing / insufficient / invalid symbol (model level)
-  eq(S.prepare(doc, "TINY", "1Y").error, "Not enough historical data.", "insufficient history"); eq(S.prepare(doc, "ZZZ", "1Y").error, "Not enough historical data.", "unknown symbol");
-  eq(S.prepare({}, "TCS", "1Y").error, "Not enough historical data.", "empty document"); eq(S.prepare(null, "TCS", "1Y").error, "Not enough historical data.", "null document");
+  eq(S.prepare(doc, "TINY", "1Y").error, "Not enough historical data: 10 valid daily candles on file; at least 30 are needed.", "insufficient history: the valid count and the minimum"); eq(S.prepare(doc, "ZZZ", "1Y").error, "No price history has been fetched for this stock yet.", "unknown symbol: never fetched");
+  eq(S.prepare({}, "TCS", "1Y").error, "Historical data unavailable.", "empty document"); eq(S.prepare(null, "TCS", "1Y").error, "Historical data unavailable.", "null document");
+  // historical-data messages: no candles on file = never fetched; too few VALID candles = the count and the minimum (invalid rows never count); nothing is filled in
+  const histDoc = (candles) => ({ updated: "d", stocks: { TCS: { symbol: "TCS", candles: candles } } });
+  const bad = [{ date: "2026/01/05", open: 1, high: 1, low: 1, close: 1 }, { date: "2025-01-01", open: 0, high: 1, low: 1, close: 1 }, { date: "2025-01-02", open: 2, high: 1, low: 3, close: 2 },
+               { date: "2025-01-03", open: 1, high: 1, low: 1, close: null }, null, "x", { open: 1, high: 1, low: 1, close: 1 }];
+  eq(S.prepare(histDoc([]), "TCS", "1Y").error, "No price history has been fetched for this stock yet.", "empty candle list: not fetched"); eq(S.prepare({ stocks: { TCS: { symbol: "TCS" } } }, "TCS", "1Y").error, "No price history has been fetched for this stock yet.", "entry without candles: not fetched");
+  eq(S.prepare({ stocks: {} }, "TCS", "1Y").error, "No price history has been fetched for this stock yet.", "stock missing from the file: not fetched"); eq(S.prepare({ stocks: [] }, "TCS", "1Y").error, "Historical data unavailable.", "stocks as a list: unusable file");
+  const m29 = S.prepare(histDoc(walk(29, 100, 3)), "TCS", "1Y"); eq(m29.error, "Not enough historical data: 29 valid daily candles on file; at least 30 are needed.", "29 valid candles: count and minimum"); eq([m29.valid, m29.min], [29, 30], "29 valid candles: counts returned"); ok(!m29.candles && !m29.lines && !m29.avail, "29 valid candles: no chart data, no indicator values");
+  const m30 = S.prepare(histDoc(walk(30, 100, 3)), "TCS", "1Y"); ok(!m30.error && m30.candles.length === 30 && m30.avail.rsi && m30.avail.macd, "30 valid candles are accepted (RSI and MACD line available)");
+  eq(S.prepare(histDoc(walk(29, 100, 3).concat(bad)), "TCS", "1Y").error, "Not enough historical data: 29 valid daily candles on file; at least 30 are needed.", "29 valid + invalid rows: invalid rows do not count");
+  const dup = walk(29, 100, 3); eq(S.prepare(histDoc(dup.concat(JSON.parse(JSON.stringify(dup.slice(0, 5))))), "TCS", "1Y").error, "Not enough historical data: 29 valid daily candles on file; at least 30 are needed.", "repeated dates count once");
+  ok(!S.prepare(histDoc(walk(30, 100, 3).concat(bad)), "TCS", "1Y").error, "30 valid + invalid rows: accepted, invalid rows dropped");
+  eq(S.prepare(histDoc(bad), "TCS", "1Y").error, "Not enough historical data: 0 valid daily candles on file; at least 30 are needed.", "only invalid rows: 0 valid candles, never \"not fetched\" and never repaired"); eq(S.prepare(histDoc(walk(1, 100, 3)), "TCS", "1Y").error, "Not enough historical data: 1 valid daily candle on file; at least 30 are needed.", "1 valid candle: singular");
+  eq(S.historyError({ stocks: { TCS: { candles: [1] } } }, "TCS", 0), "Not enough historical data: 0 valid daily candles on file; at least 30 are needed.", "historyError is exported for the page"); eq(S.MIN_CANDLES, 30, "the chart needs at least 30 valid candles");
   const few = JSON.parse(JSON.stringify(HIST)); few.stocks.TCS.candles = walk(100, 3500, 11); const mf = S.prepare(few, "TCS", "1Y");
   eq(mf.avail.dma200, false, "200 DMA not available with 100 days (nothing invented)"); ok(mf.avail.dma50 && mf.avail.rsi, "shorter indicators still available");
   const nob = JSON.parse(JSON.stringify(HIST)); delete nob.benchmark; eq(S.prepare(nob, "TCS", "1Y").rs, null, "no Nifty data -> RS unavailable, chart still works");
@@ -175,8 +188,8 @@ const titles = (t) => t.charts.flatMap((c) => c.series.map((s) => s.opts.title |
   t = await boot("#stock=TCS", { "historical.json": null });
   eq(t.box().innerHTML, "Historical data unavailable.", "missing historical.json -> message"); eq(t.charts.length, 0, "no charts without data");
   re(t.detail(), /Stock Detail: TCS/, "rest of the detail page still renders") ;
-  t = await boot("#stock=TINY"); eq(t.box().innerHTML, "Not enough historical data.", "insufficient history message");
-  t = await boot("#stock=ZZZ"); eq(t.box().innerHTML, "Not enough historical data.", "invalid symbol: message, no crash"); re(t.detail(), /Stock Detail: ZZZ/, "detail page for an unknown symbol still renders");
+  t = await boot("#stock=TINY"); eq(t.box().innerHTML, "Not enough historical data: 10 valid daily candles on file; at least 30 are needed.", "insufficient history message: valid count and minimum"); eq(t.charts.length, 0, "no charts with too few candles");
+  t = await boot("#stock=ZZZ"); eq(t.box().innerHTML, "No price history has been fetched for this stock yet.", "stock with no history on file: not fetched, no crash"); re(t.detail(), /Stock Detail: ZZZ/, "detail page for an unknown symbol still renders");
   t = await boot("#stock=TCS", { "historical.json": { updated: "x" } }); eq(t.box().innerHTML, "Historical data unavailable.", "malformed historical.json -> message");
   t = await boot("#stock=TCS", { "historical.json": HIST }, { lib: false }); eq(t.box().innerHTML, "Chart library could not be loaded.", "library failure is reported, page keeps working");
   t = await boot("#stock=TCS", { "historical.json": HIST }, { lib: "inject" });

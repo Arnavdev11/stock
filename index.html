@@ -469,11 +469,20 @@ function series(dates,vals,from){var o=[];
   for(var i=from;i<dates.length;i++)o.push(isn(vals[i])?{time:dates[i],value:vals[i]}:{time:dates[i]});return o}
 function hasValues(a){return a.some(function(p){return p.value!==undefined})}
 
+/* Why there is no chart, said plainly: no usable file; no candles on file for the stock (never fetched); or too few VALID candles (the count is the cleaned one,
+   so invalid rows never count). The same wording is used by the Technical Snapshot. Nothing is filled in. */
+var NOT_FETCHED="No price history has been fetched for this stock yet.";
+function historyError(doc,sym,valid){
+  if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object"||Array.isArray(doc.stocks))return"Historical data unavailable.";
+  var st=Object.prototype.hasOwnProperty.call(doc.stocks,sym)?doc.stocks[sym]:null;
+  if(!st||typeof st!=="object"||!Array.isArray(st.candles)||!st.candles.length)return NOT_FETCHED;
+  return"Not enough historical data: "+valid+" valid daily candle"+(valid===1?"":"s")+" on file; at least "+MIN_CANDLES+" are needed."}
+
 /* Indicators are computed on the FULL history (warm-up), then only the selected range is shown. */
 function prepare(doc,sym,tf){
   var st=doc&&doc.stocks&&typeof doc.stocks==="object"?doc.stocks[sym]:null;
   var all=cleanCandles(st&&st.candles);
-  if(all.length<MIN_CANDLES)return{error:"Not enough historical data."};
+  if(all.length<MIN_CANDLES)return{error:historyError(doc,sym,all.length),valid:all.length,min:MIN_CANDLES};
   var tfs=tfsFor(all),label=tfs.some(function(t){return t[0]===tf})?tf:"1Y";
   var months=TFS.filter(function(t){return t[0]===label})[0][1];
   var cutoff=minusMonths(all[all.length-1].date,months),from=0;
@@ -618,7 +627,7 @@ function mount(sym,isCurrent){
     return loadLib().then(function(L){if(stillHere())draw(box,L)},function(){if(stillHere())msg(box,"Chart library could not be loaded.")})
   }).catch(function(){var b=$("detailChart");if(b===box)msg(box,"Historical data unavailable.")})}
 
-window.SLChart={mount:mount,prepare:prepare,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,macd:macd,
+window.SLChart={mount:mount,prepare:prepare,historyError:historyError,MIN_CANDLES:MIN_CANDLES,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,macd:macd,
   PARAMS:{supertrendPeriod:ST_PERIOD,supertrendMultiplier:ST_MULT,rsiPeriod:RSI_PERIOD,macdFast:MACD_FAST,macdSlow:MACD_SLOW,macdSignal:MACD_SIGNAL}};
 })();
 </script>
@@ -716,7 +725,16 @@ function render(r){
   h+='<div class="tiles">'+DMAS.map(function(k){return tile("Close vs "+k+" DMA",fp(r.dma[k]))}).join("")+'</div>';
   h+='<p class="note" style="padding-left:0">Daily data as of '+esc(r.asOf)+'. Historical data is not live. Returns use the latest close on or before the calendar cutoff; the 52-week range uses candles from the latest 365 days; DMA is the simple average of closes; volume is compared with the previous 20 candles. Descriptive figures only.</p>';
   return h}
-function unavailable(){return '<h3 style="margin:1.4em 0 .4em">Technical Snapshot</h3><p class="note" style="padding-left:0">Historical data unavailable.</p>'}
+function unavailable(text){return '<h3 style="margin:1.4em 0 .4em">Technical Snapshot</h3><p class="note" style="padding-left:0">'+esc(text||"Historical data unavailable.")+'</p>'}
+/* Same wording as the price chart (SLChart.historyError): no usable file; no candles on file for the stock; or fewer VALID candles than the chart needs.
+   With a few valid candles the snapshot still shows what they support (the rest stays "-") and says how many there are. Nothing is filled in. */
+var MIN_CHART=30;
+function status(doc,sym){
+  if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object"||Array.isArray(doc.stocks))return{text:"Historical data unavailable.",valid:0};
+  var st=Object.prototype.hasOwnProperty.call(doc.stocks,sym)?doc.stocks[sym]:null;
+  if(!st||typeof st!=="object"||!Array.isArray(st.candles)||!st.candles.length)return{text:"No price history has been fetched for this stock yet.",valid:0};
+  var n=cleanCandles(st.candles).length;
+  return{text:n<MIN_CHART?"Not enough historical data: "+n+" valid daily candle"+(n===1?"":"s")+" on file; at least "+MIN_CHART+" are needed.":null,valid:n}}
 
 var HIST=null;
 function loadHist(){
@@ -730,11 +748,11 @@ function mount(sym,isCurrent){
   return loadHist().then(function(doc){
     if(isCurrent&&!isCurrent())return;
     if($("detailTech")!==box)return;
-    var r=compute(doc,sym);
-    box.innerHTML=r?render(r):unavailable()
+    var r=compute(doc,sym),s=status(doc,sym);
+    box.innerHTML=r?render(r)+(s.text?'<p class="note" style="padding-left:0">'+esc(s.text)+'</p>':""):unavailable(s.text)
   }).catch(function(){if($("detailTech")===box)box.innerHTML=unavailable()})}
 
-window.SLTech={mount:mount,compute:compute,cleanCandles:cleanCandles,atr:atr,minusMonths:minusMonths};
+window.SLTech={mount:mount,compute:compute,status:status,cleanCandles:cleanCandles,atr:atr,minusMonths:minusMonths};
 })();
 </script>
 <script>
