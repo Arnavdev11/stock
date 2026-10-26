@@ -35,5 +35,33 @@
    "old": "      {key:bank?\"total_revenue\":\"revenue\",label:bank?\"Total income\":\"Revenue\",fmt:cr,growth:true},\n"
   }
  ],
- "sha256_of_edits": "d33f98e6ea9f896a24fb415f4b305f66d98fc8da097115f5e05f5056e4a35b19"
+ "sha256_of_edits": "d33f98e6ea9f896a24fb415f4b305f66d98fc8da097115f5e05f5056e4a35b19",
+ "decision_edits_note": "Approved index.html edits of the historical-data messages decision (the price chart and the Technical Snapshot say \"No price history has been fetched for this stock yet.\" for a stock with no candles on file, and give the valid candle count and the 30 needed when there are too few). Each entry is the exact new text and the exact text it replaced in 66fe34a. They are reversed before the coverage edits (decision_edits), so the older byte-identity pins keep proving that nothing ELSE in the page changed.",
+ "decision_edits_base_commit": "66fe34a",
+ "decision_edits": [
+  {
+   "new": "function hasValues(a){return a.some(function(p){return p.value!==undefined})}\n\n/* Why there is no chart, said plainly: no usable file; no candles on file for the stock (never fetched); or too few VALID candles (the count is the cleaned one,\n   so invalid rows never count). The same wording is used by the Technical Snapshot. Nothing is filled in. */\nvar NOT_FETCHED=\"No price history has been fetched for this stock yet.\";\nfunction historyError(doc,sym,valid){\n  if(!doc||typeof doc!==\"object\"||!doc.stocks||typeof doc.stocks!==\"object\"||Array.isArray(doc.stocks))return\"Historical data unavailable.\";\n  var st=Object.prototype.hasOwnProperty.call(doc.stocks,sym)?doc.stocks[sym]:null;\n  if(!st||typeof st!==\"object\"||!Array.isArray(st.candles)||!st.candles.length)return NOT_FETCHED;\n  return\"Not enough historical data: \"+valid+\" valid daily candle\"+(valid===1?\"\":\"s\")+\" on file; at least \"+MIN_CANDLES+\" are needed.\"}\n\n",
+   "old": "function hasValues(a){return a.some(function(p){return p.value!==undefined})}\n\n"
+  },
+  {
+   "new": "  if(all.length<MIN_CANDLES)return{error:historyError(doc,sym,all.length),valid:all.length,min:MIN_CANDLES};\n",
+   "old": "  if(all.length<MIN_CANDLES)return{error:\"Not enough historical data.\"};\n"
+  },
+  {
+   "new": "window.SLChart={mount:mount,prepare:prepare,historyError:historyError,MIN_CANDLES:MIN_CANDLES,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,macd:macd,\n",
+   "old": "window.SLChart={mount:mount,prepare:prepare,cleanCandles:cleanCandles,sma:sma,ema:ema,rsi:rsi,supertrend:supertrend,relStrength:relStrength,macd:macd,\n"
+  },
+  {
+   "new": "function unavailable(text){return '<h3 style=\"margin:1.4em 0 .4em\">Technical Snapshot</h3><p class=\"note\" style=\"padding-left:0\">'+esc(text||\"Historical data unavailable.\")+'</p>'}\n/* Same wording as the price chart (SLChart.historyError): no usable file; no candles on file for the stock; or fewer VALID candles than the chart needs.\n   With a few valid candles the snapshot still shows what they support (the rest stays \"-\") and says how many there are. Nothing is filled in. */\nvar MIN_CHART=30;\nfunction status(doc,sym){\n  if(!doc||typeof doc!==\"object\"||!doc.stocks||typeof doc.stocks!==\"object\"||Array.isArray(doc.stocks))return{text:\"Historical data unavailable.\",valid:0};\n  var st=Object.prototype.hasOwnProperty.call(doc.stocks,sym)?doc.stocks[sym]:null;\n  if(!st||typeof st!==\"object\"||!Array.isArray(st.candles)||!st.candles.length)return{text:\"No price history has been fetched for this stock yet.\",valid:0};\n  var n=cleanCandles(st.candles).length;\n  return{text:n<MIN_CHART?\"Not enough historical data: \"+n+\" valid daily candle\"+(n===1?\"\":\"s\")+\" on file; at least \"+MIN_CHART+\" are needed.\":null,valid:n}}\n",
+   "old": "function unavailable(){return '<h3 style=\"margin:1.4em 0 .4em\">Technical Snapshot</h3><p class=\"note\" style=\"padding-left:0\">Historical data unavailable.</p>'}\n"
+  },
+  {
+   "new": "    var r=compute(doc,sym),s=status(doc,sym);\n    box.innerHTML=r?render(r)+(s.text?'<p class=\"note\" style=\"padding-left:0\">'+esc(s.text)+'</p>':\"\"):unavailable(s.text)\n",
+   "old": "    var r=compute(doc,sym);\n    box.innerHTML=r?render(r):unavailable()\n"
+  },
+  {
+   "new": "window.SLTech={mount:mount,compute:compute,status:status,cleanCandles:cleanCandles,atr:atr,minusMonths:minusMonths};\n",
+   "old": "window.SLTech={mount:mount,compute:compute,cleanCandles:cleanCandles,atr:atr,minusMonths:minusMonths};\n"
+  }
+ ]
 }

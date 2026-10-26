@@ -86,7 +86,7 @@ ok(S.prepare(doc400, "TCS", "5Y").tf === "1Y", "5Y not offered with ~1.6 years o
 // 30..33 candles: line only; below 30 the chart itself refuses (existing rule)
 const few = (n) => S.prepare(docOf(candlesFor(walkCloses(n, 100, 9))), "TCS", "1Y");
 ok(few(30).avail.macd && !few(30).avail.macdSignal, "30 candles: MACD line, no Signal"); ok(few(33).avail.macd && !few(33).avail.macdSignal, "33 candles: MACD line, no Signal"); ok(few(34).avail.macdSignal, "34 candles: Signal available");
-eq(few(29).error, "Not enough historical data.", "29 candles: the chart shows Not enough historical data.");
+eq(few(29).error, "Not enough historical data: 29 valid daily candles on file; at least 30 are needed.", "29 candles: the chart says how many valid candles there are and how many it needs");
 // missing candles: a gap makes the series shorter, never interpolated
 const gapCs = cs400.filter((_, i) => ![100, 101, 102, 250, 251].includes(i)), mg = S.prepare(docOf(gapCs), "TCS", "1Y"), fg = S.macd(gapCs.map((c) => c.close));
 eq(mg.macd.line.length, mg.candles.length, "missing candles: one MACD point per remaining candle (no filling)"); near(mg.macd.line[mg.macd.line.length - 1].value, fg.macd[fg.macd.length - 1], 1e-12, "missing candles: values computed over the candles that exist");
@@ -146,8 +146,8 @@ const last = (t, id) => t.charts.filter((c) => c.el.id === id).pop();
   // short histories on the page
   t = await boot("#stock=TCS", docOf(candlesFor(walkCloses(31, 100, 4)))); ok(!!last(t, "slMacd"), "31 candles: MACD panel drawn"); eq(last(t, "slMacd").series.map((s) => s.opts.title), ["Histogram", "MACD"], "31 candles: no Signal series (never zero-filled)"); re(t.box().innerHTML, /Signal line and histogram need at least 34 candles\./, "31 candles: explanatory note");
   ok(last(t, "slMacd").series[0].data.every((p) => p.value === undefined), "31 candles: histogram has no values");
-  t = await boot("#stock=TCS", docOf(candlesFor(walkCloses(20, 100, 4)))); eq(t.box().innerHTML, "Not enough historical data.", "20 candles: Not enough historical data."); eq(t.charts.length, 0, "20 candles: no panels");
-  t = await boot("#stock=TCS", null); eq(t.box().innerHTML, "Historical data unavailable.", "missing file: Historical data unavailable."); t = await boot("#stock=ZZZ", doc400); eq(t.box().innerHTML, "Not enough historical data.", "unknown symbol: message, no crash");
+  t = await boot("#stock=TCS", docOf(candlesFor(walkCloses(20, 100, 4)))); eq(t.box().innerHTML, "Not enough historical data: 20 valid daily candles on file; at least 30 are needed.", "20 candles: count and minimum"); eq(t.charts.length, 0, "20 candles: no panels");
+  t = await boot("#stock=TCS", null); eq(t.box().innerHTML, "Historical data unavailable.", "missing file: Historical data unavailable."); t = await boot("#stock=ZZZ", doc400); eq(t.box().innerHTML, "No price history has been fetched for this stock yet.", "unknown symbol: not fetched, no crash");
   // routing: each stock gets its own MACD
   const two = JSON.parse(JSON.stringify(doc400)); two.stocks.INFY = { symbol: "INFY", candles: candlesFor(walkCloses(400, 1500, 77)) };
   t = await boot("#stock=INFY", two); near(last(t, "slMacd").series[1].data.slice(-1)[0].value, S.macd(walkCloses(400, 1500, 77)).macd[399], 1e-12, "INFY page shows INFY's MACD"); t = await boot("#stock=TCS", two); near(last(t, "slMacd").series[1].data.slice(-1)[0].value, S.macd(closes400).macd[399], 1e-12, "TCS page shows TCS's MACD");
@@ -155,7 +155,7 @@ const last = (t, id) => t.charts.filter((c) => c.el.id === id).pop();
   // ---------- security / scope / untouched blocks ----------
   no(html, /UPSTOX_ANALYTICS_TOKEN|Bearer\s|Authorization/i, "no token or auth header in the page"); no(html, /api\.upstox\.com/, "no Upstox call in the browser"); no(chartCode, /WebSocket|EventSource|setInterval|XMLHttpRequest/, "no live data in the chart module");
   eq((chartCode.match(/fetch\(/g) || []).length, 1, "the chart module still makes exactly one fetch"); re(chartCode, /fetch\("out\/historical\.json"/, "...of out/historical.json");
-  eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block unchanged (byte-identical)"); eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block is the Phase 5D.1 version (byte-identical to it)");
+  eq(sha(PINBLOCKS.find((b) => b.includes("Phase 3 Step 3 - Technical Snapshot"))), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block unchanged (byte-identical) apart from the approved historical-message edits (decision_edits)"); eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block is the Phase 5D.1 version (byte-identical to it)");
   eq(sha(PINBLOCKS[PINBLOCKS.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block unchanged (byte-identical)");
   console.log("MACD tests passed (" + checks + " checks)");
 })().catch((e) => { console.error(e); process.exit(1); });

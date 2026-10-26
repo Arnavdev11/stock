@@ -129,7 +129,18 @@ const tile = (h, label) => text((h.match(new RegExp('<div class="tile"><b[^>]*>(
   const visible = text(t.tech()) + " " + techCode.replace(/\/\*[\s\S]*?\*\//g, "");
   no(visible, /\b(bullish|bearish|buy|sell|strong|weak|signal|breakout|oversold|overbought|recommend)/i, "no buy/sell/signal wording in the snapshot");
   // errors
-  t = await page(docOf(mkA(), "INFY")); eq(text(t.tech()), "Technical Snapshot Historical data unavailable.", "no history for the stock -> Historical data unavailable.");
+  t = await page(docOf(mkA(), "INFY")); eq(text(t.tech()), "Technical Snapshot No price history has been fetched for this stock yet.", "no history for the stock -> not fetched (the same words as the price chart)");
+  // historical-data messages, the same words as the price chart (SLChart.historyError); the few valid candles still show what they support, nothing is filled in
+  const cs = (n) => Array.from({ length: n }, (_, i) => ({ date: day("2026-01-01", i), open: 50 + i, high: 51 + i, low: 49 + i, close: 50 + i, volume: 100 + i }));
+  const junk = [{ date: "2026/01/05", open: 1, high: 1, low: 1, close: 1 }, { date: "2025-01-01", open: 0, high: 1, low: 1, close: 1 }, { date: "2025-01-02", open: 2, high: 1, low: 3, close: 2 }, { date: "2025-01-03", open: 1, high: 1, low: 1, close: null }, null];
+  t = await page(docOf([])); eq(text(t.tech()), "Technical Snapshot No price history has been fetched for this stock yet.", "empty candle list -> not fetched");
+  t = await page(docOf(cs(29))); re(t.tech(), /Not enough historical data: 29 valid daily candles on file; at least 30 are needed\./, "29 valid candles: the count and the minimum"); eq(tile(t.tech(), "Last close (daily data)"), "₹78.00", "29 valid candles: the real last close is still shown"); eq(tile(t.tech(), "Return 1Y"), "-", "29 valid candles: what they cannot support stays -");
+  t = await page(docOf(cs(29).concat(junk))); re(t.tech(), /Not enough historical data: 29 valid daily candles on file; at least 30 are needed\./, "29 valid + invalid rows: invalid rows do not count");
+  t = await page(docOf(cs(30))); no(t.tech(), /Not enough historical data|No price history/, "30 valid candles: no shortage note");
+  t = await page(docOf(junk)); eq(text(t.tech()), "Technical Snapshot Not enough historical data: 0 valid daily candles on file; at least 30 are needed.", "only invalid rows: 0 valid candles, no tiles");
+  const C = new Function(chartCode.replace('"use strict";', "").replace("(function(){", "var window={};(function(){").replace(/\}\)\(\);\s*$/, "})();return window.SLChart;"))();
+  for (const d of [null, { updated: "x" }, { stocks: [] }, docOf(mkA(), "INFY"), docOf([]), docOf(junk), docOf(cs(1)), docOf(cs(29)), docOf(cs(29).concat(junk))]) eq(T.status(d, "TCS").text, C.prepare(d, "TCS", "1Y").error, "snapshot and chart use the same words: " + JSON.stringify(d).slice(0, 40));
+  eq(T.status(docOf(cs(30)), "TCS"), { text: null, valid: 30 }, "30 valid candles: no message");
   t = await page(null); eq(text(t.tech()), "Technical Snapshot Historical data unavailable.", "historical.json missing -> Historical data unavailable."); re(t.detail(), /Stock Detail: TCS/, "rest of the page still renders");
   t = await page({ updated: "x" }); eq(text(t.tech()), "Technical Snapshot Historical data unavailable.", "malformed historical.json -> Historical data unavailable.");
   t = await page(docOf(Array.from({ length: 30 }, (_, i) => ({ date: day("2026-01-01", i), open: 50 + i, high: 51 + i, low: 49 + i, close: 50 + i, volume: 100 + i })))); eq(tile(t.tech(), "Return 1Y"), "-", "insufficient history shows - on the page"); eq(tile(t.tech(), "52-week high"), "-", "52-week high - on the page"); eq(tile(t.tech(), "Close vs 200 DMA"), "-", "200 DMA - on the page");
@@ -142,7 +153,7 @@ const tile = (h, label) => text((h.match(new RegExp('<div class="tile"><b[^>]*>(
 
   // ---- the existing chart and the other blocks are untouched
   const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
-  eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart script block matches the Phase 3 Step 4 (MACD) version - re-pinned when MACD was added to the chart");
+  eq(sha(require("./legacy_5i.js").legacy(html).split("<script>").slice(1).map((b) => b.split("</script>")[0]).find((b) => b.includes("Phase 3 Step 2 - historical price chart"))), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart script block matches the Phase 3 Step 4 (MACD) version apart from the approved historical-message edits (decision_edits) - re-pinned when MACD was added to the chart");
   eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B script block is byte-identical");
   eq(blocks.indexOf(techCode) > blocks.indexOf(chartCode) && blocks.indexOf(techCode) < blocks.length - 1, true, "snapshot block sits after the chart and before the final Phase 2B block");
   ok(blocks.find((b) => b === chartCode).includes("window.SLChart="), "chart module still exposes its API");

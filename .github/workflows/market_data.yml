@@ -10,7 +10,8 @@ name: Market data (Phase 5K) - derive, validate, publish
 #   3. index_data_updater.py fetches daily candles of the important NSE indices from Upstox into out/index_history.json (token used server-side only).
 #      This step may fail without stopping the rest: the previous index file then stays exactly as it was.
 #   4. validate_market_outputs.py checks the files again.
-#   5. Only if every step above that must pass has passed, the site folder is rebuilt (same files as the production workflow) and published.
+#   5. Only if every step above that must pass has passed, the site folder is rebuilt (same files as the production workflow, including the saved daily prices
+#      and per-stock price files from the data branch) and published.
 #
 # Run order: run "Update data and publish site" first (it refreshes the NSE files), then this workflow.
 # If anything fails the job stops BEFORE publishing: the site stays exactly as it is.
@@ -30,6 +31,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The saved daily prices live on the data branch (historical/ on stocklens-data, written by "Save historical price data"), not in the saved-data cache.
+      # Same lookup and read-only checkout as "Update data and publish site", so this site build publishes the same price history and never drops it.
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc). Stopping, so a network problem is never mistaken for a missing branch."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -75,6 +97,9 @@ jobs:
           mkdir _site/out
           cp out/*.json _site/out/
           if [ -d out/by_symbol ]; then cp -r out/by_symbol _site/out/by_symbol; fi
+          # the saved daily prices (written to the data branch by "Save historical price data"); they replace any copy that came from the saved-data cache
+          if [ -f ledger-branch/historical/historical.json ]; then cp ledger-branch/historical/historical.json _site/out/historical.json; fi
+          if ls ledger-branch/historical/shards/*.json >/dev/null 2>&1; then mkdir -p _site/out/by_symbol/historical; cp ledger-branch/historical/shards/*.json _site/out/by_symbol/historical/; fi
           cp company_profiles.json _site/out/
           # SENSEX end-of-day file: never published unless SENSEX_PUBLIC_DISPLAY_APPROVED is exactly "true" (sensex_publish.py). Runs after every copy above.
           python sensex_publish.py guard --site _site
