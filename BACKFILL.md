@@ -64,10 +64,15 @@ All of these steps are performed by a person. The helper workflow and the contro
 4. **Start the existing workflow by hand** (`historical.yml` or `financial_history.yml`) with the printed inputs. Do not start two data workflows at once; the concurrency groups protect their
    own files, not your judgment about overlap.
 5. **Wait for it to finish and for its save job to complete.** The data only counts once it is on `stocklens-data`.
-6. **Verify.** Mode `verify` with `before_ref` = the SHA from step 2, `cohort` = the cohort from step 1 and, optionally, `calls_used` from the run's own status summary. The workflow proves the
+6. **Verify (two different checks - run both).**
+   * *Data loss* - `verify`: no saved file missing or damaged, no saved candle date gone, no malformed candle file, no lost year or value, benchmark intact, anywhere in the saved universe (not only the cohort).
+   * *Completeness* - the read-only coverage report on the **after** snapshot: `python3 coverage_report.py --data-branch DATA --as-of YYYY-MM-DD --out OUT3`. It counts valid / stale / missing / invalid per dataset.
+     Neither tool can see **missing trading days inside a candle history** (the exchange holiday calendar is not in the repository); `verify` only warns about gaps longer than 10 calendar days.
+   Mode `verify` with `before_ref` = the SHA from step 2, `cohort` = the cohort from step 1 and, optionally, `calls_used` from the run's own status summary. The workflow proves the
    SHA is an ancestor on `stocklens-data`, checks out both snapshots and runs `verify`. Locally:
    `python3 backfill_controller.py verify --before DATA_BEFORE --after DATA --dataset NAME --cohort A,B,C --before-sha SHA1 --after-sha SHA2 --as-of YYYY-MM-DD --out OUT2`.
-7. **Resume only if `verification: passed`.** On a pass the report gives the next cohort or the stopping reason: go back to step 1. On a fail, stop and inspect the data branch history.
+7. **Resume only if `verification: passed` and the report says something was saved.** If it says `NOTHING CHANGED between the two snapshots`, the run has not finished saving or processed nothing: do not plan from that snapshot, wait and verify again.
+   **Resume only if `verification: passed`.** On a pass the report gives the next cohort or the stopping reason: go back to step 1. On a fail, stop and inspect the data branch history.
 
 * **Pause / restart:** set the repository variable `BACKFILL_PAUSED` to `true` (or pass `--paused`); `next` and the "next" part of `verify` then report `paused`. Remove it to resume. No progress is lost,
   because none is stored apart from the data.

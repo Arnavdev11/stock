@@ -381,7 +381,7 @@ class VerifyScope(Base):
         self.assertEqual(r["verification"], "failed")
         self.assertTrue(any(p.startswith("S0002") for p in r["problems"]))
         (after / "historical" / "shards" / "S0003.json").unlink()                      # and one whose file vanished
-        self.assertTrue(any(p.startswith("S0003") for p in K.verify_run(before, after, plan, AS_OF)["problems"]))
+        self.assertTrue(any(p.startswith("S0003") and "missing or damaged" in p for p in K.verify_run(before, after, plan, AS_OF)["problems"]))
 
     def test_a_lost_or_shortened_benchmark_fails_verification(self):
         self.make(2)
@@ -438,8 +438,99 @@ class VerifyScope(Base):
         self.make(3)
         plan = self.nxt()
         before, after = self.two_copies()
+        self.shard(0, ["2026-10-21"], after)                                           # the run saved something
         self.assertEqual(K.verify_run(before, after, plan, AS_OF)["next"]["status"], "ready")
         self.assertEqual(K.verify_run(before, after, plan, AS_OF, paused=True)["next"]["status"], "paused")
+
+
+
+class VerifyDepth(Base):
+    """Data-loss verification versus completeness verification, and what an operator needs to be told."""
+
+    def test_a_history_rewritten_to_the_same_length_but_missing_old_dates_is_a_regression(self):
+        self.make(2)
+        self.shard(0, ["2026-10-01", "2026-10-02", "2026-10-03"])
+        plan = self.nxt()
+        plan["cohort"] = ["S0000"]
+        before, after = self.two_copies()
+        self.shard(0, ["2026-10-02", "2026-10-03", "2026-10-04"], after)               # same count, later last date, one old date gone
+        r = K.verify_run(before, after, plan, AS_OF)
+        self.assertEqual((r["verification"], r["per_stock"]["S0000"]), ("failed", "regressed"))
+        self.assertTrue(any("1 saved candle date(s) are gone" in p for p in r["problems"]))
+
+    def test_a_malformed_saved_history_fails_even_when_nothing_was_lost(self):
+        self.make(2)
+        self.shard(0, ["2026-10-01", "2026-10-02"])
+        plan = self.nxt()
+        plan["cohort"] = ["S0000"]
+        before, after = self.two_copies()
+        self.shard(0, ["2026-10-01", "2026-10-02", "2026-10-02"], after)               # a repeated date: not strictly ascending
+        r = K.verify_run(before, after, plan, AS_OF)
+        self.assertEqual(r["verification"], "failed")
+        self.assertTrue(any("malformed" in p for p in r["problems"]))
+
+    def test_more_structurally_invalid_records_than_before_fail_the_run(self):
+        self.make(3)
+        self.ledger({0: self.fh(0), 1: self.fh(1)})
+        plan = self.nxt("financial_history")
+        plan["cohort"] = self.symbols[:]
+        before, after = self.two_copies()
+        broken = self.fh(2)
+        broken["years"] = "not a list"
+        self.ledger({0: self.fh(0), 1: self.fh(1), 2: broken}, after)
+        r = K.verify_run(before, after, plan, AS_OF)
+        self.assertEqual(r["verification"], "failed")
+        self.assertTrue(any("structural checks" in p for p in r["problems"]))
+
+    def test_a_new_long_gap_is_a_warning_and_never_a_failure_and_the_report_says_what_is_not_checked(self):
+        self.make(2)
+        self.shard(0, ["2026-09-01", "2026-09-02"])
+        plan = self.nxt()
+        plan["cohort"] = ["S0000"]
+        before, after = self.two_copies()
+        self.shard(0, ["2026-09-01", "2026-09-02", "2026-09-20"], after)               # 18 days with nothing saved
+        r = K.verify_run(before, after, plan, AS_OF)
+        self.assertEqual(r["verification"], "passed")
+        self.assertEqual(len(r["warnings"]), 1)
+        self.assertIn("18-day gap", r["warnings"][0])
+        self.assertIn("missing trading days inside a candle history", r["completeness"]["not_checked_by_any_tool"])
+        self.assertIn("coverage_report.py", r["completeness"]["also_run"])
+        self.assertIn("Warnings", K.render_markdown(r))
+
+    def test_identical_snapshots_are_not_a_green_light_to_plan_the_next_run(self):
+        self.make(3)
+        plan = self.nxt()
+        before, after = self.two_copies()
+        r = K.verify_run(before, after, plan, AS_OF)
+        self.assertEqual((r["verification"], r["saved_anything"], r["next"]), ("passed", False, None))
+        self.assertIn("NOTHING CHANGED", r["publish_or_continue"])
+        self.shard(0, ["2026-10-21"], after)
+        r2 = K.verify_run(before, after, plan, AS_OF)
+        self.assertTrue(r2["saved_anything"])
+        self.assertIsNotNone(r2["next"])
+
+    def test_the_next_report_prints_the_whole_cohort_so_it_can_be_copied_into_verify(self):
+        self.make(40)
+        pf = self.root / "p.txt"
+        pf.write_text("S0030\n", encoding="utf-8")
+        plan = self.nxt(priority_file=pf, max_calls=150)
+        text = K.render_markdown(plan)
+        self.assertIn(",".join(plan["cohort"]), text)
+        self.assertGreater(len(plan["cohort"]), len(plan["run"]["inputs"]["symbols"].split(",")))      # the workflow input holds only the priority part
+
+    def test_the_cli_refuses_a_bad_cohort_or_a_manual_dataset_without_echoing_it(self):
+        self.make(5)
+        before, after = self.two_copies()
+        base = ["verify", "--before", str(before), "--after", str(after), "--as-of", "2026-10-23", "--out", str(self.out)]
+        for ds, cohort in (("historical_candles", "S0001,SECRET;rm"), ("historical_candles", "S0001,S0001"), ("historical_candles", ""), ("fundamentals", "S0001"), ("nope", "S0001"),
+                           ("historical_candles", ",".join("S%04d" % i for i in range(501)))):
+            rc, out, err = self.cli(*base, "--dataset", ds, "--cohort", cohort)
+            with self.subTest(ds=ds, cohort=cohort[:12]):
+                self.assertEqual(rc, 2)
+                self.assertNotIn("SECRET", out + err)
+        rc, out, err = self.cli(*base, "--dataset", "historical_candles", "--cohort", "S0001", "--plan", "x.json")
+        self.assertEqual(rc, 2)
+
 
 
 class PriorityInput(Base):

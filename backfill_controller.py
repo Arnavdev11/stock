@@ -301,54 +301,91 @@ def next_plan(data_dir, dataset, as_of, batch_size=MAX_COHORT, max_calls=None, p
 
 
 # ---------------------------------------------------------------- verify
-def _candle_snapshot(data_dir):
-    """Everything saved for candles, for EVERY stock (a loss outside the cohort must be seen too): last date, candle count, damaged files, the benchmark's last date, attempts."""
-    saved = Path(data_dir) / "historical"
-    last, bench, damaged = HB.saved_state(saved)
-    count = {}
-    sdir = saved / "shards"
-    if sdir.is_dir():
-        for p in sorted(sdir.glob("*.json")):
-            try:
-                count[p.stem] = len(json.loads(p.read_text(encoding="utf-8"))["stocks"][p.stem]["candles"])
-            except (OSError, ValueError, KeyError, TypeError):
-                pass
-    return {"last": last, "bench": bench, "damaged": set(damaged), "count": count, "attempts": HB.load_attempts(saved)}
+GAP_WARN_DAYS = 10             # a calendar gap this long between two saved candles is reported (exchange holidays are never this long); a warning, never a failure
+
+
+def _candle_rows(data_dir, sym):
+    """The saved candle rows of one stock from its own file, or None when the file is missing or unreadable."""
+    try:
+        rows = json.loads((Path(data_dir) / "historical" / "shards" / (sym + ".json")).read_text(encoding="utf-8"))["stocks"][sym]["candles"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return rows if isinstance(rows, list) else None
+
+
+def _max_gap_days(dates):
+    best = 0
+    for x, y in zip(dates, dates[1:]):
+        try:
+            best = max(best, (dt.date.fromisoformat(y) - dt.date.fromisoformat(x)).days)
+        except (TypeError, ValueError):
+            return None
+    return best
 
 
 def _verify_candles(before, after, cohort):
-    b, a = _candle_snapshot(before), _candle_snapshot(after)
-    lost, regressed, changed = [], set(), set()
-    for s in sorted(set(b["last"]) | set(a["last"]) | b["damaged"] | a["damaged"]):
-        bl, al = b["last"].get(s), a["last"].get(s)
-        if bl and (not al or s in a["damaged"]):
+    """Data LOSS check over every saved stock (not completeness: see the 'completeness' note in the report)."""
+    bsaved, asaved = Path(before) / "historical", Path(after) / "historical"
+    b_last, b_bench, b_damaged = HB.saved_state(bsaved)
+    a_last, a_bench, a_damaged = HB.saved_state(asaved)
+    b_att, a_att = HB.load_attempts(bsaved), HB.load_attempts(asaved)
+    names = set()
+    for root in (bsaved, asaved):
+        if (root / "shards").is_dir():
+            names |= {p.stem for p in (root / "shards").glob("*.json") if BP.SYMBOL_RE.fullmatch(p.stem)}
+    lost, regressed, changed, warnings = [], set(), set(), []
+    for s in sorted(names | set(b_last) | set(a_last) | set(b_damaged) | set(a_damaged)):
+        brows, arows = _candle_rows(before, s), _candle_rows(after, s)
+        if brows is None and arows is None:                          # only in the single legacy file (or damaged in both): compare the last date it reports
+            bl, al = b_last.get(s), a_last.get(s)
+            if bl and (not al or al < bl):
+                regressed.add(s)
+                lost.append("%s: the saved history is missing or was shortened" % s)
+            if bl != al:
+                changed.add(s)
+            continue
+        bdates = [c.get("date") for c in brows or [] if isinstance(c, dict)]
+        if brows and arows is None:
             regressed.add(s)
             lost.append("%s: the saved candle file is missing or damaged" % s)
-        elif bl and (al < bl or a["count"].get(s, 0) < b["count"].get(s, 0)):
+            continue
+        if arows is not None:
+            prob = C._candle_problem(arows) if arows else "empty_candle_list"
+            if prob and (brows or arows):
+                regressed.add(s)
+                lost.append("%s: the saved candles are malformed (%s)" % (s, prob))
+                continue
+        adates = [c.get("date") for c in arows or [] if isinstance(c, dict)]
+        gone = set(bdates) - set(adates)
+        if gone:
             regressed.add(s)
-            lost.append("%s: saved candles were lost or the history was shortened" % s)
-        if bl != al or b["count"].get(s) != a["count"].get(s):
+            lost.append("%s: %d saved candle date(s) are gone (history shortened or rewritten)" % (s, len(gone)))
+        if bdates != adates:
             changed.add(s)
-    if b["bench"] and (not a["bench"] or a["bench"] < b["bench"]):
+        if s in cohort and adates:
+            ga, gb = _max_gap_days(adates), (_max_gap_days(bdates) if bdates else 0)
+            if ga and ga > GAP_WARN_DAYS and ga > (gb or 0):
+                warnings.append("%s: a %d-day gap between two saved candles (not checked against the exchange calendar)" % (s, ga))
+    if b_bench and (not a_bench or a_bench < b_bench):
         lost.append("benchmark: its saved history was lost or shortened")
-    for s in set(b["attempts"]) | set(a["attempts"]):
-        if b["attempts"].get(s) != a["attempts"].get(s):
+    for s in set(b_att) | set(a_att):
+        if b_att.get(s) != a_att.get(s):
             changed.add(s)
     out = {}
     for s in cohort:
-        bl, al = b["last"].get(s), a["last"].get(s)
-        att = a["attempts"].get(s)
+        bl, al = b_last.get(s), a_last.get(s)
+        att = a_att.get(s)
         if s in regressed:
             out[s] = "regressed"
         elif al and (not bl or al > bl):
             out[s] = "improved" if not bl else "refreshed"
-        elif att and att.get("count", 0) >= REVIEW_AFTER and att != b["attempts"].get(s):
+        elif att and att.get("count", 0) >= REVIEW_AFTER and att != b_att.get(s):
             out[s] = "needs_review"
-        elif att and att != b["attempts"].get(s):
+        elif att and att != b_att.get(s):
             out[s] = "retryable_failed"
         else:
             out[s] = "not_reached"
-    return out, lost, changed
+    return out, lost, changed, warnings
 
 
 def _verify_fh(before, after, cohort):
@@ -376,7 +413,7 @@ def _verify_fh(before, after, cohort):
             out[s] = "retryable_failed"
         else:
             out[s] = "refreshed"
-    return out, lost, changed
+    return out, lost, changed, []
 
 
 def verify_run(before, after, plan, as_of, calls_used=None, paused=False, before_sha=None, after_sha=None):
@@ -393,23 +430,32 @@ def verify_run(before, after, plan, as_of, calls_used=None, paused=False, before
     if before_sha and planned_sha and before_sha != planned_sha:
         raise ControllerError("--before-sha differs from the data-branch SHA recorded in the plan: the plan was made for a different snapshot")
     dataset = plan["dataset"]
-    outcomes, lost, changed = (_verify_candles if dataset == "historical_candles" else _verify_fh)(before, after, cohort)
+    outcomes, lost, changed, warnings = (_verify_candles if dataset == "historical_candles" else _verify_fh)(before, after, cohort)
     tally = {}
     for v in outcomes.values():
         tally[v] = tally.get(v, 0) + 1
     in_cohort = set(cohort)
     outside = sorted(changed - in_cohort)
-    ok = not lost and not tally.get("regressed")
     cover_before, cover_after = _coverage(before, as_of, dataset)["totals"][dataset], _coverage(after, as_of, dataset)["totals"][dataset]
-    nxt = next_plan(after, dataset, as_of, plan.get("batch_size", MAX_COHORT), plan.get("max_calls"), None, paused, data_sha=after_sha) if ok else None
+    if cover_before.get("measurable") and cover_after.get("measurable") and cover_after["invalid"] > cover_before["invalid"]:
+        lost.append("%d more record(s) fail coverage_report.py's structural checks than before the run" % (cover_after["invalid"] - cover_before["invalid"]))
+    ok = not lost and not tally.get("regressed")
+    saved_anything = bool(changed)
+    nxt = next_plan(after, dataset, as_of, plan.get("batch_size", MAX_COHORT), plan.get("max_calls"), None, paused, data_sha=after_sha) if (ok and saved_anything) else None
     gained = cover_after["valid"] - cover_before["valid"] if cover_before.get("measurable") and cover_after.get("measurable") else None
     processed = sum(v for k, v in tally.items() if k != "not_reached")
     return {"schema_version": SCHEMA_VERSION, "kind": KIND_VERIFY, "dataset": dataset, "generated_for": as_of.isoformat(),
             "tool": {"name": "backfill_controller.py", "reads_only": True, "provider_calls": 0, "dispatches_workflows": False},
             "data_branch_sha_before": before_sha, "data_branch_sha_after": after_sha,
             "verification": "passed" if ok else "failed", "problems": lost[:100],
-            "checked": "every saved stock and the benchmark (not only the cohort) for lost files, shortened history and lost values",
-            "publish_or_continue": "allowed: no saved data was lost" if ok else "BLOCKED: saved data was lost or shortened; do not continue, do not publish; inspect the data branch history",
+            "checked": "every saved stock and the benchmark (not only the cohort): lost or damaged files, any saved candle date gone, malformed candles, lost years or values (DATA LOSS, not completeness)",
+            "saved_anything": saved_anything, "warnings": warnings[:50],
+            "publish_or_continue": ("BLOCKED: saved data was lost, shortened or malformed; do not continue, do not publish; inspect the data branch history" if not ok else
+                                    "allowed: no saved data was lost" if saved_anything else
+                                    "NOTHING CHANGED between the two snapshots: the run may not have finished saving, or processed nothing. Do not plan the next run from this snapshot; check the run and verify again"),
+            "completeness": {"checked_here": "coverage counts before and after (coverage_report.py's own structural checks: ascending dates, numeric positive prices, newest date, required fields)",
+                             "not_checked_by_any_tool": "missing trading days inside a candle history: the exchange holiday calendar is not in the repository, so only long gaps (over %d days) are reported as warnings" % GAP_WARN_DAYS,
+                             "also_run": "python3 coverage_report.py --data-branch AFTER --as-of DATE --out OUT  (read-only; see BACKFILL.md)"},
             "cohort_size": len(cohort), "outcomes": dict(sorted(tally.items())), "per_stock": outcomes,
             "processed": {"cohort_stocks_with_evidence_of_processing": processed, "cohort_stocks_not_reached": tally.get("not_reached", 0),
                           "changed_outside_the_planned_cohort": len(outside), "changed_outside_examples": outside[:20],
@@ -437,7 +483,8 @@ def render_markdown(doc):
         run = doc.get("run")
         if run:
             L += ["", "Run the existing workflow **%s** with these inputs:" % run["workflow"], ""] + ["- `%s`: %s" % (k, v if len(str(v)) < 160 else str(v)[:157] + "...") for k, v in sorted(run["inputs"].items())]
-            L += ["", "Cohort: %d stock(s). Estimated %d call(s), about %s minute(s), within a budget of %d." % (doc["cohort_size"], run["estimated_calls"], run["estimated_minutes"], run["call_budget"]), run["note"]]
+            L += ["", "Cohort: %d stock(s). Estimated %d call(s), about %s minute(s), within a budget of %d." % (doc["cohort_size"], run["estimated_calls"], run["estimated_minutes"], run["call_budget"]), run["note"],
+                  "", "Cohort symbols (copy into `verify` as the cohort):", "", ",".join(doc["cohort"])]
         q = doc.get("queue")
         if q:
             L += ["", "Queue after this run: " + json.dumps(q, sort_keys=True)[:900]]
@@ -453,6 +500,9 @@ def render_markdown(doc):
               "Calls used: %s. Failures in the cohort: %d. Valid records gained: %s. Progress: %s%%." % (doc["calls_used"] if doc["calls_used"] is not None else "unknown (%s)" % doc["calls_used_note"], doc["failures_in_cohort"], doc["valid_gained"], doc["progress_pct"])]
         if doc["problems"]:
             L += ["", "Problems:"] + ["- " + p for p in doc["problems"][:30]]
+        if doc.get("warnings"):
+            L += ["", "Warnings (not failures):"] + ["- " + p for p in doc["warnings"][:30]]
+        L += ["", "Completeness: " + doc["completeness"]["not_checked_by_any_tool"] + ". Also run: " + doc["completeness"]["also_run"] + "."]
         n = doc.get("next")
         if n:
             L += ["", "Next: **%s**%s" % (n["status"], (" - " + n["stop_reason"]) if n.get("stop_reason") else ""), "Next cohort: %d stock(s)." % n["cohort_size"]]
