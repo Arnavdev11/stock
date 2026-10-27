@@ -2646,6 +2646,106 @@ check();
 window.SLQuarterly={sectionHtml:sectionHtml,stockOf:stockOf,qLabel:qLabel,num:num,pct:pct,shift:shift,qoq:qoq,check:check};
 })();
 </script>
+<script type="module" id="stocklens-corporate-actions">
+/* StockLens - Dividends & Corporate Actions: a read-only section on Stock Detail, placed directly after the Shareholding Pattern section.
+   Data: out/by_symbol/corporate_actions/SYMBOL.json, written by fundamentals_extra_updater.py (Upstox fundamentals, corporate actions), and the last close in out/historical.json.
+   Requested once per stock, only when its Stock Detail is open. Without a file the section says the data has not been fetched; a file with no events says none are on record.
+   Nothing is invented: a missing amount, ratio or date shows "—", never 0. Dividend per share (12 months) is the updater's own sum and is empty (with the reason) when any
+   dividend in the window has no amount. Dividend yield = that sum ÷ the last close on file × 100, shown only when both exist, the close is above zero and no split or bonus
+   went ex inside the window (a share-count change would mix per-share bases). It is never live. No rating, score, target or advice. */
+(function(){
+"use strict";
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var isn=function(v){return typeof v==="number"&&isFinite(v)};
+var SYM=/^(?=.*[A-Z])[A-Z0-9&._-]{1,20}$/;
+var DATE=/^\d{4}-\d{2}-\d{2}$/;
+var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var DASH="—",SHOW=8;
+var TYPE={dividend:"Dividend",bonus:"Bonus",split:"Split",rights:"Rights",other:"Other"};
+var WHY={no_dividend_in_the_last_12_months:"no dividend went ex in the last 12 months",a_dividend_amount_is_missing:"a dividend in the last 12 months has no amount in the source"};
+function day(d){return DATE.test(String(d||""))?(+d.slice(8,10))+" "+MON[+d.slice(5,7)-1]+" "+d.slice(0,4):DASH}
+function money(v){return isn(v)?"₹"+v.toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:2}):DASH}
+function stockOf(sym,doc){
+  if(!doc||doc.kind!=="corporate_actions"||!doc.stocks||typeof doc.stocks!=="object")return null;
+  var s=doc.stocks[sym];
+  return s&&s.symbol===sym&&Array.isArray(s.events)?s:null}
+/* last close on file: the newest candle with a YYYY-MM-DD date and a finite close (the same rule as the Stock Detail header) */
+function lastClose(prices,sym){
+  var st=prices&&prices.stocks&&typeof prices.stocks==="object"&&Object.prototype.hasOwnProperty.call(prices.stocks,sym)?prices.stocks[sym]:null;
+  if(!st||!Array.isArray(st.candles))return null;
+  var c=st.candles.filter(function(x){return x&&DATE.test(String(x.date||""))&&isn(x.close)}).sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0});
+  return c.length?{close:c[c.length-1].close,date:c[c.length-1].date}:null}
+/* {pct, why}: pct is null (never 0) unless every condition in the header holds */
+function yieldOf(s,px){
+  var t=s.ttm_dividend_per_share||{};
+  if(!isn(t.value))return{pct:null,why:WHY[t.reason]||"the 12-month dividend is unavailable"};
+  if(!px)return{pct:null,why:"no closing price is on file"};
+  if(!(px.close>0))return{pct:null,why:"the last close is not above zero"};
+  var moved=s.events.some(function(e){return e&&(e.type==="split"||e.type==="bonus")&&DATE.test(String(e.ex_date||""))&&e.ex_date>t.from&&e.ex_date<=t.to});
+  if(moved)return{pct:null,why:"a split or bonus went ex in the same 12 months, so per-share amounts are on different bases"};
+  return{pct:Math.round(t.value/px.close*10000)/100,why:null}}
+function detail(e){
+  if(e.type==="dividend")return money(e.amount)+(e.dividend_type?" ("+esc(e.dividend_type)+")":"");
+  if(e.ratio)return esc(e.ratio);
+  return DASH}
+function sectionHtml(sym,doc,prices){
+  var s=stockOf(sym,doc),h='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Dividends &amp; Corporate Actions</h4>';
+  if(!s)return h+'<p class="note ca-p" data-ca="empty">Corporate actions have not been fetched for this company yet.</p></div>';
+  var t=s.ttm_dividend_per_share||{},px=lastClose(prices,sym),y=yieldOf(s,px);
+  h+='<div class="ca-cards"><div class="ca-card"><span>Dividend per share, last 12 months</span><b data-ca="ttm">'+(isn(t.value)?money(t.value):DASH)+'</b></div>'
+   +'<div class="ca-card"><span>Dividend yield on the last close</span><b data-ca="yield">'+(y.pct===null?DASH:y.pct.toFixed(2)+"%")+'</b></div></div>';
+  if(y.pct!==null)h+='<p class="note ca-p" data-ca="basis">Yield uses the close of '+esc(day(px.date))+' ('+money(px.close)+'), the last close on file, not a live price.</p>';
+  else h+='<p class="note ca-p" data-ca="why">'+DASH+' means unavailable: '+esc(y.why)+'. It is never estimated.</p>';
+  var ev=s.events.filter(function(e){return e&&typeof e==="object"}).slice(0,SHOW);
+  if(!ev.length)h+='<p class="note ca-p" data-ca="none">No dividend, bonus, split or rights issue is on record in the source for this company.</p>';
+  else{
+    h+='<div class="scroll"><table data-ca="table"><thead><tr><th>Ex-date</th><th>Action</th><th class="n">Amount / ratio</th><th>Record date</th></tr></thead><tbody>';
+    ev.forEach(function(e){h+='<tr data-ca-type="'+esc(TYPE[e.type]?e.type:"other")+'"><td>'+esc(day(e.ex_date))+'</td><td>'+esc(TYPE[e.type]||"Other")+'</td><td class="n">'+detail(e)+'</td><td>'+esc(day(e.record_date))+'</td></tr>'});
+    h+='</tbody></table></div>';
+    if(s.events.length>SHOW)h+='<p class="note ca-p">Showing the latest '+SHOW+' of '+s.events.length+' actions on record.</p>'}
+  var when=DATE.test(String(s.fetched||""))?" Fetched "+esc(day(s.fetched))+".":"";
+  if(s.status==="failed"||s.status==="unusable")h+='<p class="note ca-p" data-ca="stale">The latest refresh did not succeed, so these are the actions saved earlier.'+when+'</p>';
+  h+='<p class="note ca-p" data-ca="note">Source: Upstox fundamentals (corporate actions).'+(s.status==="failed"||s.status==="unusable"?"":when)+' '+DASH+' means unavailable, never zero. Amounts are as reported, not adjusted for later splits or bonuses. No rating, target or advice.</p></div>';
+  return h}
+var STYLE='#detailCorporateActions .ca-p{padding:0 0 6px;margin:6px 0 0;overflow-wrap:anywhere}'
+ +'#detailCorporateActions .ca-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:10px;margin:8px 0 4px}'
+ +'#detailCorporateActions .ca-card{min-width:0;border:1px solid var(--line);border-radius:10px;padding:10px}'
+ +'#detailCorporateActions .ca-card span{display:block;color:var(--mute);font-size:.78rem;overflow-wrap:anywhere}'
+ +'#detailCorporateActions .ca-card b{display:block;font-size:1.15rem;font-variant-numeric:tabular-nums}'
+ +'#detailCorporateActions table{min-width:440px}#detailCorporateActions th,#detailCorporateActions td{padding:8px 8px;font-size:.85rem}#detailCorporateActions .scroll{overflow-x:auto}';
+function addStyle(){
+  if(!document.head||!document.createElement||$("corporateActionsStyle"))return;
+  var st=document.createElement("style");st.id="corporateActionsStyle";st.textContent=STYLE;document.head.appendChild(st)}
+var CACHE={},HIST=null;
+function load(sym){
+  if(!CACHE[sym])CACHE[sym]=fetch("out/by_symbol/corporate_actions/"+encodeURIComponent(sym)+".json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  if(!HIST)HIST=fetch("out/historical.json",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});
+  return Promise.all([CACHE[sym],HIST])}
+function routeSymbol(){
+  var m=/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/.exec(window.location.hash||"");if(!m)return null;
+  var s;try{s=decodeURIComponent(m[1])}catch(e){return null}
+  s=s.trim().toUpperCase();return SYM.test(s)?s:null}
+var node=null,nodeSym=null;
+function check(){
+  var s=routeSymbol(),box=$("detail");
+  if(!s||!box||!box.querySelector)return;
+  var sh=$("detailShareholding");
+  if(!sh||sh.parentNode!==box)return;                                          /* placed after the Shareholding Pattern section, once it exists */
+  if(node&&node.parentNode===box&&nodeSym===s)return;
+  addStyle();
+  var el=document.createElement("section");
+  el.id="detailCorporateActions";
+  el.innerHTML='<div class="panel" style="padding:16px;margin-top:14px"><h4 style="margin:0 0 .2em">Dividends &amp; Corporate Actions</h4><p class="note ca-p">Loading…</p></div>';
+  box.insertBefore(el,sh.nextSibling);node=el;nodeSym=s;
+  load(s).then(function(a){
+    if(routeSymbol()!==s||node!==el||el.parentNode!==box)return;
+    el.innerHTML=sectionHtml(s,a[0],a[1])})}
+if(typeof MutationObserver!=="undefined"){var box0=$("detail");if(box0)new MutationObserver(function(){check()}).observe(box0,{childList:true,subtree:true})}
+check();
+window.SLCorporateActions={sectionHtml:sectionHtml,stockOf:stockOf,lastClose:lastClose,yieldOf:yieldOf,day:day,check:check};
+})();
+</script>
 <script type="module" id="stocklens-nav">
 /* StockLens Phase 5I - global stock search and direct section navigation (navigation only: no data, no calculation, no request).
    The global bar (#globalBar, in the page itself) holds the ONE company search: the Phase 5F search module mounts into #globalSearchHost, so there is no second search and no second company list. Selecting a result opens the
