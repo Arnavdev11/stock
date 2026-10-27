@@ -125,6 +125,7 @@ th .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24
 .fs-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;margin-top:10px}
 .fs-count{margin:0;font-weight:600;font-size:.9rem}
 .fs-reset{min-height:44px;padding:0 16px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ac);font:600 .9rem Manrope,system-ui,sans-serif;cursor:pointer}
+.fs-more{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;padding:10px 14px;border-top:1px solid var(--line)}.fs-more-s{margin:0;font-weight:600;font-size:.88rem}
 #screener-sec th .lk{text-align:left}#screener-sec th[aria-sort=ascending] .lk:after{content:" \2191"}#screener-sec th[aria-sort=descending] .lk:after{content:" \2193"}
 /* mobile cards: below 640px each table row is a card; every field keeps its column name; the column buttons stay as a row of sort chips */
 @container (max-width:640px){
@@ -168,7 +169,9 @@ th .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24
 <fieldset class="fs-set"><legend>P/E</legend><div class="fs-pair"><div><label for="fsPeMin">Min</label><input id="fsPeMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any" aria-describedby="fsPeHelp"></div><div><label for="fsPeMax">Max</label><input id="fsPeMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any" aria-describedby="fsPeHelp"></div></div>
 <label for="fsPeMode">Which P/E</label><select id="fsPeMode" aria-describedby="fsPeHelp"><option value="any" selected>Any</option><option value="positive">Positive only</option><option value="negative">Negative only (loss-making)</option></select>
 <p id="fsPeHelp" class="fs-help">A P/E range lists positive P/E only. A negative P/E means a loss, not a cheap price; choose “Negative only” to list those stocks.</p></fieldset>
-<fieldset class="fs-set"><legend>P/B</legend><div class="fs-pair"><div><label for="fsPbMin">Min</label><input id="fsPbMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any"></div><div><label for="fsPbMax">Max</label><input id="fsPbMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any"></div></div></fieldset>
+<fieldset class="fs-set"><legend>P/B</legend><div class="fs-pair"><div><label for="fsPbMin">Min</label><input id="fsPbMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any" aria-describedby="fsPbHelp"></div><div><label for="fsPbMax">Max</label><input id="fsPbMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any" aria-describedby="fsPbHelp"></div></div>
+<label for="fsPbMode">Which P/B</label><select id="fsPbMode" aria-describedby="fsPbHelp"><option value="any" selected>Any</option><option value="positive">Positive only</option><option value="negative">Negative only (negative book value)</option></select>
+<p id="fsPbHelp" class="fs-help">A P/B range lists positive P/B only. A negative P/B means the company’s book value is below zero, not a cheap price; choose “Negative only” to list those stocks.</p></fieldset>
 <div class="fs-set"><label for="roe">ROE at least</label><select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select>
 <label for="fsSector">Sector</label><select id="fsSector" aria-describedby="fsSectorNote"><option value="">All sectors</option></select><p id="fsSectorNote" class="fs-help"></p></div>
 </div>
@@ -261,7 +264,9 @@ let FD=[],fsort={k:"roe",dir:-1};
    Strict numbers: a stored value passes an active numeric filter only if it is a finite JSON number. Missing, blank, "-", text and non-finite values never pass.
    A box left empty means "any". Anything typed must be a plain number of 0 or more (12, 12.5, .5), or the screen says so and shows no rows until it is fixed.
    P/E: a P/E range (or "Positive only") lists positive P/E only, so a loss-making company's negative P/E is never read as a cheap valuation; "Negative only"
-   lists the loss-making ones on request. P/E of exactly 0 is neither. Sorting by P/E puts zero and negative P/E after the positive ones. Sector: an exact match on the published sector; a stock without one never passes a chosen sector.
+   lists the loss-making ones on request. P/E of exactly 0 is neither. Sorting by P/E puts zero and negative P/E after the positive ones.
+   P/B follows the same rule: a P/B range (or "Positive only") lists positive P/B only, "Negative only" lists negative book value on request, and sorting puts zero
+   and negative P/B after the positive ones. Load more: each screen table shows 50 matching rows, then "Show 50 more". Sector: an exact match on the published sector; a stock without one never passes a chosen sector.
    The other tabs (Financial Health, Cash Flow & Growth) use the same rules through window.SLScreen. */
 const fesc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const isNum=v=>typeof v==="number"&&isFinite(v);
@@ -278,35 +283,38 @@ function criteria(){const errs=[],c={};
  const take=(k,id,label)=>{const r=fread(id,label);if(r.err)errs.push(r.err);c[k]=r.on?r.v:null};
  c.peMode=(fel("fsPeMode")||{}).value||"any";
  if(c.peMode==="negative"){c.peMin=null;c.peMax=null}else{take("peMin","fsPeMin","P/E minimum");take("peMax","fsPeMax","P/E maximum")}
- take("pbMin","fsPbMin","P/B minimum");take("pbMax","fsPbMax","P/B maximum");
+ c.pbMode=(fel("fsPbMode")||{}).value||"any";
+ if(c.pbMode==="negative"){c.pbMin=null;c.pbMax=null}else{take("pbMin","fsPbMin","P/B minimum");take("pbMax","fsPbMax","P/B maximum")}
  if(c.peMin!==null&&c.peMax!==null&&c.peMin>c.peMax)errs.push("P/E: the minimum is higher than the maximum.");
  if(c.pbMin!==null&&c.pbMax!==null&&c.pbMin>c.pbMax)errs.push("P/B: the minimum is higher than the maximum.");
  const roe=+((fel("roe")||{}).value);c.roe=isFinite(roe)&&roe>0?roe:null;
  c.sector=String((fel("fsSector")||{}).value||"");
  c.errors=errs;
- c.active=c.peMode!=="any"||c.peMin!==null||c.peMax!==null||c.pbMin!==null||c.pbMax!==null||c.roe!==null||c.sector!=="";
+ c.active=c.peMode!=="any"||c.peMin!==null||c.peMax!==null||c.pbMode!=="any"||c.pbMin!==null||c.pbMax!==null||c.roe!==null||c.sector!=="";
  return c}
 function passes(x,c){if(!x)return false;
  if(c.peMode==="negative"){if(!(isNum(x.pe)&&x.pe<0))return false}
  else if(c.peMode==="positive"||c.peMin!==null||c.peMax!==null){if(!(isNum(x.pe)&&x.pe>0))return false;if(c.peMin!==null&&x.pe<c.peMin)return false;if(c.peMax!==null&&x.pe>c.peMax)return false}
- if(c.pbMin!==null||c.pbMax!==null){if(!isNum(x.pb))return false;if(c.pbMin!==null&&x.pb<c.pbMin)return false;if(c.pbMax!==null&&x.pb>c.pbMax)return false}
+ if(c.pbMode==="negative"){if(!(isNum(x.pb)&&x.pb<0))return false}
+ else if(c.pbMode==="positive"||c.pbMin!==null||c.pbMax!==null){if(!(isNum(x.pb)&&x.pb>0))return false;if(c.pbMin!==null&&x.pb<c.pbMin)return false;if(c.pbMax!==null&&x.pb>c.pbMax)return false}
  if(c.roe!==null&&!(isNum(x.roe)&&x.roe>=c.roe))return false;
  if(c.sector!==""&&!(typeof x.sector==="string"&&x.sector===c.sector))return false;
  return true}
 function fcmp(a,c){const k=fsort.k,A=a[k],B=c[k];
  if(TEXTK[k]){const ok1=typeof A==="string"&&A!=="",ok2=typeof B==="string"&&B!=="";if(!ok1&&!ok2)return 0;if(!ok1)return 1;if(!ok2)return -1;return A.localeCompare(B)*fsort.dir}
  const n1=isNum(A),n2=isNum(B);if(!n1&&!n2)return 0;if(!n1)return 1;if(!n2)return -1;
- if(k==="pe"){const t1=A>0?0:1,t2=B>0?0:1;if(t1!==t2)return t1-t2}   /* P/E: zero and negative P/E (no earnings or a loss) sort after every positive P/E, in both directions, and before missing values */
+ if(k==="pe"||k==="pb"){const t1=A>0?0:1,t2=B>0?0:1;if(t1!==t2)return t1-t2}   /* P/E and P/B: zero and negative values (a loss, negative book value) sort after every positive value, in both directions, and before missing values */
  return(A-B)*fsort.dir}
 let FCRIT=null;
 function fund(){const b=fel("fund"),c=criteria(),err=fel("fsErr"),cnt=fel("fsCount");FCRIT=c;
  const box=fel("fsPeMin"),bx=fel("fsPeMax");if(box&&bx){box.disabled=bx.disabled=c.peMode==="negative"}
+ const pb1=fel("fsPbMin"),pb2=fel("fsPbMax");if(pb1&&pb2){pb1.disabled=pb2.disabled=c.pbMode==="negative"}
  if(err){err.hidden=!c.errors.length;err.textContent=c.errors.join(" ")}
  if(c.errors.length){b.innerHTML='<tr><td colspan="9">Fix the filter marked above to see the results.</td></tr>';if(cnt)cnt.textContent="No results: a filter needs fixing.";fnotify();return}
  const r=FD.filter(x=>passes(x,c)).map((x,i)=>Object.assign({},x,{_i:i}));
  r.sort((a,d)=>fcmp(a,d)||a._i-d._i);
  b.innerHTML=r.length?r.map(x=>`<tr><td>${fesc(x.symbol)}</td><td>${typeof x.company_name==="string"&&x.company_name?fesc(x.company_name):"-"}</td><td>${typeof x.sector==="string"&&x.sector?fesc(x.sector):"-"}</td><td class="n">${ffmt(x.pe)}</td><td class="n">${ffmt(x.pb)}</td><td class="n">${ffmt(x.roe)}</td><td class="n">${ffmt(x.roce)}</td><td class="n">${ffmt(x.roa)}</td><td class="n">${ffmt(x.ev_ebitda)}</td></tr>`).join(""):'<tr><td colspan="9">No stocks match these filters. Widen or clear a filter.</td></tr>';
- if(cnt)cnt.textContent="Showing "+r.length+" of "+FD.length+" stock"+(FD.length===1?"":"s")+(c.active?" that match the filters.":" (no filter applied).");
+ if(cnt)cnt.textContent=c.active?r.length+" of "+FD.length+" stock"+(FD.length===1?"":"s")+" match the filters.":"All "+FD.length+" stock"+(FD.length===1?"":"s")+" (no filter applied).";
  document.querySelectorAll("#ftable th").forEach((th,i)=>{const k=(FCOLS[i]||[])[0];if(k===fsort.k)th.setAttribute("aria-sort",fsort.dir>0?"ascending":"descending");else th.removeAttribute("aria-sort")});
  fnotify()}
 /* the shared rule for the other screen tabs: a symbol passes only if its fundamentals row passes (no row = no pass while any filter is on) */
@@ -320,16 +328,33 @@ function fsectors(){const sel=fel("fsSector"),note=fel("fsSectorNote");if(!sel)r
  sel.innerHTML='<option value="">All sectors</option>'+list.map(s=>`<option value="${fesc(s)}">${fesc(s)}</option>`).join("");
  sel.disabled=!list.length;
  if(note)note.textContent=!list.length?"No sector is published in the fundamentals data yet, so this filter is off.":withSec<FD.length?withSec+" of "+FD.length+" stocks have a published sector; the others are left out when a sector is chosen.":""}
-["fsPeMin","fsPeMax","fsPbMin","fsPbMax"].forEach(id=>{const e=fel(id);if(e)e.addEventListener("input",fund)});
-["roe","fsPeMode","fsSector"].forEach(id=>{const e=fel(id);if(e)e.addEventListener("change",fund)});
+const FPAGE=50,FLIM={};                       /* Load more: rows shown per screen table, by table; a filter change starts again at the first 50 */
+const frefilter=()=>{for(const k in FLIM)delete FLIM[k];fund()};
+["fsPeMin","fsPeMax","fsPbMin","fsPbMax"].forEach(id=>{const e=fel(id);if(e)e.addEventListener("input",frefilter)});
+["roe","fsPeMode","fsPbMode","fsSector"].forEach(id=>{const e=fel(id);if(e)e.addEventListener("change",frefilter)});
 {const f=fel("fscreen");if(f)f.addEventListener("submit",e=>{e.preventDefault();fund()})}
 {const r=fel("fsReset");if(r)r.addEventListener("click",()=>{["fsPeMin","fsPeMax","fsPbMin","fsPbMax"].forEach(id=>{const e=fel(id);if(e)e.value=""});
- const m=fel("fsPeMode");if(m)m.value="any";const s=fel("fsSector");if(s)s.value="";const q=fel("roe");if(q){q.value="0";q.dispatchEvent(new Event("change"))}fund()})}
+ const m=fel("fsPeMode");if(m)m.value="any";const mb=fel("fsPbMode");if(mb)mb.value="any";const s=fel("fsSector");if(s)s.value="";const q=fel("roe");if(q){q.value="0";q.dispatchEvent(new Event("change"))}frefilter()})}
 document.querySelectorAll("#ftable [data-k]").forEach(b=>b.onclick=()=>{const k=b.dataset.k;fsort=fsort.k===k?{k,dir:-fsort.dir}:{k,dir:TEXTK[k]?1:-1};fund()});
 /* mobile cards: each cell of the screen tables carries its column name, so a narrow screen can show it beside the value (CSS only; the markup of the rows is unchanged) */
 function flabel(root){root.querySelectorAll("table").forEach(t=>{const hs=[...t.querySelectorAll("thead th")].map(h=>(h.textContent||"").trim());
  t.querySelectorAll("tbody tr").forEach(tr=>{[...tr.children].forEach((td,i)=>{if(td.tagName==="TD"&&!td.hasAttribute("colspan")&&hs[i]&&td.getAttribute("data-label")!==hs[i])td.setAttribute("data-label",hs[i])})})})}
-{const sec=fel("screener-sec");if(sec&&typeof MutationObserver!=="undefined"){flabel(sec);new MutationObserver(()=>flabel(sec)).observe(sec,{childList:true,subtree:true})}}
+/* Load more: every row is still drawn (sorting, the row links and the other tabs' code are unchanged); rows past the limit are hidden, and a button under the
+   table shows the next 50. Focus moves to the first newly shown row, and the line beside the button says how many are shown. */
+function fpager(table){const tb=table.tBodies&&table.tBodies[0];if(!tb)return;const key=table.id||(table.parentElement&&table.parentElement.id)||"t";
+ const rows=[...tb.rows].filter(tr=>!(tr.cells.length===1&&tr.cells[0].hasAttribute("colspan"))),lim=FLIM[key]||FPAGE;
+ rows.forEach((tr,i)=>{const h=i>=lim;if(tr.hidden!==h)tr.hidden=h});
+ const nx=table.nextElementSibling;let box=nx&&nx.classList&&nx.classList.contains("fs-more")?nx:null;
+ if(rows.length<=FPAGE){if(box)box.remove();return}
+ if(!box){box=document.createElement("div");box.className="fs-more";
+  box.innerHTML='<p class="fs-more-s" role="status" aria-live="polite"></p><button type="button" class="fs-reset fs-more-b"></button>';table.insertAdjacentElement("afterend",box);
+  box.querySelector("button").addEventListener("click",()=>{const from=FLIM[key]||FPAGE;FLIM[key]=from+FPAGE;fpager(table);
+   const td=tb.rows[from]&&tb.rows[from].cells[0];if(td){if(!td.hasAttribute("tabindex"))td.setAttribute("tabindex","-1");td.focus()}})}
+ const shown=Math.min(lim,rows.length),left=rows.length-shown,st=box.querySelector("p"),bt=box.querySelector("button");
+ const say=left?"Showing "+shown+" of "+rows.length+" stocks":"Showing all "+rows.length+" stocks",lab="Show "+Math.min(FPAGE,left)+" more";
+ if(st.textContent!==say)st.textContent=say;if(bt.textContent!==lab)bt.textContent=lab;if(bt.hidden!==!left)bt.hidden=!left}
+function fscreen(sec){flabel(sec);sec.querySelectorAll("table").forEach(fpager)}
+{const sec=fel("screener-sec");if(sec&&typeof MutationObserver!=="undefined"){fscreen(sec);new MutationObserver(()=>fscreen(sec)).observe(sec,{childList:true,subtree:true})}}
 (async()=>{const st=fel("fstat");
 try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const j=await r.json();
 if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.stocks.filter(x=>x&&typeof x==="object");                 /* every published row is kept; only an empty (null) entry, which has nothing to show, is skipped */

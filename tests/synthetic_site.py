@@ -41,8 +41,9 @@ STOCKS = [
     ("OMICRON", "Omicron Stand-in Insurance Limited", "Financials", 64.0, 7.7, 12.0, None, 2.0, None, 1801.0),
     ("PI", "Pi Hypothetical Cement Limited", "Materials", 25.0, 3.9, 15.0, 18.0, 8.0, 14.0, 9050.0),
     ("RHO", "Rho Fictional Media Limited", "Communication Services", 17.5, 2.1, 12.4, 14.0, 6.5, 10.5, 64.3),
+    ("SIGMA", "Sigma Negative Equity Airlines Limited", "Industrials", 15.0, -2.4, 18.0, 5.0, 1.0, 9.0, 120.0),   # negative book value: negative P/B
 ]
-for i in range(1, 25):   # a longer list, so the table and the mobile cards are exercised with many rows
+for i in range(1, 101):  # a longer list (118 stocks in all), so the table, the mobile cards and "Show 50 more" are exercised with many rows
     STOCKS.append(("SYN%02d" % i, "Synthetic Filler Company %02d Limited" % i, ["Information Technology", "Financials", "Industrials", "Materials", None][i % 5],
                    round(5 + (i * 7.3) % 60, 2), round(0.5 + (i * 1.7) % 9, 2), round(4 + (i * 3.1) % 35, 2), round(5 + (i * 2.9) % 30, 2),
                    round(1 + (i * 1.3) % 12, 2), round(3 + (i * 2.2) % 25, 2), round(50 + i * 37.5, 2)))

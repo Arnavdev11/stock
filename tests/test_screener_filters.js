@@ -29,8 +29,8 @@ function boot(doc) {
     setAttribute(k, v) { this.attrs[k] = String(v); }, removeAttribute(k) { delete this.attrs[k]; }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
     addEventListener(t, f) { (listeners[id + ":" + t] = listeners[id + ":" + t] || []).push(f); },
     dispatchEvent(e) { (listeners[id + ":" + e.type] || []).forEach((f) => f(e)); }, click() { (listeners[id + ":click"] || []).forEach((f) => f({})); } }, o));
-  ["fstat", "fund", "fsErr", "fsCount", "fsPeMin", "fsPeMax", "fsPbMin", "fsPbMax", "fsPeMode", "fsSector", "fsSectorNote", "fscreen", "fsReset"].forEach((i) => el(i));
-  el("roe", { value: "15" }); els.fsPeMode.value = "any";
+  ["fstat", "fund", "fsErr", "fsCount", "fsPeMin", "fsPeMax", "fsPbMin", "fsPbMax", "fsPeMode", "fsPbMode", "fsSector", "fsSectorNote", "fscreen", "fsReset"].forEach((i) => el(i));
+  el("roe", { value: "15" }); els.fsPeMode.value = "any"; els.fsPbMode.value = "any";
   Object.defineProperty(els.fsSector, "innerHTML", { set(v) { this._h = v; this.options = [...v.matchAll(/<option value="([^"]*)">/g)].map((m) => m[1]); }, get() { return this._h; } });
   const ths = Array.from({ length: 9 }, () => el("th" + Math.random(), {}));
   const sortButtons = ["symbol", "company_name", "sector", "pe", "pb", "roe", "roce", "roa", "ev_ebitda"].map((k) => ({ dataset: { k }, onclick: null }));
@@ -62,10 +62,10 @@ function boot(doc) {
   eq(t.ctx.fetched, ["out/fundamentals.json"], "reads only out/fundamentals.json");
   re(t.els.fstat.textContent, /^Fundamentals data: Fixture · Updated: 2026-10-01$/, "status line unchanged");
   eq(t.rows(), ["AAA", "GGG", "BBB", "FFF", "HHH", "JJJ"], "default: ROE at least 15, strict numbers (EEE's text \"40\" does not pass), sorted by ROE, highest first; equal ROE keeps file order");
-  re(t.els.fsCount.textContent, /^Showing 6 of 10 stocks that match the filters\.$/, "the count says how many of all stocks are shown");
+  re(t.els.fsCount.textContent, /^6 of 10 stocks match the filters\.$/, "the count says how many of all stocks match");
   t.set("roe", "0");
   eq(t.rows().length, 10, "no filter: every published stock is listed (coverage unchanged)");
-  re(t.els.fsCount.textContent, /Showing 10 of 10 stocks \(no filter applied\)/);
+  re(t.els.fsCount.textContent, /^All 10 stocks \(no filter applied\)\.$/);
   eq(t.S().active, false, "SLScreen: nothing active"); eq(t.S().pass("ZZZ"), true, "with no filter, the other tabs keep every row, even one without fundamentals");
 
   // --- P/E range: positive P/E only, strict, inclusive bounds
@@ -94,10 +94,15 @@ function boot(doc) {
   t.set("fsPbMin", ""); t.set("fsPeMin", "30"); t.set("fsPeMax", "10"); re(t.els.fsErr.textContent, /P\/E: the minimum is higher than the maximum\./, "min above max is an error"); eq(t.rows(), []);
   t.set("fsPeMin", ""); t.set("fsPeMax", ""); ok(t.els.fsErr.hidden, "clearing the boxes clears the message");
 
-  // --- P/B: a plain numeric range on finite numbers (missing and text never pass)
-  t.set("fsPbMax", "2"); eq(t.rows().sort(), ["AAA", "CCC", "GGG", "HHH", "III"], "P/B max 2 (DDD missing and EEE text excluded; GGG's negative P/B is a number and is listed as published)");
-  t.set("fsPbMin", "1"); eq(t.rows().sort(), ["AAA", "HHH", "III"], "P/B 1 to 2");
+  // --- P/B: the same rule as P/E. A range lists positive P/B only; negative book value only on request (missing and text never pass)
+  t.set("fsPbMax", "2"); eq(t.rows().sort(), ["AAA", "CCC", "HHH", "III"], "P/B max 2: positive P/B only (GGG's negative P/B is not a cheap price; DDD missing and EEE text excluded)");
+  t.set("fsPbMin", "1"); eq(t.rows().sort(), ["AAA", "HHH", "III"], "P/B 1 to 2, inclusive");
   t.set("fsPbMin", ""); t.set("fsPbMax", "");
+  t.set("fsPbMode", "positive"); eq(t.rows().sort(), ["AAA", "BBB", "CCC", "FFF", "HHH", "III", "JJJ"], "P/B Positive only: every stock with P/B > 0 (not GGG's negative, DDD's missing or EEE's text)");
+  t.set("fsPbMode", "negative"); eq(t.rows(), ["GGG"], "P/B Negative only: negative book value, on request");
+  ok(t.els.fsPbMin.disabled && t.els.fsPbMax.disabled, "the P/B range boxes are disabled while Negative only is chosen");
+  t.els.fsPbMax.value = "abc"; t.set("fsPbMode", "negative"); ok(t.els.fsErr.hidden, "a disabled box is not validated or applied"); eq(t.rows(), ["GGG"]);
+  t.els.fsPbMax.value = ""; t.set("fsPbMode", "any"); ok(!t.els.fsPbMin.disabled, "the P/B boxes come back with Any"); eq(t.S().active, false, "back to no filter");
 
   // --- ROE: strict
   t.set("roe", "25"); eq(t.rows(), ["AAA"], "ROE at least 25 (EEE's text \"40\" does not pass)"); t.set("roe", "0");
@@ -112,7 +117,8 @@ function boot(doc) {
   eq(t.S().pass("ZZZ"), false, "a stock with no fundamentals row never passes while a filter is on");
   ok(t.events.includes("slscreen"), "the other tabs are told when the filters change");
   t.els.fsReset.click();
-  eq([t.els.fsPeMax.value, t.els.fsSector.value, t.els.fsPeMode.value, t.els.roe.value], ["", "", "any", "0"], "Clear filters resets every filter"); eq(t.rows().length, 10, "and lists every stock again");
+  t.els.fsPbMode.value = "negative"; t.els.fsReset.click();
+  eq([t.els.fsPeMax.value, t.els.fsSector.value, t.els.fsPeMode.value, t.els.fsPbMode.value, t.els.roe.value], ["", "", "any", "any", "0"], "Clear filters resets every filter"); eq(t.rows().length, 10, "and lists every stock again");
 
   // --- sorting: text A-Z first, numbers high-low first; missing and text values last in both directions; P/E losses after positive P/E
   t.sort("symbol"); eq(t.rows(), ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III", "JJJ"], "Stock: A-Z on first click");
@@ -121,6 +127,8 @@ function boot(doc) {
   eq(t.ths[3].getAttribute("aria-sort"), "descending", "the sorted column says so (aria-sort)"); eq(t.ths[0].getAttribute("aria-sort"), null, "other columns do not");
   t.sort("pe"); eq(t.rows(), ["AAA", "JJJ", "HHH", "BBB", "GGG", "CCC", "III", "FFF", "DDD", "EEE"], "P/E low to high: the lowest POSITIVE P/E first; a loss never sorts as the cheapest; equal P/E keeps file order");
   eq(t.ths[3].getAttribute("aria-sort"), "ascending");
+  t.sort("pb"); eq(t.rows().slice(-3), ["GGG", "DDD", "EEE"], "P/B high to low: negative P/B (GGG) after every positive P/B, then missing and text");
+  t.sort("pb"); eq(t.rows().slice(0, 2), ["CCC", "AAA"], "P/B low to high: the lowest POSITIVE P/B first (0.8, then 1 in file order)"); eq(t.rows().slice(-3), ["GGG", "DDD", "EEE"], "and negative P/B is never first");
   t.sort("sector"); eq(t.rows().slice(-2).sort(), ["DDD", "GGG"], "missing or empty sector sorts last");
 
   // --- values are shown exactly as published (formatting only), names are escaped
@@ -148,6 +156,12 @@ function boot(doc) {
   re(sec, /<p id="fsErr" class="fs-err" role="alert" hidden>/, "errors are announced"); re(sec, /<p id="fsCount" class="fs-count" role="status" aria-live="polite">/, "the count is announced");
   re(sec, /<option value="negative">Negative only \(loss-making\)<\/option>/, "negative P/E is a separate, explicit choice");
   re(sec, /A P\/E range lists positive P\/E only/, "the rule is explained next to the boxes");
+  re(sec, /<option value="negative">Negative only \(negative book value\)<\/option>/, "negative P/B is a separate, explicit choice"); re(sec, /A P\/B range lists positive P\/B only/, "and explained");
+  for (const id of ["fsPbMode"]) re(sec, new RegExp('<label for="' + id + '">'), id + " has a visible label");
+  // Load more (behaviour checked in a real browser by tests/browser_screener_checks.py): 50 rows per table, then "Show 50 more"
+  re(code, /const FPAGE=50,FLIM=\{\};/, "50 rows per screen table"); re(code, /function fpager\(table\)\{/, "a pager for every screen table");
+  re(code, /rows\.forEach\(\(tr,i\)=>\{const h=i>=lim;if\(tr\.hidden!==h\)tr\.hidden=h\}\)/, "rows past the limit are hidden, never removed (sorting and links see every row)");
+  re(code, /const frefilter=\(\)=>\{for\(const k in FLIM\)delete FLIM\[k\];fund\(\)\};/, "a filter change starts again at the first 50");
   re(html, /@container \(max-width:640px\)\{\n#screener-sec \.panel\.scroll\{overflow:visible/, "mobile cards are a container query on the screen itself");
   re(html, /#screener-sec td:before\{content:attr\(data-label\)/, "each card field shows its column name");
   re(code, /function flabel\(root\)\{/, "the column names are added to the cells from the table headers");
