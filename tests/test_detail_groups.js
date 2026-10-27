@@ -60,8 +60,11 @@ const lines = detail.split("\n"), groupLines = lines.filter((l) => /sd-group|<\/
 const opens = lines.filter((l) => /^  h\+='<div class="sd-group" id="sd[A-Z][a-z]+">';\s+\/\* group [a-z]+ open \*\/$/.test(l)), closes = lines.filter((l) => /^  h\+='<\/div>';\s+\/\* group [a-z]+ close \*\/$/.test(l));
 eq(opens.length, 3, "three group openers, each a line of its own"); eq(closes.length, 3, "three matching closers, each a line of its own"); eq(groupLines.length, 6, "and no other line mentions a group");
 eq(groupLines.filter((l) => /overview/i.test(l)), [], "no inserted grouping line, id or comment contains the word the guard tests probe");
-eq(lines.filter((l) => !baseDetail.split("\n").includes(l)), groupLines, "the only lines of view(s,d) that differ from the page before the recorded edits are the grouping lines");
-eq(lines.filter((l) => !groupLines.includes(l)), baseDetail.split("\n"), "every other line keeps its order; that those lines (every heading line included) are byte-identical to the shipped page is enforced by the Stock Detail block pins in test_checklist.js, test_research.js and test_profiles.js");
+const srcLines = lines.filter((l) => /^  h\+='[^\n]*';\s+\/\* source note (open|close) \*\/$/.test(l));
+eq(srcLines.length, 4, "two source-note disclosures (Financial Health, Free Cash Flow), each an opener and a closer on lines of their own");
+eq(srcLines.filter((l) => /overview/i.test(l)), [], "no source-note line contains the word the guard tests probe either");
+eq(lines.filter((l) => !baseDetail.split("\n").includes(l)), lines.filter((l) => groupLines.includes(l) || srcLines.includes(l)), "the only lines of view(s,d) that differ from the page before the recorded edits are the grouping and source-note lines");
+eq(lines.filter((l) => !groupLines.includes(l) && !srcLines.includes(l)), baseDetail.split("\n"), "every other line keeps its order; that those lines (every heading line included) are byte-identical to the shipped page is enforced by the Stock Detail block pins in test_checklist.js, test_research.js and test_profiles.js");
 { let depth = 0, max = 0; for (const l of lines) { if (opens.includes(l)) depth++; if (closes.includes(l)) depth--; ok(depth >= 0, "groups never close before they open"); max = Math.max(max, depth); } eq(depth, 0, "every group is closed"); eq(max, 1, "groups are not nested"); }
 const ids = opens.map((l) => /id="([^"]+)"/.exec(l)[1]); eq(new Set(ids).size, 3, "group ids are distinct");
 ids.forEach((id) => eq((html.match(new RegExp('id="' + id + '"', "g")) || []).length, 1, id + " is used once in the page"));

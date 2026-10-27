@@ -171,7 +171,16 @@ if (oldHtml) {
   const totalRow = (s) => { const st = d.stocks[s]; if (!st || st.statement_layout === "financial") return false; const ys = st.years || [];
     return !ys.some((y) => typeof (y.values || {}).revenue === "number") && ys.some((y) => typeof (y.values || {}).total_revenue === "number"); };
   ok(Object.keys(d.stocks).filter(totalRow).length === 1, "exactly one fixture (NULLREV) is affected by the approved Total revenue change");
-  for (const s of Object.keys(d.stocks).concat(["NOPE"]).filter((x) => !totalRow(x))) eq(strip(N.build(s, d)), O.build(s, d), s + ": with the charts removed, the panel (table, change rows, CAGR lines, notes, states) is identical to the committed version");
+  /* approved source-note change (tests/approved_page_edits.json): the "-" note moves into an "About these figures" disclosure under the source line. unNote undoes exactly that
+     wrapper (only for a source with no " - " explanation, as in every fixture here), so every other byte of the panel is still compared with the committed version. */
+  const NOTE_OPEN = '.</p><details class="src-more"><summary>About these figures</summary><p class="note" style="padding:4px 0 6px">';
+  const unNote = (x) => { const i = x.indexOf(NOTE_OPEN); if (i < 0) return x; const j = x.indexOf("</p></details>", i); return x.slice(0, i) + ". " + x.slice(i + NOTE_OPEN.length, j) + "</p>" + x.slice(j + "</p></details>".length); };
+  ok(Object.keys(d.stocks).every((s) => !/ - /.test(String(d.source || ""))), "(the fixture's source has no \" - \" explanation, so the visible source line is unchanged)");
+  for (const s of Object.keys(d.stocks).concat(["NOPE"]).filter((x) => !totalRow(x))) eq(unNote(strip(N.build(s, d))), O.build(s, d), s + ": with the charts removed and the approved source-note disclosure undone, the panel (table, change rows, CAGR lines, notes, states) is identical to the committed version");
+  { const d2 = Object.assign({}, d, { source: "Upstox (API) and official company annual reports - the provider is stated on every record" }), h2 = N.build("TCS", d2);
+    const vis = (h2.match(/<h4[^>]*>Financial History<\/h4><p class="note"[^>]*>([^<]*)<\/p>/) || [])[1] || "";
+    ok(/· Source: Upstox \(API\) and official company annual reports · Updated: /.test(vis) && !/provider is stated/.test(vis), "a production-style source: only the provider stays visible under the heading (" + vis + ")");
+    ok(/<details class="src-more"><summary>About these figures<\/summary><p class="note" style="padding:4px 0 6px">The provider is stated on every record\. "-" means the value is not available; nothing is estimated\.<\/p><\/details>/.test(h2), "and its explanation and the dash note sit in the disclosure, closed by default"); }
   for (const bad of [null, {}, { stocks: [] }]) eq(N.build("TCS", bad), O.build("TCS", bad), "unavailable output is identical");
   for (const s of ["TCS", "ITC", "HDFCBANK", "GAP", "NEG"]) { const mn = N.model(d, s), mo = O.model(d, s); eq(JSON.stringify(mn), JSON.stringify(mo.metrics ? mo : mo), s + ": model is identical"); for (const x of mn.metrics) { eq(JSON.stringify(N.cagr(mn, x.key)), JSON.stringify(O.cagr(mo, x.key)), s + " " + x.key + " CAGR identical"); mn.cols.forEach((c, i) => eq(N.change(mn, i, x.key), O.change(mo, i, x.key), s + " " + x.key + " change[" + i + "] identical")); } }
   const hb = oldHtml.split("<script>").slice(1).map((b) => b.split("</script>")[0]);
