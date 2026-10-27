@@ -380,6 +380,19 @@ def needs_basis_check(stock, statement, today_):
     return bool(fys) and basis_is_stale(max(fys), today_)
 
 
+def run_order(symbols, stocks, today_):
+    """The order one run works through: stocks whose stale consolidated basis is due its one standalone check go first (1-2 calls each, and the
+    check is what refreshes their newest years), then everything else by its oldest fetch, never-fetched first. Before this, a due check waited
+    behind every never-fetched stock of the universe, which took weeks at the run's budget."""
+    def oldest(s):
+        return min([(v or {}).get("fetched") or "" for v in ((stocks.get(s) or {}).get("fetch_state") or {"x": {}}).values()] or [""])
+
+    def due(s):
+        st = stocks.get(s)
+        return bool(st) and any(needs_basis_check(st, statement, today_) for statement in STATEMENTS)
+    return sorted(symbols, key=lambda s: (0 if due(s) else 1, oldest(s), s))
+
+
 def is_fresh(state, today_):
     try:
         return (dt.date.fromisoformat(today_) - dt.date.fromisoformat((state or {}).get("fetched"))).days < REFRESH_DAYS
@@ -796,7 +809,7 @@ def main():
     instruments = load_instruments()
     api = Upstox(token, int(os.environ.get("HISTORY_MAX_CALLS", DEFAULT_MAX_CALLS)))
     errors = []
-    order = sorted(symbols, key=lambda s: min([(v or {}).get("fetched") or "" for v in ((ledger["stocks"].get(s) or {}).get("fetch_state") or {"x": {}}).values()] or [""]))
+    order = run_order(symbols, ledger["stocks"], day)
     pending = 0
     log("Universe:", len(symbols), "stocks | call budget:", api.max_calls)
     for sym in order:

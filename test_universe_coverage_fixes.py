@@ -257,6 +257,27 @@ class FinancialHistoryBasis(unittest.TestCase):
         self.assertIn("consolidated", {r["basis"] for r in s["years"]})           # nothing is deleted
 
 
+class FinancialHistoryRunOrder(unittest.TestCase):
+    """A due standalone check (stale consolidated basis) goes before never-fetched stocks; otherwise the order is the oldest fetch first."""
+    def stock(self, fetched, fys, checked=None):
+        st = {"basis": "consolidated", "fetched": fetched, "error": None}
+        if checked:
+            st["standalone_checked"] = checked
+        return {"years": [{"fy": y, "basis": "consolidated"} for y in fys], "fetch_state": {"income": dict(st), "cash_flow": dict(st)}}
+
+    def test_due_basis_checks_first_then_never_fetched_then_oldest(self):
+        stocks = {"STALEBANK": self.stock("2026-10-16", [2014, 2015, 2016, 2017]),          # consolidated ends FY2017: due its check
+                  "FRESH": self.stock("2026-10-20", [2025, 2026]),
+                  "OLDER": self.stock("2026-10-01", [2025, 2026]),
+                  "CHECKED": self.stock("2026-10-16", [2017], checked="2026-10-17")}          # its one check was made: not due again
+        order = fh.run_order(["NEWA", "FRESH", "OLDER", "STALEBANK", "CHECKED", "NEWB"], stocks, "2026-10-28")
+        self.assertEqual(order, ["STALEBANK", "NEWA", "NEWB", "OLDER", "CHECKED", "FRESH"])
+
+    def test_without_any_due_check_the_order_is_the_previous_one(self):
+        stocks = {"A": self.stock("2026-10-10", [2026]), "B": self.stock("2026-10-01", [2026])}
+        self.assertEqual(fh.run_order(["A", "B", "C"], stocks, "2026-10-28"), ["C", "B", "A"])
+
+
 # ---------------------------------------------------------------- 4. durable processing state
 class ProcessingState(unittest.TestCase):
     def setUp(self):
