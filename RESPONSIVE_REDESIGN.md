@@ -104,16 +104,29 @@ Both check that the guards still detect an unapproved change, by applying `now.r
 | 3 | **Desktop grid** of whole groups, from 1000px only; mobile stays single-column in source order; chart full width. | Layout matrices (both fonts, both themes), content checks, the mobile-table checks, and your visual review of balance. |
 | 4 | **Price chart** in its new width. | Checked where the library loads (your machine), including resize. |
 
+**Stages 1 and 2 proven in a throwaway worktree** (round 6; removed afterwards, never on this branch):
+* 30 decision edits recorded. The first "Overview" in the page (line 489 there) is outside every recorded edit.
+* **Rule that made it work:** inserted opener and closer lines must not contain the word "Overview", including in ids or comments. A first attempt used `sdOverview` and "Overview open" and the probe hit a recorded edit again. Neutral names (`id="sdRatios"`, comment "ratios open") fixed it.
+* `python -m unittest discover -p 'test_*.py'`: **1,811 tests, OK, 1 skipped**. JavaScript: **27 of 27 files pass**.
+* Both guard tests pass, and `test_research_test_batch.py` is byte-identical to `main`.
+* Content checks: 26 page views, 0 problems (snapshot present, all 6 modules placed, section links correct). Stock-table checks: 799 of 799 pass. Screenshots at 390 and 1280px, light and dark, pixel-identical to the branch (grouping alone changes nothing visible).
+* Stage 3 needs a layout decision from you; stage 4 needs a machine where the library loads.
+
 ## Chart library: options (assessment only, nothing changed)
 
 **Evidence:**
 * The page loads `https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js` at runtime. It's pinned to 4.2.0, and `tests/test_chart.js` asserts that version.
 * There is no `integrity` attribute and no local copy. On failure the page shows "Chart library could not be loaded" with no errors.
 * The page uses the v4 API (`createChart`, `addCandlestickSeries`, `addLineSeries`, `addHistogramSeries`). v5 replaced these, so moving to v5 would mean code changes.
-* The package's declared licence is Apache-2.0 ([Cloudsmith listing](https://cloudsmith.com/navigator/npm/lightweight-charts)).
-* The official package README ([v5.0.7 README on unpkg](https://unpkg.com/lightweight-charts@5.0.7/README.md)) says the licence requires naming TradingView as the product creator. A page users can see must carry the attribution notice from the NOTICE file and a link to tradingview.com. The `attributionLogo` chart option can satisfy the link part.
-* **Licensing finding:** the page has no such notice or link today, and does not set `attributionLogo`. I could not confirm whether 4.2.0's README has identical wording or what 4.2.0's default for `attributionLogo` is (that URL was not reachable here). This needs checking regardless of the option chosen.
-* **Not verifiable here:** the file's SRI hash. The file cannot be downloaded in this environment; compute it with `curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+* **Licence, verified at the exact version** (round 6): the official repository `tradingview/lightweight-charts`, tag `v4.2.0` (commit `23c42ebeddde8073e7748e0b709ba61360a04849`, 2024-07-26), cloned read-only into a scratch folder.
+  * `package.json`: `lightweight-charts` `4.2.0`, licence `Apache-2.0`.
+  * `NOTICE`: "TradingView Lightweight Charts™ / Copyright (с) 2023 TradingView, Inc. https://www.tradingview.com/".
+  * README at that tag: the licence requires naming TradingView as the product creator. The page users see must carry the attribution notice from `NOTICE` and a link to https://www.tradingview.com/. The `attributionLogo` chart option "will satisfy the link requirement".
+  * `src/api/options/layout-options-defaults.ts`: `attributionLogo: true` by default. The logo is a link to tradingview.com titled "Charting by TradingView".
+* **What the page does today:** the chart's `layout` options set only `background`, so the default logo (and therefore the link) appears whenever the chart loads. **The NOTICE attribution text is not on the page.** That is the remaining licence gap.
+* **SRI hash: not computed.** The exact file could not be obtained here: the npm registry is not reachable from this environment, and the GitHub release/API route was refused for this session. I did not work around either refusal or guess a hash. The tag's source is not the built `dist` file, so it cannot be hashed from the clone. Compute it on a networked machine from two CDNs and check that they agree:
+  `curl -s https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js | openssl dgst -sha384 -binary | openssl base64 -A`
+  (and the same with `https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js`).
 
 | | 1. CDN + SRI (keep unpkg, exact version, `integrity` + `crossOrigin="anonymous"`) | 2. Vendor a reviewed copy (with LICENSE and NOTICE) | 3. Another available dependency |
 |---|---|---|---|
@@ -125,7 +138,11 @@ Both check that the guards still detect an unapproved change, by applying `now.r
 | Change needed | Two attributes in the chart script (protected: an approved edit), the `test_chart.js` assertion for the integrity value, and a hash computed on a networked machine. | A new file, plus a change to the protected `update.yml` site-build step so the file is copied into `_site` (workflow approval), plus the URL change in the chart script. | A new chart implementation. |
 | Impact on the chart | None if the hash is right. | None. | Total rewrite. |
 
-**Recommendation: option 1 now, plus the attribution notice and link.** It's the smallest change that closes the integrity gap, it needs no workflow change, and it keeps the exact library the chart was built against. Option 2 is the stronger long-term choice if you want the chart to work offline or without a third-party request; it needs a workflow approval. Nothing was implemented.
+**Recommendation: option 1, with the attribution done first.** Nothing was implemented; both parts edit protected chart code and need your approval.
+1. **Attribution (can be done now):** one small visible line under the price chart: "Charts: TradingView Lightweight Charts™, Copyright © 2023 TradingView, Inc." with a link to https://www.tradingview.com/. Keep `attributionLogo` at its default (on). Make it one recorded page edit, add a `test_chart.js` assertion that the line and link exist, and add a check that the chart options never set `attributionLogo:false`.
+2. **SRI (needs the hash from a networked machine):** add `integrity="sha384-…"` and `crossOrigin="anonymous"` to the script the chart code creates. Update the `test_chart.js` assertion to expect that exact value, then check where the library loads that the chart renders and that a wrong hash shows the existing "Chart library could not be loaded" fallback.
+
+Option 2 (vendoring) remains the stronger long-term choice for offline use; it needs a workflow approval.
 
 ## Data verification
 
@@ -177,6 +194,26 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 
 **What could not run:** the price chart with its library, Manrope, Safari, Firefox and real devices.
 
+### Which tests use which data (round 6)
+
+A passing test here does not show the feature works with live production data; no test fetches production data.
+
+| Data | Tests |
+|---|---|
+| **Committed real files in the repository** (read, never written) | `test_financial_history_official.py`, `test_financial_history_storage.py` (`official_financial_records.json`); `test_stock_directory.py` (`reference_sources.json`); `tests/test_profiles.js`, `test_research.js` (`company_profiles.json`); `tests/test_growth_events.js` (`data/` and `out/growth_events.json`) |
+| **Workflow and source text only** (they mention `stocklens-data` or file names in assertions about the workflow or code, and read no market data) | `test_coverage_probe.py`, `test_historical_handoff.py`, `test_history_advance.py`, `test_shareholding_storage.py`, `test_cache_provenance.py`, `test_nifty_refresh.py`; `tests/test_company_search.js`, `test_investor_snapshot.js`, `test_checklist.js`, `test_global_navigation.js` (they name `company_profiles.json` but load inline fixtures) |
+| **Inline fixtures, stubs and mocks** | All other unit tests. `test_financial_history.py` uses a temp `DATA_DIR` and removes the provider token; `tests/test_live_public.py` uses `mock.patch.dict` on the environment. Neither makes a network call. |
+| **Browser: read-only real copy** (`origin/stocklens-data` at `6f9e7dc`, via `git show`) | `browser_content_checks.py`, `browser_checks.py` (real pages) |
+| **Browser: synthetic** | `browser_screener_checks.py`, `browser_screener_scale_checks.py` (520 stocks with a Python oracle) |
+| **Browser: combined** (real, plus synthetic and a quarterly fixture where no real file is in git) | `browser_mobile_tables_checks.py`, `browser_checks.py` (combined pages), `browser_content_checks.py` |
+
+**Remaining verification gaps:**
+* Real fundamentals, financials, scans, FII/DII and Quarterly Results in a browser.
+* The price chart with its library loaded, and the attribution logo.
+* The Manrope font.
+* Safari, Firefox and real devices.
+* The SRI hash.
+
 ## Protections
 
 * **Recorded page edits:** every `index.html` edit is one of the `decision_edits` in `tests/approved_page_edits.json`, generated by `tests/page_edit_manifest.py` from the exact difference with `66fe34a`.
@@ -203,7 +240,7 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 
 ## Known defects, risks and unverified areas
 
-* **Chart library:** runtime CDN request without SRI; attribution notice and link missing (licence requirement). Needs your decision.
+* **Chart library:** runtime CDN request without SRI (hash not computable here). The NOTICE attribution text is missing from the page (a licence requirement). The link part is met by the default TradingView logo, but only when the chart loads. Needs your decision.
 * **Real data gaps:** the screen with data, stock tiles, Research and Checklist fundamentals, home market sections and Quarterly Results were checked only with synthetic or fixture data.
 * **Phone page length:** the shareholding history and Financial History are now long card lists (all values visible; nothing scrolls sideways).
 * **Sector filter** will offer few sectors with real data until the sector approval gate opens.
@@ -213,8 +250,8 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 
 ## Needs your approval or decision
 
-1. Chart library: option 1 (recommended) or 2, plus the attribution notice and link.
-2. The two-column stock page staged plan, and a layout for stage 3.
+1. Chart library: approve step 1 (the visible attribution line, as one recorded edit plus `test_chart.js` assertions). Separately, approve step 2 (SRI) once you supply a hash computed on a networked machine from both CDNs.
+2. Two-column stock page: approve stage 1 (heading helpers accept `.sd-group`, behaviour-neutral) and stage 2 (grouping lines). Choose a stage-3 layout later.
 3. Any release action (push, pull request, merge, deploy).
 
 ## How to review locally (separate worktree)
