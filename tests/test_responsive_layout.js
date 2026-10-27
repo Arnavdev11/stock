@@ -35,14 +35,18 @@ ok(/\{color:#0F1524!important\}\}\n:root\[data-theme="dark"\]/.test(css), "the s
 ok(/\na\{color:var\(--ac\)\}#detail details>summary\{min-height:24px;/.test(css), "links default to the accent (the browser's blue was 1.72:1 in dark mode on the company-profile links) and disclosure toggles are 24px targets");
 ok(/@container \(max-width:680px\)\{#detailShareholding table\.mh,/.test(html), "major shareholders switch to cards below 680px, so long share counts (e.g. 2,59,54,99,419) never break in a squeezed 18% column");
 ok(css.includes("#finHistTable td:first-child{min-width:10.5rem}"), "Financial History's row labels keep 10.5rem on a phone (they wrapped to six lines in 97px); the table already scrolls sideways in its own box");
-{ const mod = (html.split("/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards")[1] || "").split("</script>")[0];
+{ const mod = (html.split("/* Responsive redesign: on a phone the Quarterly Results, Investment Checklist, Financial History and shareholding quarter tables become cards")[1] || "").split("</script>")[0];
   ok(!html.includes('id="stocklens-cards"'), "no extra script element (the page's script count is pinned): the helper lives at the end of the screen script");
-  ok(mod && /var SEL="#detailQuarterly table,#detailChecklist table";/.test(mod), "the stock-page card helper targets only Quarterly Results and the Investment Checklist");
+  ok(mod && /var SEL="#detailQuarterly table,#detailChecklist table",GRID="#finHistTable,#shTable";/.test(mod), "the stock-page card helper targets only Quarterly Results, the Investment Checklist, Financial History and the shareholding quarter table");
   ok(!/fetch\(|innerHTML|textContent=|\.remove\(|insertBefore|appendChild/.test(mod), "it reads nothing, writes no content and moves nothing: it only adds a class and data-label attributes");
+  ok(/GRID="#finHistTable,#shTable"/.test(mod), "Financial History and the shareholding quarter table get grid cards too");
+  ok(/@container page \(max-width:679px\)\{\n#finHistTable\.sl-cardg\{min-width:0!important;width:100%\}/.test(css), "Financial History (635px, five years) becomes cards below a 680px page");
+  ok(/#shTable\.sl-cardg\{min-width:0!important;width:100%\}/.test(css) && /#shTable\.sl-cardg \.sh-subin\{position:static;width:auto;max-width:none\}/.test(css), "shareholding quarters are cards below a 600px page; each Source note returns to the flow inside its card");
+  ok(/#shTable\.sl-cardg tr:has\(\+tr\.sh-sub\)\{margin-bottom:0;border-bottom:0;border-radius:10px 10px 0 0\}/.test(css), "a quarter's Source note joins its card (browsers without :has() show it as its own strip)");
   ok(/observe\(d,\{childList:true,subtree:true\}\)/.test(mod), "it relabels when those modules redraw");
   ok(/@container page \(max-width:599px\)\{\ntable\.sl-cardt\{min-width:0!important;width:100%\}/.test(css), "below a 600px page those tables are cards (no column starts off-screen)");
   ok(/table\.sl-cardt td:before\{content:attr\(data-label\)/.test(css) && /#detailChecklist table\.sl-cardt td:empty\{display:none\}/.test(css), "every value keeps its column name; empty notes take no space");
-  ok(html.indexOf("Responsive redesign: on a phone the Quarterly Results") < html.lastIndexOf("<script>"), "it is not in the last classic script block (tests read that block as the Phase 2B tabs)"); }
+  ok(html.indexOf("Responsive redesign: on a phone the Quarterly Results, Investment Checklist") < html.lastIndexOf("<script>"), "it is not in the last classic script block (tests read that block as the Phase 2B tabs)"); }
 ok(html.includes("#compareView th a{display:inline-block;min-height:24px;min-width:24px;padding:4px 0}"), "the comparison table's stock links are 24px targets (in the compare module's own CSS)");
 ok(/#detailCompare a\{[^}]*color:var\(--ac\)/.test(css), "the stock page's Compare link uses the accent (the browser's default link blue was 1.94:1 in dark mode)");
 

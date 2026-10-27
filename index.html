@@ -70,6 +70,21 @@ table.sl-cardt td:first-child{display:block;text-align:left;font-weight:700;bord
 table.sl-cardt td:empty{display:none}
 #detailChecklist table.sl-cardt tr{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);column-gap:14px}#detailChecklist table.sl-cardt td:first-child,#detailChecklist table.sl-cardt td:nth-child(4){grid-column:1/-1}
 #detailChecklist table.sl-cardt td:not(:first-child){display:block;text-align:left}#detailChecklist table.sl-cardt td:not(:first-child):before{display:block;max-width:none}#detailChecklist table.sl-cardt td:empty{display:none}
+#shTable.sl-cardg{min-width:0!important;width:100%}#shTable.sl-cardg thead{display:none}#shTable.sl-cardg,#shTable.sl-cardg tbody,#shTable.sl-cardg tr,#shTable.sl-cardg td{display:block}
+#shTable.sl-cardg tbody tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(6.25rem,100%),1fr));gap:0 12px;border:1px solid var(--line);border-radius:10px;padding:4px 12px 10px;margin:0 0 8px;background:var(--card)}
+#shTable.sl-cardg td{border:0;padding:8px 0 0;text-align:left;min-width:0;overflow-wrap:anywhere}#shTable.sl-cardg td:before{content:attr(data-label);display:block;color:var(--mute);font-weight:600;font-size:.76rem}
+#shTable.sl-cardg td:first-child{grid-column:1/-1;font-weight:700;padding:6px 0;border-bottom:1px solid var(--line);min-width:0}#shTable.sl-cardg td:first-child:before,#shTable.sl-cardg td[colspan]:before{content:none}
+#shTable.sl-cardg td[colspan]{grid-column:1/-1;font-weight:400;border:0;padding:4px 0 0}
+#shTable.sl-cardg tr.sh-sub{display:block;border-top:0;border-radius:0 0 10px 10px;padding:0 12px 8px}#shTable.sl-cardg tr:has(+tr.sh-sub){margin-bottom:0;border-bottom:0;border-radius:10px 10px 0 0}
+#shTable.sl-cardg .sh-subin{position:static;width:auto;max-width:none}
+}
+/* Financial History is 635px wide (five years), so its cards start below a 680px page */
+@container page (max-width:679px){
+#finHistTable.sl-cardg{min-width:0!important;width:100%}#finHistTable.sl-cardg thead{display:none}#finHistTable.sl-cardg,#finHistTable.sl-cardg tbody,#finHistTable.sl-cardg tr,#finHistTable.sl-cardg td{display:block}
+#finHistTable.sl-cardg tbody tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(6.25rem,100%),1fr));gap:0 12px;border:1px solid var(--line);border-radius:10px;padding:4px 12px 10px;margin:0 0 8px;background:var(--card)}
+#finHistTable.sl-cardg td{border:0;padding:8px 0 0;text-align:left;min-width:0;overflow-wrap:anywhere}#finHistTable.sl-cardg td:before{content:attr(data-label);display:block;color:var(--mute);font-weight:600;font-size:.76rem}
+#finHistTable.sl-cardg td:first-child{grid-column:1/-1;font-weight:700;padding:6px 0;border-bottom:1px solid var(--line);min-width:0}#finHistTable.sl-cardg td:first-child:before,#finHistTable.sl-cardg td[colspan]:before{content:none}
+#finHistTable.sl-cardg td[colspan]{grid-column:1/-1;font-weight:400;border:0;padding:4px 0 0}
 }
 #globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
 #globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1200px;margin:0 auto;padding:8px 18px}
@@ -374,14 +389,14 @@ FD.forEach(x=>{if(typeof x.symbol==="string")FBY[x.symbol]=x});
 st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
 catch(e){st.textContent="Fundamentals not loaded yet.";fel("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';const cnt=fel("fsCount");if(cnt)cnt.textContent="";return}
 fsectors();fund()})();
-/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards (CSS under "Stock page cards").
-   This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the modules that draw
-   them, and it reads nothing. Wider tables that compare years (Financial History, Shareholding) keep their sideways scroll. */
+/* Responsive redesign: on a phone the Quarterly Results, Investment Checklist, Financial History and shareholding quarter tables become cards (CSS under
+   "Stock page cards"). This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the
+   modules that draw them, and it reads nothing. Every cell stays in the page; on desktop the tables are unchanged. */
 (function(){
 "use strict";
-var SEL="#detailQuarterly table,#detailChecklist table";
-function label(){var ts=document.querySelectorAll?document.querySelectorAll(SEL):[];
-  for(var i=0;i<ts.length;i++){var t=ts[i];if(t.className.indexOf("sl-cardt")<0)t.className=(t.className?t.className+" ":"")+"sl-cardt";
+var SEL="#detailQuarterly table,#detailChecklist table",GRID="#finHistTable,#shTable";   /* list cards; grid cards (one card per measure or quarter, values in a grid) */
+function label(){var ts=document.querySelectorAll?[].slice.call(document.querySelectorAll(SEL)).concat([].slice.call(document.querySelectorAll(GRID))):[];
+  for(var i=0;i<ts.length;i++){var t=ts[i],k=/^(finHistTable|shTable)$/.test(t.id)?"sl-cardg":"sl-cardt";if(t.className.indexOf(k)<0)t.className=(t.className?t.className+" ":"")+k;
     var hs=t.querySelectorAll("thead th"),names=[];for(var j=0;j<hs.length;j++)names.push(String(hs[j].textContent||"").trim());
     var rows=t.querySelectorAll("tbody tr");
     for(var r=0;r<rows.length;r++){var cells=rows[r].children;for(var c=0;c<cells.length;c++){var n=names[c]||"";if(n&&cells[c].getAttribute("data-label")!==n)cells[c].setAttribute("data-label",n)}}}}
