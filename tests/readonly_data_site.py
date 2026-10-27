@@ -4,7 +4,8 @@ READ-ONLY copy of already-published real data, assembled into a local preview si
     python tests/readonly_data_site.py <empty-output-dir> [data-ref]      (data-ref defaults to origin/stocklens-data)
 
 Reads, with `git show` only (no fetch, no network, nothing written to any branch), the files the daily workflow itself copies from the data
-branch into the site (historical/historical.json, historical/shards/*.json, stock_directory.json) plus the committed company_profiles.json,
+branch into the site (historical/historical.json, historical/shards/*.json, stock_directory.json) plus the committed company_profiles.json
+and out/growth_events.json,
 and builds out/financial_history.json and out/shareholding.json from the two ledgers with the updaters' own offline build_output() functions
 (no provider, no token). It refuses to write inside this repository's out/ or data/ folders.
 
@@ -45,6 +46,7 @@ def build(dest, ref="origin/stocklens-data"):
     used["out/by_symbol/historical/*.json"] = "copied: %s historical/shards/" % ref
     (out / "stock_directory.json").write_bytes(git_show(ref, "stock_directory.json")); used["out/stock_directory.json"] = "copied: %s stock_directory.json" % ref
     shutil.copyfile(ROOT / "company_profiles.json", out / "company_profiles.json"); used["out/company_profiles.json"] = "copied: committed company_profiles.json"
+    shutil.copyfile(ROOT / "out" / "growth_events.json", out / "growth_events.json"); used["out/growth_events.json"] = "copied: committed out/growth_events.json (the workflow publishes out/*.json)"
     import financial_history_updater as FH          # imported only for its offline build_output(); main() (the provider run) is never called
     import shareholding_updater as SH
     import universe
