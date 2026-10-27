@@ -60,6 +60,17 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 th .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}
 @container page (max-width:1149px){.tabs button,.mk-tabs button,.chips button,select,.btn{min-height:44px}}
 a{color:var(--ac)}#detail details>summary{min-height:24px;padding:2px 0;cursor:pointer}#finHistTable td:first-child{min-width:10.5rem}
+/* Stock page cards: below a 600px page the Quarterly Results and Investment Checklist rows are cards; every value keeps its column name */
+@container page (max-width:599px){
+table.sl-cardt{min-width:0!important;width:100%}table.sl-cardt thead{display:none}table.sl-cardt,table.sl-cardt tbody,table.sl-cardt tr,table.sl-cardt td{display:block}
+table.sl-cardt tr{border:1px solid var(--line);border-radius:10px;padding:4px 12px;margin:0 0 8px;background:var(--card)}
+table.sl-cardt td{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;padding:6px 0;text-align:right;overflow-wrap:anywhere;min-width:0}
+table.sl-cardt td:before{content:attr(data-label);flex:0 0 auto;max-width:50%;text-align:left;color:var(--mute);font-weight:600;font-size:.8rem}
+table.sl-cardt td:first-child{display:block;text-align:left;font-weight:700;border-bottom:1px solid var(--line)}table.sl-cardt td:first-child:before{content:none}
+table.sl-cardt td:empty{display:none}
+#detailChecklist table.sl-cardt tr{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);column-gap:14px}#detailChecklist table.sl-cardt td:first-child,#detailChecklist table.sl-cardt td:nth-child(4){grid-column:1/-1}
+#detailChecklist table.sl-cardt td:not(:first-child){display:block;text-align:left}#detailChecklist table.sl-cardt td:not(:first-child):before{display:block;max-width:none}#detailChecklist table.sl-cardt td:empty{display:none}
+}
 #globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
 #globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1200px;margin:0 auto;padding:8px 18px}
 #globalBar .gb-brand{flex:0 0 auto;display:inline-flex;align-items:center;min-height:44px;font-weight:800;font-size:1.1rem;color:var(--ink);text-decoration:none}
@@ -3444,6 +3455,22 @@ function start(g,env){
 window.SLLive={gate:gate,publicGate:publicGate,publicTestGate:publicTestGate,PUBLIC_TEST_ORIGIN:PUBLIC_TEST_ORIGIN,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
+})();
+</script>
+<script type="module" id="stocklens-cards">
+/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards (CSS under "Stock page cards").
+   This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the modules that draw
+   them, and it reads nothing. Wider tables that compare years (Financial History, Shareholding) keep their sideways scroll. */
+(function(){
+"use strict";
+var SEL="#detailQuarterly table,#detailChecklist table";
+function label(){var ts=document.querySelectorAll?document.querySelectorAll(SEL):[];
+  for(var i=0;i<ts.length;i++){var t=ts[i];if(t.className.indexOf("sl-cardt")<0)t.className=(t.className?t.className+" ":"")+"sl-cardt";
+    var hs=t.querySelectorAll("thead th"),names=[];for(var j=0;j<hs.length;j++)names.push(String(hs[j].textContent||"").trim());
+    var rows=t.querySelectorAll("tbody tr");
+    for(var r=0;r<rows.length;r++){var cells=rows[r].children;for(var c=0;c<cells.length;c++){var n=names[c]||"";if(n&&cells[c].getAttribute("data-label")!==n)cells[c].setAttribute("data-label",n)}}}}
+var d=document.getElementById&&document.getElementById("detail");
+if(d&&typeof MutationObserver!=="undefined"){label();new MutationObserver(label).observe(d,{childList:true,subtree:true})}
 })();
 </script>
 <script>

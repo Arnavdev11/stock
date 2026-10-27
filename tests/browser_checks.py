@@ -44,6 +44,10 @@ PROBE = r"""
   out.offStrip = [];
   for (const strip of document.querySelectorAll("[role=tablist],.tabs,.chips")) { if (!vis(strip) || !scrolls(strip)) continue; const S = strip.getBoundingClientRect();
     for (const b of strip.querySelectorAll("button,[role=tab],a")) { if (!vis(b)) continue; const r = b.getBoundingClientRect(); if (r.right > S.right + 1 || r.left < S.left - 1) out.offStrip.push(nm(strip) + " > " + (b.textContent || "").trim().slice(0, 24)); } }
+  /* tables wider than their box: the stock-page card tables must always fit (a problem); others that scroll sideways are listed for review (information) */
+  out.cardTablesWide = [...document.querySelectorAll("table.sl-cardt")].filter((t) => vis(t) && t.parentElement && t.getBoundingClientRect().width > t.parentElement.getBoundingClientRect().width + 1).map((t) => (t.closest("section[id]") || {}).id);
+  out.scrollTables = [...document.querySelectorAll("table")].filter((t) => vis(t) && !t.classList.contains("sl-cardt")).map((t) => { let x = t.parentElement; while (x && !scrolls(x)) x = x.parentElement;
+    return x && t.getBoundingClientRect().width > x.getBoundingClientRect().width + 1 ? (t.id || (t.closest("section[id]") || {}).id || "table") : null; }).filter(Boolean);
   /* a short number (e.g. -0.71% or 12,65,567.21) that wraps onto a second line */
   const NUMRE = /^[+\-\u2212]?\u20b9?[\d,]+(\.\d+)?\s?(%|x|pts)?$/;
   out.brokenNumbers = [...document.querySelectorAll("span,b,td,div,small")].filter((e) => vis(e) && e.children.length === 0 && NUMRE.test((e.textContent || "").trim()))
@@ -149,7 +153,7 @@ if __name__ == "__main__":
     names = sys.argv[sys.argv.index("--pages") + 1].split(",") if "--pages" in sys.argv else [n for n, _ in PAGES]
     res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv, schemes=("light", "dark"), pages=[(n, ALL_PAGES[n]) for n in names],
               font=sys.argv[sys.argv.index("--font") + 1] if "--font" in sys.argv else None)
-    bad = [r for r in res if r["overflowX"] or r["spill"] or r["clipped"] or r["offStrip"] or r["brokenNumbers"] or r["under24"] or r["lowContrastCount"]
+    bad = [r for r in res if r["overflowX"] or r["cardTablesWide"] or r["spill"] or r["clipped"] or r["offStrip"] or r["brokenNumbers"] or r["under24"] or r["lowContrastCount"]
            or r["consoleErrors"] or (r.get("bar") or {}).get("overlaps") or (r.get("search") and not r["search"]["placeholderFits"])]
     for r in res:
         b = r.get("bar") or {}
