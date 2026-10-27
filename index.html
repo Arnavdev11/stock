@@ -4,12 +4,12 @@
 <title>StockLens India – Screener platform plan and demo</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#F3F6FA;--card:#fff;--ink:#14213D;--mute:#5B6784;--line:#DCE3EE;--up:#0E8F5E;--dn:#D13B3B;--ac:#3B4CCA;--acs:#E6E9FB;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root{--bg:#F3F6FA;--card:#fff;--ink:#14213D;--mute:#5B6784;--line:#DCE3EE;--up:#0B7A50;--dn:#C23333;--ac:#3B4CCA;--acs:#E6E9FB;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1524;--card:#182036;--ink:#E8ECF6;--mute:#9AA6C4;--line:#2A3552;--up:#3DD598;--dn:#FF6B6B;--ac:#8C9AFF;--acs:#242E55}}
 :root[data-theme="dark"]{--bg:#0F1524;--card:#182036;--ink:#E8ECF6;--mute:#9AA6C4;--line:#2A3552;--up:#3DD598;--dn:#FF6B6B;--ac:#8C9AFF;--acs:#242E55}
 *{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Manrope,system-ui,sans-serif;line-height:1.55}
-.w{max-width:1040px;margin:0 auto;padding:0 18px}
+.w{max-width:1200px;margin:0 auto;padding:0 18px;container:page/inline-size}
 nav{display:flex;gap:18px;align-items:center;padding:14px 0;flex-wrap:wrap}
 nav b{font-weight:800;font-size:1.15rem;margin-right:auto}nav a{color:var(--mute);text-decoration:none;font-size:.9rem}
 nav a:hover,a:focus-visible{color:var(--ac)}
@@ -54,20 +54,26 @@ select{font:600 .9rem Manrope,sans-serif;padding:6px 10px;border-radius:6px;bord
 #ftable td:first-child,#t2a td:first-child,#t2b td:first-child,#t2 td:first-child,#t3a td:first-child,#t3b td:first-child{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
 td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underline}
 #detail{display:none}.detail-mode .w>*:not(#detail){display:none!important}.detail-mode #detail{display:block}
+/* Responsive redesign: readable selected states in dark mode, and touch targets (24px everywhere, 44px at narrow widths) */
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn,:root:not([data-theme="light"]) .tabs button[aria-selected=true],:root:not([data-theme="light"]) .chips button[aria-pressed=true],:root:not([data-theme="light"]) #globalBar .gb-sections a[aria-current=true],:root:not([data-theme="light"]) button[data-tf][aria-pressed=true]{color:#0F1524!important}}
+:root[data-theme="dark"] .btn,:root[data-theme="dark"] .tabs button[aria-selected=true],:root[data-theme="dark"] .chips button[aria-pressed=true],:root[data-theme="dark"] #globalBar .gb-sections a[aria-current=true],:root[data-theme="dark"] button[data-tf][aria-pressed=true]{color:#0F1524!important}
+th .lk{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}
+@container page (max-width:1149px){.tabs button,.mk-tabs button,.chips button,select,.btn{min-height:44px}}
 #globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
-#globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1040px;margin:0 auto;padding:8px 18px}
-#globalBar .gb-brand{flex:0 0 auto;font-weight:800;font-size:1.1rem;color:var(--ink);text-decoration:none}
-#globalBar .gb-search{flex:0 1 190px;min-width:0;max-width:380px;margin-left:auto}
+#globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1200px;margin:0 auto;padding:8px 18px}
+#globalBar .gb-brand{flex:0 0 auto;display:inline-flex;align-items:center;min-height:44px;font-weight:800;font-size:1.1rem;color:var(--ink);text-decoration:none}
+#globalBar .gb-search{flex:1 0 15.5rem;min-width:0;max-width:23.75rem;margin-left:auto}
 #globalBar #stockSearch{margin:0}#globalBar #stockSearch .ss-box{padding:0;border:0;background:none;border-radius:0}
-#globalBar #stockSearch input{padding:8px 10px;font-size:.9rem}#globalBar #stockSearch .ss-list{max-height:50vh;overflow-y:auto}
-#globalBar .gb-toggle{display:none;align-items:center;min-height:40px;max-width:100%;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:600 .88rem Manrope,sans-serif;cursor:pointer;overflow-wrap:anywhere}
-#globalBar .gb-sections{display:block;padding:0;gap:0;flex:1 1 0;min-width:0}#globalBar .gb-sections ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-start;gap:2px 2px}
-#globalBar .gb-sections a{display:block;min-height:36px;padding:8px 10px;border-radius:8px;color:var(--mute);font-size:.88rem;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
+#globalBar #stockSearch input{padding:8px 10px;font-size:.9rem;min-height:40px}#globalBar #stockSearch .ss-list{max-height:50vh;overflow-y:auto}
+#globalBar .gb-toggle{display:none;align-items:center;min-height:44px;max-width:100%;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:600 .88rem Manrope,sans-serif;cursor:pointer;overflow-wrap:anywhere}
+#globalBar .gb-sections{display:block;padding:0;gap:0;flex:0 1 auto;min-width:0}#globalBar .gb-sections ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-start;gap:2px 2px}
+#globalBar .gb-sections a{display:block;min-height:36px;padding:8px 9px;border-radius:8px;color:var(--mute);font-size:.88rem;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
 #globalBar .gb-sections a:hover{color:var(--ac)}#globalBar .gb-sections a[aria-current=true]{background:var(--ac);color:#fff}
-@container (max-width:1000px){#globalBar .gb-toggle{display:inline-flex;margin-left:auto}#globalBar .gb-search{flex:1 1 100%;max-width:none;order:3}
+@container (max-width:1149px){#globalBar .gb-toggle{display:inline-flex;order:2}#globalBar .gb-search{flex:1 1 12rem;max-width:none;order:1}#globalBar #stockSearch input{min-height:44px}
 #globalBar .gb-sections{flex:1 1 100%;order:4;display:none}#globalBar[data-open] .gb-sections{display:block}
 #globalBar .gb-sections ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:6px}
 #globalBar .gb-sections a{min-height:44px;padding:11px 12px;border:1px solid var(--line);background:var(--card)}#globalBar .gb-sections a[aria-current=true]{border-color:var(--ac)}}
+@container (max-width:599px){#globalBar .gb-toggle{margin-left:auto}#globalBar .gb-search{flex:1 1 100%;max-width:none;order:3}}
 </style><style id="marketCss">
 .mk-sec{margin:0 0 20px;container-type:inline-size}
 .mk-h1{font-size:1.45rem;line-height:1.2;margin:.8em 0 .3em;max-width:none}
