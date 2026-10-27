@@ -59,6 +59,7 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 :root[data-theme="dark"] .btn,:root[data-theme="dark"] .tabs button[aria-selected=true],:root[data-theme="dark"] .chips button[aria-pressed=true],:root[data-theme="dark"] #globalBar .gb-sections a[aria-current=true],:root[data-theme="dark"] button[data-tf][aria-pressed=true]{color:#0F1524!important}
 th .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}
 @container page (max-width:1149px){.tabs button,.mk-tabs button,.chips button,select,.btn{min-height:44px}}
+a{color:var(--ac)}#detail details>summary{min-height:24px;padding:2px 0;cursor:pointer}
 #globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
 #globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1200px;margin:0 auto;padding:8px 18px}
 #globalBar .gb-brand{flex:0 0 auto;display:inline-flex;align-items:center;min-height:44px;font-weight:800;font-size:1.1rem;color:var(--ink);text-decoration:none}
@@ -1683,7 +1684,7 @@ function loadAll(){
   DATA=Promise.all([j("out/fundamentals.json"),j("out/financial_history.json"),j("out/historical.json")]).then(function(a){return{val:a[0],hist:a[1],prices:a[2]}});
   return DATA}
 var box=null,SEL=[],KNOWN={},TOKEN=0,STYLED=false;
-var CSS="#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}"+
+var CSS="#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}#compareView th a{display:inline-block;min-height:24px;min-width:24px;padding:4px 0}"+
   "#compareView th[scope=row]{color:var(--ink);font-weight:600;white-space:nowrap}#compareView td.n{font-variant-numeric:tabular-nums}#compareView thead th a{color:var(--ac);font-weight:700;text-decoration:none}"+
   "#compareView sup{font-size:.62rem;color:var(--mute);margin-left:3px}#compareView td small{color:var(--mute);display:block;white-space:nowrap}#compareView input:disabled+span{opacity:.55}"+
   "#compareView table{min-width:0}#compareView .scroll{overflow-x:auto}@media(max-width:640px){#compareView th,#compareView td{padding:9px 10px;font-size:.85rem}}";
@@ -2446,7 +2447,7 @@ var STYLE='#detailShareholding .sh-p{padding:0 0 6px;margin:0;overflow-wrap:anyw
  +'#detailShareholding table.mh th,#detailShareholding table.mh td{overflow-wrap:anywhere;word-break:break-word;min-width:0;vertical-align:top;text-align:left}#detailShareholding table.mh th.n,#detailShareholding table.mh td.n{text-align:right;font-variant-numeric:tabular-nums}'
  +'#detailShareholding .mh-note{margin-top:6px;font-size:.8rem}'
  +'#detailShareholding [data-sh="major"]{container-type:inline-size}'
- +'@container (max-width:560px){#detailShareholding table.mh,#detailShareholding table.mh tbody,#detailShareholding table.mh tr,#detailShareholding table.mh td{display:block;width:100%;max-width:100%;box-sizing:border-box}'
+ +'@container (max-width:680px){#detailShareholding table.mh,#detailShareholding table.mh tbody,#detailShareholding table.mh tr,#detailShareholding table.mh td{display:block;width:100%;max-width:100%;box-sizing:border-box}'
  +'#detailShareholding table.mh thead{display:none}#detailShareholding table.mh tr{padding:8px 0;border-bottom:1px solid var(--line)}#detailShareholding table.mh td{padding:1px 0;border:0;text-align:left}'
  +'#detailShareholding table.mh td.n{text-align:left}#detailShareholding table.mh td.mh-h{font-weight:600}#detailShareholding table.mh td.mh-c,#detailShareholding table.mh td.mh-p{display:inline;width:auto}#detailShareholding table.mh td.mh-c::after{content:" · ";color:var(--mute)}'
  +'#detailShareholding table.mh td.mh-p{font-weight:600}#detailShareholding table.mh td.mh-s{color:var(--mute)}#detailShareholding table.mh td.mh-s::before{content:"Shares: "}}'

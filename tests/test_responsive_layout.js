@@ -32,6 +32,9 @@ for (const sel of [".btn", ".tabs button[aria-selected=true]", ".chips button[ar
   ok(css.includes(':root[data-theme="dark"] ' + sel) && css.includes(':root:not([data-theme="light"]) ' + sel), "dark-mode selected text covers " + sel + " (explicit dark theme and the system setting)");
 }
 ok(/\{color:#0F1524!important\}\}\n:root\[data-theme="dark"\]/.test(css), "the system-setting rule sets the dark text");
+ok(/\na\{color:var\(--ac\)\}#detail details>summary\{min-height:24px;/.test(css), "links default to the accent (the browser's blue was 1.72:1 in dark mode on the company-profile links) and disclosure toggles are 24px targets");
+ok(/@container \(max-width:680px\)\{#detailShareholding table\.mh,/.test(html), "major shareholders switch to cards below 680px, so long share counts (e.g. 2,59,54,99,419) never break in a squeezed 18% column");
+ok(html.includes("#compareView th a{display:inline-block;min-height:24px;min-width:24px;padding:4px 0}"), "the comparison table's stock links are 24px targets (in the compare module's own CSS)");
 ok(/#detailCompare a\{[^}]*color:var\(--ac\)/.test(css), "the stock page's Compare link uses the accent (the browser's default link blue was 1.94:1 in dark mode)");
 
 // --- the desktop search box keeps room for its placeholder

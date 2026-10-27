@@ -70,7 +70,7 @@ PROBE = r"""
                    placeholderFits: need <= have + 0.5, need: Math.round(need), have: Math.round(have) };
   } else out.search = null;
   const ctl = [...document.querySelectorAll("a[href],button,input,select,summary,[role=tab]")].filter(vis).filter((e) => !e.closest("table thead") || true);
-  const small = (e, n) => { const r = e.getBoundingClientRect(); return r.height < n || r.width < n; };
+  const small = (e, n) => { const l = e.tagName === "INPUT" && e.closest("label"), r = (l || e).getBoundingClientRect(); return r.height < n || r.width < n; };   /* an input inside its label: the label is the target */
   const label = (e) => (e.id ? "#" + e.id : e.tagName.toLowerCase()) + ":" + (e.textContent || e.value || e.getAttribute("aria-label") || "").trim().slice(0, 24);
   const inline = (e) => e.tagName === "A" && getComputedStyle(e).display === "inline" && e.closest("p,li,td,small,span");   /* links inside running text are exempt under WCAG 2.5.8 */
   out.controls = ctl.length;
