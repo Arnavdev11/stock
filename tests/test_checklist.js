@@ -274,7 +274,10 @@ const E = (title) => new Map();  // placeholder to keep the section helpers belo
   await t.nav(""); eq(t.ids(), ["detailResearch", "detailChecklist"], "back to the dashboard: nothing is added or duplicated (the hidden detail view is left as the Stock Detail script leaves it)");
   t = await boot("#stock=TCS", FILES(), { delay: 40, settle: 40 }); eq(t.ids(), ["detailResearch", "detailChecklist"], "before the data arrives: both placeholders are placed, research first"); ok(/Loading/.test(t.check().innerHTML) && !/<table>/.test(t.check().innerHTML), "before the data arrives: only the title and a Loading line, no rows");
   await sleep(500); ok(/<table>/.test(t.check().innerHTML) && !/Loading/.test(t.check().innerHTML), "after the data arrives: the rows replace the placeholder"); eq(t.ids(), ["detailResearch", "detailChecklist"], "order unchanged after painting");
-  t = await boot("#stock=TCS", FILES(), { delay: 120, settle: 100 }); await t.nav("#stock=EQNEG", 20); await t.nav("", 20); await sleep(700);
+  // timing: the files take 120ms. Boot waits 100ms, then the user opens EQNEG and stays 40ms (the shared files arrive at 120ms, so the EQNEG view and its
+  // checklist placeholder are placed), then leaves at 140ms, before the checklist's own request (120ms more) answers. The earlier 20ms stay ended at
+  // exactly 120ms, a tie with the files: when the navigation won, no placeholder was ever placed and this check failed although nothing was painted.
+  t = await boot("#stock=TCS", FILES(), { delay: 120, settle: 100 }); await t.nav("#stock=EQNEG", 40); await t.nav("", 20); await sleep(700);
   ok(t.check() && /Loading/.test(t.check().innerHTML) && !/<table>/.test(t.check().innerHTML), "slow files and the user left: the hidden placeholder is never painted with data");
   t = await boot("#stock=TCS", FILES(), { delay: 80, settle: 60 }); await t.nav("#stock=EQNEG", 20); await sleep(700);
   eq(t.byId("detailChecklist").length, 1, "slow files, quick navigation: one checklist"); eq(cell(t.check().innerHTML, "Total equity").st, "Needs review", "slow files, quick navigation: it shows the stock currently in the hash");
