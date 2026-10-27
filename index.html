@@ -107,6 +107,35 @@ th .lk{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym
 .mk-feed li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:.88rem;min-width:0}
 .mk-k{background:var(--acs);color:var(--ac);border-radius:4px;padding:1px 8px;font-size:.72rem;font-weight:700}.mk-ft{color:var(--mute);overflow-wrap:anywhere;min-width:0}
 .mk-tabs{flex-wrap:wrap;border:0;padding:0 0 8px;overflow:visible}.mk-tabs button{white-space:normal;padding:6px 12px;min-height:36px}
+/* Fundamental screen: filter panel first, then the results (responsive redesign) */
+.fs{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:.4em 0 14px}
+.fs-title{font-size:.95rem;margin:0 0 6px}
+.fs-grid{display:grid;gap:12px 16px;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));align-items:start}
+.fs-set{border:0;margin:0;padding:0;min-width:0;display:grid;gap:4px}.fs-set legend{font-weight:700;font-size:.88rem;padding:0;margin-bottom:4px}
+.fs label{font-size:.8rem;font-weight:600;color:var(--mute)}
+.fs-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fs-pair>div{display:grid;gap:2px;min-width:0}
+.fs input,.fs select{width:100%;min-width:0;min-height:44px;font:600 1rem Manrope,system-ui,sans-serif;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.fs input:focus-visible,.fs select:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.fs input[aria-invalid=true]{border-color:var(--dn);outline:2px solid var(--dn);outline-offset:0}
+.fs input:disabled{opacity:.55;cursor:not-allowed}
+.fs-help{color:var(--mute);font-size:.76rem;margin:2px 0 0}
+.fs-err{color:var(--dn);font-weight:600;font-size:.88rem;margin:10px 0 0}
+.fs-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;margin-top:10px}
+.fs-count{margin:0;font-weight:600;font-size:.9rem}
+.fs-reset{min-height:44px;padding:0 16px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ac);font:600 .9rem Manrope,system-ui,sans-serif;cursor:pointer}
+#screener-sec th .lk{text-align:left}#screener-sec th[aria-sort=ascending] .lk:after{content:" \2191"}#screener-sec th[aria-sort=descending] .lk:after{content:" \2193"}
+/* mobile cards: below 640px each table row is a card; every field keeps its column name; the column buttons stay as a row of sort chips */
+@container (max-width:640px){
+#screener-sec .panel.scroll{overflow:visible;border:0;background:none}#screener-sec table{min-width:0;width:100%}
+#screener-sec thead,#screener-sec tbody,#screener-sec tr,#screener-sec td{display:block}
+#screener-sec thead tr{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 0 10px}#screener-sec thead tr:before{content:"Sort by";font-size:.8rem;font-weight:600;color:var(--mute);margin-right:2px}
+#screener-sec th{border:0;padding:0}#screener-sec th .lk{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:20px;background:var(--card);text-decoration:none;font-size:.85rem}
+#screener-sec th[aria-sort] .lk{border-color:var(--ac)}
+#screener-sec tbody tr{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px;margin-bottom:10px}
+#screener-sec td{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;border-bottom:1px solid var(--line);padding:8px 0;text-align:right;overflow-wrap:anywhere}
+#screener-sec td:last-child{border-bottom:0}#screener-sec td:before{content:attr(data-label);flex:0 0 auto;max-width:55%;text-align:left;color:var(--mute);font-weight:600;font-size:.8rem}
+#screener-sec td:first-child{font-size:1.05rem;min-height:44px;align-items:center}#screener-sec td[colspan]{display:block;text-align:left}#screener-sec td[colspan]:before{content:none}
+}
 </style></head><body>
 <div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav><div class="gb-search" id="globalSearchHost"></div></div></div>
 <div class="w">
@@ -120,18 +149,28 @@ th .lk{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym
 <section class="mk-sec" id="mk-movers"><h2>Top Gainers / Top Losers</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-trending"><h2>Trending Stocks</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-52w"><h2>New 52-Week High / Low</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
-<section class="mk-sec" id="mk-ath"><h2>All-Time High / Low</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-volume"><h2>Volume Shockers</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-hvgain"><h2>High Volume + High Gain</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-hvloss"><h2>High Volume + Top Losers</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-relative"><h2>Relative Outperformance / Underperformance</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-fiidii"><h2>FII / DII Activity</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
-<section class="mk-sec" id="mk-sectorlead"><h2>Sector Leaders / Laggards</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 <section class="mk-sec" id="mk-swing"><h2>Swing Market Watch</h2><div data-mk><p class="mk-na">Loading…</p></div></section>
 </main>
 <section class="mk-sec" id="screener-sec"><h2 id="screener">Fundamental screen</h2>
 <p id="fstat" class="note" style="padding-left:0">Loading fundamentals…</p>
-<p style="margin:.3em 0 .6em;color:var(--mute)">Show me stocks with ROE above: <select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select></p>
+<form id="fscreen" class="fs" novalidate aria-labelledby="fsTitle">
+<h3 id="fsTitle" class="fs-title">Filters</h3>
+<div class="fs-grid">
+<fieldset class="fs-set"><legend>P/E</legend><div class="fs-pair"><div><label for="fsPeMin">Min</label><input id="fsPeMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any" aria-describedby="fsPeHelp"></div><div><label for="fsPeMax">Max</label><input id="fsPeMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any" aria-describedby="fsPeHelp"></div></div>
+<label for="fsPeMode">Which P/E</label><select id="fsPeMode" aria-describedby="fsPeHelp"><option value="any" selected>Any</option><option value="positive">Positive only</option><option value="negative">Negative only (loss-making)</option></select>
+<p id="fsPeHelp" class="fs-help">A P/E range lists positive P/E only. A negative P/E means a loss, not a cheap price; choose “Negative only” to list those stocks.</p></fieldset>
+<fieldset class="fs-set"><legend>P/B</legend><div class="fs-pair"><div><label for="fsPbMin">Min</label><input id="fsPbMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any"></div><div><label for="fsPbMax">Max</label><input id="fsPbMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Any"></div></div></fieldset>
+<div class="fs-set"><label for="roe">ROE at least</label><select id="roe"><option value="0">Any</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option></select>
+<label for="fsSector">Sector</label><select id="fsSector" aria-describedby="fsSectorNote"><option value="">All sectors</option></select><p id="fsSectorNote" class="fs-help"></p></div>
+</div>
+<p id="fsErr" class="fs-err" role="alert" hidden></p>
+<div class="fs-foot"><p id="fsCount" class="fs-count" role="status" aria-live="polite"></p><button type="button" id="fsReset" class="fs-reset">Clear filters</button></div>
+</form>
 <div class="tabs" role="tablist" id="ftabs" style="padding:0 0 10px;border:0"></div>
 <div id="ftab1"><div class="panel scroll"><table id="ftable"><thead><tr>
 <th><button class="lk" data-k="symbol">Stock</button></th><th><button class="lk" data-k="company_name">Company</button></th><th><button class="lk" data-k="sector">Sector</button></th><th><button class="lk" data-k="pe">P/E</button></th><th><button class="lk" data-k="pb">P/B</button></th><th><button class="lk" data-k="roe">ROE %</button></th><th><button class="lk" data-k="roce">ROCE %</button></th><th><button class="lk" data-k="roa">ROA %</button></th><th><button class="lk" data-k="ev_ebitda">EV/EBITDA</button></th></tr></thead><tbody id="fund"></tbody></table>
@@ -214,20 +253,86 @@ window.SLShards={routeSymbols:routeSymbols,isRoute:isRoute,state:function(){retu
 </script>
 <script>
 let FD=[],fsort={k:"roe",dir:-1};
+/* Fundamental screen, filter first (responsive redesign). Reads out/fundamentals.json only and never changes a value: the filters only choose which rows are shown.
+   Strict numbers: a stored value passes an active numeric filter only if it is a finite JSON number. Missing, blank, "-", text and non-finite values never pass.
+   A box left empty means "any". Anything typed must be a plain number of 0 or more (12, 12.5, .5), or the screen says so and shows no rows until it is fixed.
+   P/E: a P/E range (or "Positive only") lists positive P/E only, so a loss-making company's negative P/E is never read as a cheap valuation; "Negative only"
+   lists the loss-making ones on request. P/E of exactly 0 is neither. Sorting by P/E puts zero and negative P/E after the positive ones. Sector: an exact match on the published sector; a stock without one never passes a chosen sector.
+   The other tabs (Financial Health, Cash Flow & Growth) use the same rules through window.SLScreen. */
 const fesc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const ffmt=v=>v==null?"-":v.toLocaleString("en-IN",{maximumFractionDigits:2});
-function fund(){const m=+document.getElementById("roe").value,b=document.getElementById("fund");
-const r=FD.filter(x=>m===0||(x.roe!=null&&x.roe>=m));
-r.sort((a,c)=>{const A=a[fsort.k],B=c[fsort.k];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;return typeof A==="string"?A.localeCompare(B)*fsort.dir:(A-B)*fsort.dir});
-b.innerHTML=r.length?r.map(x=>`<tr><td>${fesc(x.symbol)}</td><td>${x.company_name?fesc(x.company_name):"-"}</td><td>${x.sector?fesc(x.sector):"-"}</td><td class="n">${ffmt(x.pe)}</td><td class="n">${ffmt(x.pb)}</td><td class="n">${ffmt(x.roe)}</td><td class="n">${ffmt(x.roce)}</td><td class="n">${ffmt(x.roa)}</td><td class="n">${ffmt(x.ev_ebitda)}</td></tr>`).join(""):'<tr><td colspan="9">No stocks match. Lower the ROE.</td></tr>'}
-document.getElementById("roe").onchange=fund;
-document.querySelectorAll("#ftable [data-k]").forEach(b=>b.onclick=()=>{const k=b.dataset.k;fsort=fsort.k===k?{k,dir:-fsort.dir}:{k,dir:typeof (FD[0]||{})[k]==="string"?1:-1};fund()});
-(async()=>{const st=document.getElementById("fstat");
+const isNum=v=>typeof v==="number"&&isFinite(v);
+const ffmt=v=>isNum(v)?v.toLocaleString("en-IN",{maximumFractionDigits:2}):"-";
+const FNUM=/^(?:\d+(?:\.\d+)?|\.\d+)$/;
+const FCOLS=[["symbol","Stock"],["company_name","Company"],["sector","Sector"],["pe","P/E"],["pb","P/B"],["roe","ROE %"],["roce","ROCE %"],["roa","ROA %"],["ev_ebitda","EV/EBITDA"]];
+const TEXTK={symbol:1,company_name:1,sector:1};
+const fel=i=>document.getElementById(i);
+function fread(id,label){const el=fel(id);if(!el)return{on:false};const t=String(el.value==null?"":el.value).trim();el.removeAttribute("aria-invalid");
+ if(t==="")return{on:false};
+ if(!FNUM.test(t)||!isFinite(+t)){el.setAttribute("aria-invalid","true");return{err:label+": enter a number of 0 or more, such as 12 or 12.5, or leave it empty."}}
+ return{on:true,v:+t}}
+function criteria(){const errs=[],c={};
+ const take=(k,id,label)=>{const r=fread(id,label);if(r.err)errs.push(r.err);c[k]=r.on?r.v:null};
+ c.peMode=(fel("fsPeMode")||{}).value||"any";
+ if(c.peMode==="negative"){c.peMin=null;c.peMax=null}else{take("peMin","fsPeMin","P/E minimum");take("peMax","fsPeMax","P/E maximum")}
+ take("pbMin","fsPbMin","P/B minimum");take("pbMax","fsPbMax","P/B maximum");
+ if(c.peMin!==null&&c.peMax!==null&&c.peMin>c.peMax)errs.push("P/E: the minimum is higher than the maximum.");
+ if(c.pbMin!==null&&c.pbMax!==null&&c.pbMin>c.pbMax)errs.push("P/B: the minimum is higher than the maximum.");
+ const roe=+((fel("roe")||{}).value);c.roe=isFinite(roe)&&roe>0?roe:null;
+ c.sector=String((fel("fsSector")||{}).value||"");
+ c.errors=errs;
+ c.active=c.peMode!=="any"||c.peMin!==null||c.peMax!==null||c.pbMin!==null||c.pbMax!==null||c.roe!==null||c.sector!=="";
+ return c}
+function passes(x,c){if(!x)return false;
+ if(c.peMode==="negative"){if(!(isNum(x.pe)&&x.pe<0))return false}
+ else if(c.peMode==="positive"||c.peMin!==null||c.peMax!==null){if(!(isNum(x.pe)&&x.pe>0))return false;if(c.peMin!==null&&x.pe<c.peMin)return false;if(c.peMax!==null&&x.pe>c.peMax)return false}
+ if(c.pbMin!==null||c.pbMax!==null){if(!isNum(x.pb))return false;if(c.pbMin!==null&&x.pb<c.pbMin)return false;if(c.pbMax!==null&&x.pb>c.pbMax)return false}
+ if(c.roe!==null&&!(isNum(x.roe)&&x.roe>=c.roe))return false;
+ if(c.sector!==""&&!(typeof x.sector==="string"&&x.sector===c.sector))return false;
+ return true}
+function fcmp(a,c){const k=fsort.k,A=a[k],B=c[k];
+ if(TEXTK[k]){const ok1=typeof A==="string"&&A!=="",ok2=typeof B==="string"&&B!=="";if(!ok1&&!ok2)return 0;if(!ok1)return 1;if(!ok2)return -1;return A.localeCompare(B)*fsort.dir}
+ const n1=isNum(A),n2=isNum(B);if(!n1&&!n2)return 0;if(!n1)return 1;if(!n2)return -1;
+ if(k==="pe"){const t1=A>0?0:1,t2=B>0?0:1;if(t1!==t2)return t1-t2}   /* P/E: zero and negative P/E (no earnings or a loss) sort after every positive P/E, in both directions, and before missing values */
+ return(A-B)*fsort.dir}
+let FCRIT=null;
+function fund(){const b=fel("fund"),c=criteria(),err=fel("fsErr"),cnt=fel("fsCount");FCRIT=c;
+ const box=fel("fsPeMin"),bx=fel("fsPeMax");if(box&&bx){box.disabled=bx.disabled=c.peMode==="negative"}
+ if(err){err.hidden=!c.errors.length;err.textContent=c.errors.join(" ")}
+ if(c.errors.length){b.innerHTML='<tr><td colspan="9">Fix the filter marked above to see the results.</td></tr>';if(cnt)cnt.textContent="No results: a filter needs fixing.";fnotify();return}
+ const r=FD.filter(x=>passes(x,c)).map((x,i)=>Object.assign({},x,{_i:i}));
+ r.sort((a,d)=>fcmp(a,d)||a._i-d._i);
+ b.innerHTML=r.length?r.map(x=>`<tr><td>${fesc(x.symbol)}</td><td>${typeof x.company_name==="string"&&x.company_name?fesc(x.company_name):"-"}</td><td>${typeof x.sector==="string"&&x.sector?fesc(x.sector):"-"}</td><td class="n">${ffmt(x.pe)}</td><td class="n">${ffmt(x.pb)}</td><td class="n">${ffmt(x.roe)}</td><td class="n">${ffmt(x.roce)}</td><td class="n">${ffmt(x.roa)}</td><td class="n">${ffmt(x.ev_ebitda)}</td></tr>`).join(""):'<tr><td colspan="9">No stocks match these filters. Widen or clear a filter.</td></tr>';
+ if(cnt)cnt.textContent="Showing "+r.length+" of "+FD.length+" stock"+(FD.length===1?"":"s")+(c.active?" that match the filters.":" (no filter applied).");
+ document.querySelectorAll("#ftable th").forEach((th,i)=>{const k=(FCOLS[i]||[])[0];if(k===fsort.k)th.setAttribute("aria-sort",fsort.dir>0?"ascending":"descending");else th.removeAttribute("aria-sort")});
+ fnotify()}
+/* the shared rule for the other screen tabs: a symbol passes only if its fundamentals row passes (no row = no pass while any filter is on) */
+const FBY={};
+function fnotify(){window.SLScreen={ready:FD.length>0,error:FCRIT&&FCRIT.errors.length?FCRIT.errors.join(" "):null,active:!!(FCRIT&&FCRIT.active),
+ pass:function(sym){if(!FCRIT||FCRIT.errors.length)return false;if(!FCRIT.active)return true;return passes(FBY[sym],FCRIT)}};
+ try{document.dispatchEvent(new CustomEvent("slscreen"))}catch(e){}}
+function fsectors(){const sel=fel("fsSector"),note=fel("fsSectorNote");if(!sel)return;
+ const seen={};let withSec=0;FD.forEach(x=>{if(typeof x.sector==="string"&&x.sector.trim()){seen[x.sector]=1;withSec++}});
+ const list=Object.keys(seen).sort((a,b)=>a.localeCompare(b));
+ sel.innerHTML='<option value="">All sectors</option>'+list.map(s=>`<option value="${fesc(s)}">${fesc(s)}</option>`).join("");
+ sel.disabled=!list.length;
+ if(note)note.textContent=!list.length?"No sector is published in the fundamentals data yet, so this filter is off.":withSec<FD.length?withSec+" of "+FD.length+" stocks have a published sector; the others are left out when a sector is chosen.":""}
+["fsPeMin","fsPeMax","fsPbMin","fsPbMax"].forEach(id=>{const e=fel(id);if(e)e.addEventListener("input",fund)});
+["roe","fsPeMode","fsSector"].forEach(id=>{const e=fel(id);if(e)e.addEventListener("change",fund)});
+{const f=fel("fscreen");if(f)f.addEventListener("submit",e=>{e.preventDefault();fund()})}
+{const r=fel("fsReset");if(r)r.addEventListener("click",()=>{["fsPeMin","fsPeMax","fsPbMin","fsPbMax"].forEach(id=>{const e=fel(id);if(e)e.value=""});
+ const m=fel("fsPeMode");if(m)m.value="any";const s=fel("fsSector");if(s)s.value="";const q=fel("roe");if(q){q.value="0";q.dispatchEvent(new Event("change"))}fund()})}
+document.querySelectorAll("#ftable [data-k]").forEach(b=>b.onclick=()=>{const k=b.dataset.k;fsort=fsort.k===k?{k,dir:-fsort.dir}:{k,dir:TEXTK[k]?1:-1};fund()});
+/* mobile cards: each cell of the screen tables carries its column name, so a narrow screen can show it beside the value (CSS only; the markup of the rows is unchanged) */
+function flabel(root){root.querySelectorAll("table").forEach(t=>{const hs=[...t.querySelectorAll("thead th")].map(h=>(h.textContent||"").trim());
+ t.querySelectorAll("tbody tr").forEach(tr=>{[...tr.children].forEach((td,i)=>{if(td.tagName==="TD"&&!td.hasAttribute("colspan")&&hs[i]&&td.getAttribute("data-label")!==hs[i])td.setAttribute("data-label",hs[i])})})})}
+{const sec=fel("screener-sec");if(sec&&typeof MutationObserver!=="undefined"){flabel(sec);new MutationObserver(()=>flabel(sec)).observe(sec,{childList:true,subtree:true})}}
+(async()=>{const st=fel("fstat");
 try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)throw new Error("missing");const j=await r.json();
-if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.stocks;
+if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.stocks.filter(x=>x&&typeof x==="object");                 /* every published row is kept; only an empty (null) entry, which has nothing to show, is skipped */
+FD.forEach(x=>{if(typeof x.symbol==="string")FBY[x.symbol]=x});
 st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
-catch(e){st.textContent="Fundamentals not loaded yet.";document.getElementById("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';return}
-fund()})();
+catch(e){st.textContent="Fundamentals not loaded yet.";fel("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';const cnt=fel("fsCount");if(cnt)cnt.textContent="";return}
+fsectors();fund()})();
 </script>
 <script>
 /* StockLens Phase 3 Step 1 - Stock Detail view (#stock=SYMBOL). Separate from the dashboard scripts; reads existing JSON only. */
@@ -2904,7 +3009,7 @@ S_["mk-sectors"]=function(m,st){
 S_["mk-movers"]=function(m){
   return'<div class="mk-2">'+moversCard("Top Gainers",m.gainers,"Latest close vs previous close","no gainers in the latest scan")+moversCard("Top Losers",m.losers,"Latest close vs previous close","no losers in the latest scan")+'</div>'}
 S_["mk-trending"]=function(m,st){
-  var tab=st.trend||"movers",tabs=[["movers","Price Movers"],["volume","Volume Shockers"],["52w","52W High / Low"],["ath","All-Time High / Low"],["active","Most Active"]],h='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="trend">'+tabs.map(function(t){return'<button type="button" role="tab" data-tab="'+t[0]+'" aria-selected="'+(t[0]===tab)+'">'+t[1]+'</button>'}).join("")+'</div>';
+  var tab=st.trend||"movers",tabs=[["movers","Price Movers"],["volume","Volume Shockers"],["52w","52W High / Low"],["active","Most Active"]],h='<div class="tabs mk-tabs" role="tablist" data-mk-tabs="trend">'+tabs.map(function(t){return'<button type="button" role="tab" data-tab="'+t[0]+'" aria-selected="'+(t[0]===tab)+'">'+t[1]+'</button>'}).join("")+'</div>';
   var mv=byChange(m.gainers.concat(m.losers),1).sort(function(a,b){return Math.abs(num(b.change_pct))-Math.abs(num(a.change_pct))||(a.symbol<b.symbol?-1:1)});
   if(tab==="movers")h+=mv.length?priceTable(mv,{h:"Vol vs avg",f:function(r){return mult(r.volume_x_avg)}}):na("no movers in the latest scan");
   else if(tab==="volume")h+=m.shockers.length?shockerTable(m.shockers):na("no volume shockers in the latest scan");
@@ -3340,15 +3445,18 @@ const T={
 let FIN=null,VAL=null,ROE={},ST={};
 function draw(id){const t=T[id],box=$(id),m=+$("roe").value,src=t.src==="val"?VAL:FIN;
  if(!src){box.innerHTML='<p class="note">'+(t.src==="val"?"Fundamentals":"Financial statements")+' not loaded yet.</p>';return}
- const useRoe=m>0&&Object.keys(ROE).length>0;
- const rows=src.stocks.filter(s=>!useRoe||(ROE[s.symbol]!=null&&ROE[s.symbol]>=m)).map(s=>t.row(s)),st=ST[id];
+ const SC=typeof window!=="undefined"&&window.SLScreen&&window.SLScreen.ready?window.SLScreen:null;   /* the filter panel's rules (P/E, P/B, ROE, Sector), when the fundamentals are loaded */
+ if(SC&&SC.error){box.innerHTML='<p class="note">Fix the filter marked above to see the results.</p>';return}
+ const useRoe=!SC&&m>0&&Object.keys(ROE).length>0;
+ const rows=src.stocks.filter(s=>SC?SC.pass(s.symbol):(!useRoe||(typeof ROE[s.symbol]==="number"&&isFinite(ROE[s.symbol])&&ROE[s.symbol]>=m))).map(s=>t.row(s)),st=ST[id];
  if(st)rows.sort((a,b)=>{const A=a[st.k],B=b[st.k];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;return(typeof A==="string"?A.localeCompare(B):A-B)*st.dir});
- box.innerHTML=`<table><thead><tr>${t.cols.map(c=>`<th><button class="lk" data-t="${id}" data-k="${c.k}">${c.l}</button></th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${t.cols.map(c=>`<td class="${c.n?"n":""}${c.g?ng(r[c.g]):""}">${c.f(r)}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${t.cols.length}">No stocks match. Lower the ROE.</td></tr>`}</tbody></table>`}
+ box.innerHTML=`<table><thead><tr>${t.cols.map(c=>`<th><button class="lk" data-t="${id}" data-k="${c.k}">${c.l}</button></th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${t.cols.map(c=>`<td class="${c.n?"n":""}${c.g?ng(r[c.g]):""}">${c.f(r)}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${t.cols.length}">No stocks match these filters. Widen or clear a filter.</td></tr>`}</tbody></table>`}
 const all=()=>["t2a","t2b","t2","t3a","t3b"].forEach(draw);
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("button[data-t]");if(!b)return;
  const id=b.dataset.t,k=b.dataset.k,c=T[id].cols.find(x=>x.k===k),s=ST[id];
  ST[id]=s&&s.k===k?{k,dir:-s.dir}:{k,dir:c&&c.s?1:-1};draw(id)});
 $("roe").addEventListener("change",all);
+document.addEventListener("slscreen",all);
 const tabs=$("ftabs"),names=["Valuation & Returns","Financial Health","Cash Flow & Growth"];
 names.forEach((n,i)=>{const b=document.createElement("button");b.textContent=n;b.setAttribute("role","tab");
  b.onclick=()=>{[...tabs.children].forEach((x,j)=>{x.setAttribute("aria-selected",j===i);$("ftab"+(j+1)).hidden=j!==i})};tabs.appendChild(b)});

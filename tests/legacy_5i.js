@@ -18,6 +18,15 @@ function withoutCoverageFixes(s) {
   }
   return s;
 }
+function withoutDecisionEdits(s) {
+  /* only the separately approved decision's edits (the responsive redesign, tests/page_edit_manifest.py) reversed, with the same rule: none present -> unchanged; only some, or one twice -> an error */
+  const edits = PAGE_EDITS.decision_edits || [];
+  const n = edits.map((e) => s.split(e.new).length - 1);
+  if (!n.some(Boolean)) return s;
+  if (n.some((x) => x !== 1)) throw new Error("decision edits: each approved edit must occur exactly once, found " + JSON.stringify(n));
+  for (const e of edits) s = s.replace(e.new, () => e.old);
+  return s;
+}
 function legacy(h) {
   let s = withoutCoverageFixes(String(h));
   /* Stage 1 coverage: the per-stock-file layer (a classic script with its own id) is an addition; the older pins see the page without it */
@@ -55,4 +64,4 @@ function legacy(h) {
   s = s.replace(/<script type="module" id="stocklens-nav">[\s\S]*?<\/script>\n/, "");
   return s;
 }
-module.exports = { withoutCoverageFixes, legacy };
+module.exports = { withoutCoverageFixes, withoutDecisionEdits, legacy };
