@@ -32,6 +32,7 @@ for (const sel of [".btn", ".tabs button[aria-selected=true]", ".chips button[ar
   ok(css.includes(':root[data-theme="dark"] ' + sel) && css.includes(':root:not([data-theme="light"]) ' + sel), "dark-mode selected text covers " + sel + " (explicit dark theme and the system setting)");
 }
 ok(/\{color:#0F1524!important\}\}\n:root\[data-theme="dark"\]/.test(css), "the system-setting rule sets the dark text");
+ok(/#detailCompare a\{[^}]*color:var\(--ac\)/.test(css), "the stock page's Compare link uses the accent (the browser's default link blue was 1.94:1 in dark mode)");
 
 // --- the desktop search box keeps room for its placeholder
 { const search = html.split('<script type="module" id="stocklens-search">')[1].split("</script>")[0];
