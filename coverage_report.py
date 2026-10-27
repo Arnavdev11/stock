@@ -93,6 +93,18 @@ NOT_FOUND_ERROR = "Symbol not found in Upstox NSE equity instruments"      # fun
 FH_VALUE_FIELDS = ("revenue", "total_revenue", "profit_before_tax", "profit_after_tax", "eps_basic", "eps_diluted",
                    "operating_cash_flow", "investing_cash_flow", "financing_cash_flow", "capex", "free_cash_flow")     # financial_history_updater.VALUE_FIELDS
 CANDLE_FIELDS = ("open", "high", "low", "close", "volume")
+# Daily candles each implemented indicator needs before the page shows a value, read from index.html, never chosen here:
+#   price chart (SLChart.prepare): nothing is drawn below MIN_CANDLES = 30 rows; above it a series starts where its own definition does:
+#     SMA/EMA n -> n rows, RSI 14 -> 15, Supertrend (10, 3) -> 10, MACD line (EMA12 - EMA26) -> 26, MACD signal (EMA9 of the line) -> 34;
+#     so the row count that shows each one = max(30, its own start).
+#   Technical Snapshot (SLTech.compute): DMA k -> k rows, ATR 14 -> 14 rows, 20-day volume ratio -> 21 rows, 52-week range -> the first candle
+#     must be dated at least 365 days before the last one.
+# tests/test_indicator_readiness.js checks these numbers against the page's own functions, so the two cannot drift apart.
+INDICATOR_MIN_ROWS = {"chart_drawn": 30, "sma20": 30, "ema20": 30, "rsi14": 30, "supertrend_10_3": 30, "macd_line": 30, "macd_signal": 34,
+                      "sma50": 50, "ema50": 50, "sma200": 200,
+                      "snapshot_atr14": 14, "snapshot_volume_ratio_20d": 21, "snapshot_dma200": 200}
+INDICATOR_WINDOW_DAYS = {"snapshot_52_week_range": 365}
+INDICATOR_SOURCE = "index.html: SLChart (MIN_CANDLES, sma, ema, rsi, supertrend, macd) and SLTech.compute; checked by tests/test_indicator_readiness.js"
 SH_CATEGORIES = tuple(_sl.CATEGORIES)
 SH_STATUS = ("available", "unavailable")
 SH_QUARTER_ENDS = {(3, 31), (6, 30), (9, 30), (12, 31)}
@@ -754,7 +766,7 @@ def candle_facts(d, syms):
     shard_set = set(d.shard_names)
     single = d.hist.get("stocks") if isinstance(d.hist, dict) and isinstance(d.hist.get("stocks"), dict) else {}
     out = {"valid": 0, "missing": 0, "invalid": 0, "mis": {}, "inv": {}, "rows": [], "age": [], "newest": [], "sources": {"shard": 0, "single_file": 0},
-           "cells": {k: [] for k in CANDLE_FIELDS}, "vol_all": 0, "vol_some_null": 0, "vol_none": 0}
+           "cells": {k: [] for k in CANDLE_FIELDS}, "vol_all": 0, "vol_some_null": 0, "vol_none": 0, "per_stock": []}
     for s in syms:
         doc, src = None, None
         if s in shard_set:
@@ -794,6 +806,7 @@ def candle_facts(d, syms):
         out["rows"].append(len(rows))
         out["age"].append((d.as_of - newest).days)
         out["newest"].append(newest.isoformat())
+        out["per_stock"].append((len(rows), _date(rows[0]["date"]), newest))          # rows, first and last candle date: what indicator readiness needs
         vols = [c.get("volume") for c in rows]
         nn = sum(1 for v in vols if v is not None)
         out["vol_all"] += nn == len(vols)
@@ -827,11 +840,36 @@ def mod_historical(d, syms, scope, cf):
 
 
 def mod_indicators(d, syms, scope, cf):
+    """Indicators are not stored: the browser computes them from the daily candles. Each one is counted as computable for a stock when its
+    candles meet the minimum the page's own code needs (INDICATOR_MIN_ROWS / INDICATOR_WINDOW_DAYS). valid = every implemented indicator computable;
+    missing = not every one, with the first reason. Nothing is estimated and no other threshold is applied."""
     n = len(syms)
-    return _not_measurable("technical_indicators", n, _basis(scope), ["historical/shards/"],
-                           ["indicators are not stored: the browser computes them from the daily candles, so they can only be as available as the candles",
-                            "no readiness threshold (candle rows needed) has been agreed, so no stock is labelled ready or not ready"],
-                           facts={"readiness": THRESHOLD_NOT_CONFIGURED, "candle_rows_per_stock": _stats(cf["rows"])})
+    src = ["historical/shards/", "historical/historical.json"]
+    if not d.shard_names and not (isinstance(d.hist, dict) and isinstance(d.hist.get("stocks"), dict)):
+        return _not_measurable("technical_indicators", n, _basis(scope), src, ["no candle file is held, so no indicator can be computed or counted"])
+    per = cf["per_stock"]
+    ready = {k: sum(1 for rows, _, _ in per if rows >= need) for k, need in INDICATOR_MIN_ROWS.items()}
+    for k, days in INDICATOR_WINDOW_DAYS.items():
+        ready[k] = sum(1 for _, first, last in per if (last - first).days >= days)
+    full_rows = max(INDICATOR_MIN_ROWS.values())
+    full = sum(1 for rows, first, last in per if rows >= full_rows and all((last - first).days >= days for days in INDICATOR_WINDOW_DAYS.values()))
+    mis = {}
+    if n - cf["valid"]:
+        mis["no_valid_candles"] = n - cf["valid"]
+    for rows, first, last in per:
+        if rows < INDICATOR_MIN_ROWS["chart_drawn"]:
+            _tally(mis, "fewer_than_%d_candles_chart_not_drawn" % INDICATOR_MIN_ROWS["chart_drawn"])
+        elif rows < full_rows:
+            _tally(mis, "fewer_than_%d_candles" % full_rows)
+        elif not all((last - first).days >= days for days in INDICATOR_WINDOW_DAYS.values()):
+            _tally(mis, "history_shorter_than_365_days")
+    return _module("technical_indicators", "offline", n, _counts(valid=full, stale=None, missing=n - full, invalid=None), src, basis=_basis(scope),
+                   freshness={"status": "not_applicable"},
+                   facts={"readiness": "configured", "readiness_source": INDICATOR_SOURCE, "minimum_candles": dict(INDICATOR_MIN_ROWS),
+                          "minimum_window_days": dict(INDICATOR_WINDOW_DAYS), "stocks_computable_per_indicator": ready,
+                          "stocks_with_valid_candles": cf["valid"], "candle_rows_per_stock": _stats(cf["rows"]),
+                          "note": "indicators are computed in the browser and never stored; a stock counts only where its own saved candles allow it"},
+                   missing_reasons=mis)
 
 
 def mod_sector(d, syms, scope):

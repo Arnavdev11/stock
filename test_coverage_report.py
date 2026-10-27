@@ -635,9 +635,9 @@ class FreshnessRules(Case):
         self.assertEqual(s["freshness"]["newest_quarter_age_days"]["min"], 23)
         f = self.mod(r, "all", "financial_history")
         self.assertEqual((f["freshness"]["oldest_section_fetched"], f["freshness"]["newest_section_fetched"]), ("2026-10-20", "2026-10-21"))
-        i = self.mod(r, "all", "technical_indicators")
-        self.assertEqual(i["facts"]["readiness"], C.THRESHOLD_NOT_CONFIGURED)
-        self.assertEqual(i["measurability"], "not_measurable")
+        i = self.mod(r, "all", "technical_indicators")                                  # readiness now comes from the page's own minimums (IndicatorReadiness below)
+        self.assertEqual(i["facts"]["readiness"], "configured")
+        self.assertEqual((i["measurability"], i["counts"]["valid"]), ("offline", 0))         # 2 candles: nothing is computable, nothing is called ready
 
     def test_cache_only_modules_are_unmeasurable_with_a_reason(self):
         self.make(3)
@@ -1572,6 +1572,45 @@ class SameRulesAsTheUpdaters(unittest.TestCase):
                     self.assertEqual(C._add_months(day, n), qu.add_months(day, n), (day, n))
         for f in range(0, 9):
             self.assertEqual(C._retry_days(f), qu.retry_days(f))
+
+
+
+class IndicatorReadiness(Case):
+    """technical_indicators counts a stock only where its own saved candles meet the minimum the page needs (coverage_report.INDICATOR_MIN_ROWS)."""
+    def days(self, n):
+        end = dt.date(2026, 10, 22)
+        return [candle((end - dt.timedelta(days=n - 1 - k)).isoformat()) for k in range(n)]
+
+    def setUp(self):
+        super().setUp()
+        self.make(6)
+        sh = self.data / "historical" / "shards"
+        for i, rows in enumerate((20, 34, 199, 200, 400)):                              # S0005 has no candle file at all
+            write(sh / ("S%04d.json" % i), {"stocks": {"S%04d" % i: {"candles": self.days(rows)}}})
+        self.m = self.mod(self.build(), "all", "technical_indicators")
+
+    def test_it_is_measured_offline_with_the_pages_own_minimums(self):
+        self.assertEqual(self.m["measurability"], "offline")
+        self.assertEqual(self.m["facts"]["minimum_candles"], C.INDICATOR_MIN_ROWS)
+        self.assertEqual(self.m["facts"]["minimum_window_days"], {"snapshot_52_week_range": 365})
+        self.assertIn("test_indicator_readiness.js", self.m["facts"]["readiness_source"])
+
+    def test_each_indicator_is_counted_only_where_the_candles_allow_it(self):
+        self.assertEqual(self.m["facts"]["stocks_computable_per_indicator"], {
+            "chart_drawn": 4, "sma20": 4, "ema20": 4, "rsi14": 4, "supertrend_10_3": 4, "macd_line": 4, "macd_signal": 4,
+            "sma50": 3, "ema50": 3, "sma200": 2, "snapshot_atr14": 5, "snapshot_volume_ratio_20d": 4, "snapshot_dma200": 2,
+            "snapshot_52_week_range": 1})
+
+    def test_only_a_stock_with_every_indicator_is_valid_and_every_other_stock_has_its_reason(self):
+        self.assertEqual((self.m["counts"]["valid"], self.m["counts"]["missing"], self.m["coverage_pct"]), (1, 5, C._pct(1, 6)))
+        self.assertEqual(self.m["missing_reasons"], {"fewer_than_200_candles": 2, "fewer_than_30_candles_chart_not_drawn": 1,
+                                                     "history_shorter_than_365_days": 1, "no_valid_candles": 1})
+
+    def test_no_candle_file_at_all_is_still_not_measurable_never_zero(self):
+        for f in (self.data / "historical" / "shards").glob("*.json"):
+            f.unlink()
+        m = self.mod(self.build(), "all", "technical_indicators")
+        self.assertEqual((m["measurability"], m["counts"]["valid"], m["coverage_pct"]), ("not_measurable", None, None))
 
 
 if __name__ == "__main__":
