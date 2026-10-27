@@ -68,7 +68,7 @@
    "old": ""
   },
   {
-   "new": "@container (max-width:300px){.mk-perf{grid-template-columns:repeat(2,minmax(0,1fr))}}\n",
+   "new": "@container (max-width:340px){.mk-perf{grid-template-columns:repeat(2,minmax(0,1fr))}}\n",
    "old": "@container (max-width:240px){.mk-perf{grid-template-columns:repeat(2,minmax(0,1fr))}}\n"
   },
   {
@@ -128,5 +128,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "12cf51e40d13546aa83c974bfa8dd942209206b8b1b7d3650ba4cbabf7b91cb5"
+ "decision_sha256": "49ce3c693860210b27161071616e626ceaea9ceb55059fdf7c69be53e312016a"
 }

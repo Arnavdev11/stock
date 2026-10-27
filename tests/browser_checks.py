@@ -1,7 +1,7 @@
 """
 Local browser checks of index.html against the SYNTHETIC preview site (tests/synthetic_site.py). Not run by CI.
 
-    python tests/browser_checks.py <site-dir> <report-dir> [--no-shots] [--pages home,screener,tcs,compare]
+    python tests/browser_checks.py <site-dir> <report-dir> [--no-shots] [--pages home,screener,tcs,compare] [--font "DejaVu Sans"]
 
 Serves <site-dir> on 127.0.0.1 only, opens it in headless Chromium (Playwright) at each agreed width and records, per page:
 horizontal overflow, the top bar's rows and any overlap between its parts, whether the search placeholder fits, touch targets
@@ -102,7 +102,8 @@ def serve(root):
     return srv
 
 
-def run(site, report_dir, shots=True, widths=WIDTHS, pages=PAGES, schemes=("light",)):
+def run(site, report_dir, shots=True, widths=WIDTHS, pages=PAGES, schemes=("light",), font=None):
+    """font: force this installed font family on every element (a stress test for a web font that cannot load here, e.g. a wider face than Manrope)."""
     report_dir = Path(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
     srv = serve(site)
@@ -121,10 +122,13 @@ def run(site, report_dir, shots=True, widths=WIDTHS, pages=PAGES, schemes=("ligh
                     pg.on("pageerror", lambda e: errs.append("pageerror: %s" % e))
                     pg.goto(base + frag)
                     pg.wait_for_timeout(900)
+                    if font:
+                        pg.add_style_tag(content="*{font-family:'%s' !important}" % font.replace("'", ""))
+                        pg.wait_for_timeout(300)
                     if frag.startswith("#") and not frag.startswith("#stock="):
                         pg.evaluate("(id)=>{const e=document.getElementById(id);if(e)e.scrollIntoView()}", frag[1:])
                     r = pg.evaluate(PROBE)
-                    r.update({"page": name, "width": w, "scheme": scheme,
+                    r.update({"page": name, "width": w, "scheme": scheme, "font": font or "page default (Manrope blocked here: system fallback)",
                               "consoleErrors": [e for e in errs if "net::ERR_FAILED" not in e and "Failed to load resource" not in e]})
                     if shots:
                         f = report_dir / ("%s-%s-%d.png" % (name, scheme, w))
@@ -143,7 +147,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
     names = sys.argv[sys.argv.index("--pages") + 1].split(",") if "--pages" in sys.argv else [n for n, _ in PAGES]
-    res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv, schemes=("light", "dark"), pages=[(n, ALL_PAGES[n]) for n in names])
+    res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv, schemes=("light", "dark"), pages=[(n, ALL_PAGES[n]) for n in names],
+              font=sys.argv[sys.argv.index("--font") + 1] if "--font" in sys.argv else None)
     bad = [r for r in res if r["overflowX"] or r["spill"] or r["clipped"] or r["offStrip"] or r["brokenNumbers"] or r["under24"] or r["lowContrastCount"]
            or r["consoleErrors"] or (r.get("bar") or {}).get("overlaps") or (r.get("search") and not r["search"]["placeholderFits"])]
     for r in res:
