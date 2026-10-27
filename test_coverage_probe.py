@@ -64,12 +64,12 @@ class ConfigTests(unittest.TestCase):
 
     def test_the_call_count_fits_the_caps(self):
         n = len(cp.DEFAULT_SYMBOLS)
-        base = n * len(cp.ENDPOINTS)                              # 7 requests per stock when consolidated data exists
-        worst = n * (1 + 1 + 2 + 2 + 2 + 2)                       # profile, ratios, three statements and quarterly each retried once on standalone
-        self.assertEqual(base, 84)
+        base = n * len(cp.ENDPOINTS)                              # 9 requests per stock when consolidated data exists
+        worst = n * (1 + 1 + 2 + 2 + 2 + 2 + 1 + 1)               # profile, ratios, three statements and quarterly each retried once on standalone; corporate actions, share holdings
+        self.assertEqual(base, 108)
         self.assertLessEqual(worst, cp.FUNDAMENTALS_CALL_CAP)
         self.assertLessEqual(n, cp.CANDLE_CALL_CAP)
-        self.assertEqual(len(cp.ENDPOINTS), 7)
+        self.assertEqual(len(cp.ENDPOINTS), 9)
 
 
 class WritePathTests(unittest.TestCase):
@@ -88,7 +88,8 @@ class WritePathTests(unittest.TestCase):
             self.assertNotIn(banned, SRC, banned)
         self.assertEqual(SRC.count(".write_text("), 1)             # inside write_artifact only
         mods = sorted(m.group(1) for m in re.finditer(r"^(?:import|from) ([a-z_]+)", SRC, re.M))
-        self.assertEqual(mods, ["datetime", "financials_updater", "fundamentals_updater", "historical_updater", "json", "os", "pathlib", "quarterly_results_updater", "re", "stock_directory", "sys", "upstox_common"])
+        self.assertEqual(mods, ["datetime", "financials_updater", "fundamentals_extra_updater", "fundamentals_updater", "historical_updater", "json", "os", "pathlib", "quarterly_results_updater", "re", "stock_directory", "sys", "upstox_common"])
+        self.assertIn("import fundamentals_extra_updater as fx", SRC)       # its parsers only: fetch_one and ttm_dividend, never write_outputs or the cache
 
     def test_the_probe_never_logs_or_stores_the_token(self):
         for line in SRC.splitlines():
@@ -128,7 +129,7 @@ class CapTests(unittest.TestCase):
                 self.assertLessEqual(api.s.n, cap, (cap, replies[0].status_code))
                 self.assertEqual(api.calls, api.s.n)
         # and the strict cap is the documented one
-        self.assertEqual(cp.FUNDAMENTALS_CALL_CAP + cp.CANDLE_CALL_CAP, 146)
+        self.assertEqual(cp.FUNDAMENTALS_CALL_CAP + cp.CANDLE_CALL_CAP, 166)
 
     def test_without_the_compensation_the_production_client_would_overshoot(self):
         api = uc.Upstox("tok-123456", 10)                         # the plain budget: documents why make_fundamentals_api exists
@@ -228,6 +229,38 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(cp.probe_candles(c, "I", dt.date(2026, 10, 14))["status"], "error")
 
 
+class ExtraEndpointTests(unittest.TestCase):
+    """probe_extra on the documented response shapes (invented values, from test_fundamentals_extra)."""
+    def api(self, body):
+        a = mock.Mock(calls=0)
+        a.get.return_value = body
+        return a
+
+    def test_corporate_actions(self):
+        import test_fundamentals_extra as tf
+        a = self.api((tf.ACTIONS_BODY, None))
+        r = cp.probe_extra(a, "INE000A01011", "corporate_actions")
+        a.get.assert_called_once_with("INE000A01011/corporate-actions")
+        self.assertEqual((r["status"], r["events"], r["types"], r["first"], r["last"]), ("ok", 5, {"dividend": 3, "bonus": 1, "split": 1}, "2023-01-02", "2026-08-14"))
+        gap = {"data": [{"name": "Dividend", "expiry_date": "01 Oct 2026", "amount": None}]}
+        r = cp.probe_extra(self.api((gap, None)), "I", "corporate_actions")
+        self.assertEqual((r["status"], r["gaps"]["dividend_without_amount"]), ("partial", 1))
+        self.assertEqual(cp.probe_extra(self.api(({"data": []}, None)), "I", "corporate_actions")["status"], "no_data")
+        self.assertEqual(cp.probe_extra(self.api(({"data": {}}, None)), "I", "corporate_actions")["status"], "rejected")
+        self.assertEqual(cp.probe_extra(self.api((None, "HTTP 500")), "I", "corporate_actions")["status"], "error")
+        self.assertEqual(cp.probe_extra(self.api((None, "call limit for this run reached")), "I", "corporate_actions")["status"], "skipped_call_cap")
+
+    def test_share_holdings(self):
+        import test_fundamentals_extra as tf
+        a = self.api((tf.HOLDINGS_BODY, None))
+        r = cp.probe_extra(a, "INE000A01011", "share_holdings")
+        a.get.assert_called_once_with("INE000A01011/share-holdings")
+        self.assertEqual((r["status"], r["quarters"], r["latest"], r["missing"]), ("ok", 2, "2026-09-30", []))
+        part = {"data": [x for x in tf.HOLDINGS_BODY["data"] if x["category"] != "fii"]}
+        r = cp.probe_extra(self.api((part, None)), "I", "share_holdings")
+        self.assertEqual((r["status"], r["missing"]), ("partial", ["fii"]))
+
+
 class RunTests(unittest.TestCase):
     D = {"AAA": {"symbol": "AAA", "isin": "INE000A01011", "name": "A"}, "BBB": {"symbol": "BBB", "isin": "INE000B01011", "name": "B"}}
 
@@ -235,7 +268,7 @@ class RunTests(unittest.TestCase):
         ok = lambda *a, **k: cp.result("ok")
         def boom(*a, **k):
             return cp.result("error", error="HTTP 500")
-        return [mock.patch.object(cp, n, bad if (bad and n == "probe_ratios") else ok) for n in ("probe_profile", "probe_ratios", "probe_quarterly", "probe_candles")] + \
+        return [mock.patch.object(cp, n, bad if (bad and n == "probe_ratios") else ok) for n in ("probe_profile", "probe_ratios", "probe_quarterly", "probe_candles", "probe_extra")] + \
                [mock.patch.object(cp, "probe_section", ok)]
 
     def run_probe(self, symbols, bad=None):
@@ -262,7 +295,7 @@ class RunTests(unittest.TestCase):
         self.assertTrue(rep["within_caps"])
         self.assertEqual(rep["summary"]["income"]["ok"], 2)
         self.assertEqual(rep["summary"]["candles"]["error"], 0)
-        self.assertIn("not probed", rep["shareholding"])
+        self.assertIn("NSE filings not probed", rep["shareholding"])
         self.assertEqual(set(rep["results"]["AAA"]) - {"isin", "name"}, set(cp.ENDPOINTS))
 
     def test_a_symbol_missing_from_the_directory_makes_no_request(self):

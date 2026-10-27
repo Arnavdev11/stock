@@ -7,12 +7,13 @@ the raw responses, which are public company figures and never contain the token)
 
 It reuses the production code READ-ONLY, so the probe measures what the pipeline would really do:
   fundamentals_updater.parse_ratios, financials_updater.fetch_section / parse_income / parse_balance / parse_cashflow,
-  quarterly_results_updater.parse_quarterly, historical_updater.Client, upstox_common.Upstox (its retry and 401/403 handling).
+  quarterly_results_updater.parse_quarterly, fundamentals_extra_updater.fetch_one (corporate actions, share holdings), historical_updater.Client,
+  upstox_common.Upstox (its retry and 401/403 handling).
 
 What it never does (enforced by test_coverage_probe.py):
   * it calls none of the production writers (write_json, write_outputs, the shard writers), reads or writes no cache, ledger, out/ file or site file;
   * its only write function refuses any path outside probe_output/;
-  * the request budget is a STRICT maximum: 130 fundamentals requests plus 16 candle requests = 146 in all, retries included.
+  * the request budget is a STRICT maximum: 150 fundamentals requests plus 16 candle requests = 166 in all, retries included.
 
 Endpoints per stock (Upstox), with the calls each costs when consolidated data exists (a standalone retry adds one call per statement that has no consolidated data):
   1 GET /v2/fundamentals/{ISIN}/profile                                         sector
@@ -22,7 +23,9 @@ Endpoints per stock (Upstox), with the calls each costs when consolidated data e
   5 GET /v2/fundamentals/{ISIN}/cash-flow?type=..&fs=true
   6 GET /v2/fundamentals/{ISIN}/income-statement?type=..&time_period=quarterly&fs=true
   7 GET /v2/historical-candle/NSE_EQ|{ISIN}/day/{to}/{from}                     one 180-day window of daily candles
-Shareholding is NOT probed: it reads NSE filings, which is excluded from bulk collection until the access terms are reviewed.
+  8 GET /v2/fundamentals/{ISIN}/corporate-actions                               dividends, bonuses, splits, rights (fundamentals_extra_updater)
+  9 GET /v2/fundamentals/{ISIN}/share-holdings                                  quarterly % by holder category (fundamentals_extra_updater)
+NSE shareholding filings are NOT probed: bulk collection from NSE is excluded until the access terms are reviewed. Endpoint 9 is Upstox's own data.
 
 Environment: UPSTOX_ANALYTICS_TOKEN (required), PROBE_SYMBOLS (comma list, default below; at most 12, each must be in the directory),
              PROBE_DIRECTORY (default out/stock_directory.json), PROBE_OUT (default probe_output).
@@ -35,6 +38,7 @@ import sys
 from pathlib import Path
 
 import financials_updater as fin
+import fundamentals_extra_updater as fx
 import fundamentals_updater as fund
 import historical_updater as hist
 import quarterly_results_updater as qru
@@ -47,12 +51,12 @@ DIRECTORY_FILE = Path(os.environ.get("PROBE_DIRECTORY", "out/stock_directory.jso
 # 4 large caps, 3 mid caps, a bank and a card lender (financials: no plain "Revenue" line), a 2025-listed financial, a micro cap, and a stock with a loss-making history.
 DEFAULT_SYMBOLS = ("RELIANCE", "HDFCBANK", "TCS", "INFY", "PERSISTENT", "VOLTAS", "ASTRAL", "YESBANK", "SBICARD", "JIOFIN", "3BBLACKBIO", "SUZLON")
 MAX_SYMBOLS = 12
-FUNDAMENTALS_CALL_CAP = 130      # STRICT maximum of fundamentals requests, retries included (see make_fundamentals_api). 12 stocks need 72 to 120
+FUNDAMENTALS_CALL_CAP = 150      # STRICT maximum of fundamentals requests, retries included (see make_fundamentals_api). 12 stocks need 96 to 144
 CANDLE_CALL_CAP = 16             # STRICT maximum of candle requests, retries included (hist.Client checks before every attempt). 12 stocks need 12
 CANDLE_WINDOW_DAYS = 180
 SYMBOL_RE = re.compile(r"^[A-Z0-9&_.-]{1,20}$")
 
-ENDPOINTS = ("profile", "key_ratios", "income", "balance_sheet", "cash_flow", "quarterly", "candles")
+ENDPOINTS = ("profile", "key_ratios", "income", "balance_sheet", "cash_flow", "quarterly", "candles", "corporate_actions", "share_holdings")
 REQUIRED = {
     "profile": ["sector"],
     "key_ratios": sorted(fund.RATIO_KEYS.values()),
@@ -60,6 +64,7 @@ REQUIRED = {
     "balance_sheet": ["total_assets", "total_liabilities"],
     "cash_flow": ["operating", "investing", "financing"],
     "quarterly": ["revenue", "operating_profit", "profit_after_tax"],
+    "share_holdings": list(fx.CATEGORIES),
 }
 STATUSES = ("ok", "partial", "no_data", "rejected", "error", "skipped_call_cap", "not_run")
 
@@ -224,6 +229,33 @@ def probe_candles(client, isin, end):
     return result("ok" if len(rows) >= 100 else "partial", candles=len(rows), first=rows[0]["date"], last=rows[-1]["date"])
 
 
+def probe_extra(api, isin, kind):
+    """corporate_actions or share_holdings through fundamentals_extra_updater.fetch_one (its documented-shape parser). ok / partial (a quarter flagged, or an
+    action without its amount, ratio or ex-date) / no_data (a valid empty answer) / rejected (not the documented shape) / error."""
+    status, data, err = fx.fetch_one(api, isin, kind)
+    if status == "failed":
+        return result("skipped_call_cap" if call_cap(err) else "error", error=short(err))
+    if status == "unusable":
+        return result("rejected", problem=short(err))
+    if status == "none_reported":
+        return result("no_data")
+    if kind == "corporate_actions":
+        ev = data["events"]
+        types = {}
+        for e in ev:
+            types[e["type"]] = types.get(e["type"], 0) + 1
+        gaps = {"dividend_without_amount": sum(1 for e in ev if e["type"] == "dividend" and e["amount"] is None),
+                "bonus_or_split_without_ratio": sum(1 for e in ev if e["type"] in ("bonus", "split") and e["ratio"] is None),
+                "without_ex_date": sum(1 for e in ev if e["ex_date"] is None), "type_other": types.get("other", 0)}
+        dates = sorted(e["ex_date"] for e in ev if e["ex_date"])
+        return result("partial" if any(gaps.values()) else "ok", events=len(ev), types=types, gaps=gaps, first=dates[0] if dates else None, last=dates[-1] if dates else None,
+                      ttm_dividend_computable=fx.ttm_dividend(ev, dt.date.today().isoformat())["value"] is not None)
+    q = data["quarters"]
+    newest = q[0]
+    missing = [c for c in REQUIRED["share_holdings"] if newest["values"].get(c) is None]
+    return result("ok" if not newest["flags"] else "partial", quarters=len(q), first=q[-1]["quarter_end"], latest=newest["quarter_end"], flags=newest["flags"], missing=missing)
+
+
 # ------------------------------------------------------------------ the run
 def load_directory(path=None):
     path = Path(path or DIRECTORY_FILE)
@@ -259,7 +291,8 @@ def identity_check(directory, symbols):
 
 def run(symbols, directory, api, client, end, identity=None, root=None):
     report = {"kind": "coverage_probe", "generated_on": dt.date.today().isoformat(), "symbols": list(symbols), "endpoints": list(ENDPOINTS),
-              "caps": {"fundamentals": FUNDAMENTALS_CALL_CAP, "candles": CANDLE_CALL_CAP}, "shareholding": "not probed (NSE filing collection is excluded until its terms are reviewed)",
+              "caps": {"fundamentals": FUNDAMENTALS_CALL_CAP, "candles": CANDLE_CALL_CAP},
+              "shareholding": "NSE filings not probed (bulk NSE collection is excluded until its terms are reviewed); Upstox share-holdings is endpoint share_holdings",
               "identity": identity or {}, "results": {}, "summary": {}}
     rec, crec = Recorder(api, root), CandleRecorder(client)
     try:
@@ -276,6 +309,8 @@ def run(symbols, directory, api, client, end, identity=None, root=None):
                 r[name] = probe_section(rec, isin, name, path, extra, parser)
             r["quarterly"] = probe_quarterly(rec, isin)
             r["candles"] = probe_candles(crec, isin, end)
+            r["corporate_actions"] = probe_extra(rec, isin, "corporate_actions")
+            r["share_holdings"] = probe_extra(rec, isin, "share_holdings")
             uc.log(sym, " ".join("%s=%s" % (e, r[e]["status"]) for e in ENDPOINTS))
     finally:
         report["calls"] = {"fundamentals": api.calls, "candles": client.calls}
@@ -340,9 +375,13 @@ def summary_markdown(report):
                 detail = "quarters=%s %s..%s same-quarter-last-year=%s" % (x.get("quarters"), x.get("first"), x.get("latest"), x.get("year_ago_quarter_present"))
             elif e == "candles":
                 detail = "candles=%s %s..%s" % (x.get("candles"), x.get("first"), x.get("last"))
+            elif e == "corporate_actions":
+                detail = "events=%s %s..%s types=%s gaps=%s ttm=%s" % (x.get("events"), x.get("first"), x.get("last"), x.get("types"), x.get("gaps"), x.get("ttm_dividend_computable"))
+            elif e == "share_holdings":
+                detail = "quarters=%s %s..%s flags=%s" % (x.get("quarters"), x.get("first"), x.get("latest"), x.get("flags"))
             elif x.get("period"):
                 detail = "period=%s" % x.get("period")
-            if x.get("status") != "ok" or e in ("quarterly", "candles"):
+            if x.get("status") != "ok" or e in ("quarterly", "candles", "corporate_actions", "share_holdings"):
                 n += 1
                 out.append("| %s | %s | %s | %s | %s | %s | %s |" % (_cell(s), e, _cell(x.get("status")), _cell(x.get("basis", "")), _cell(", ".join(x.get("missing") or [])),
                                                                 _cell(x.get("error") or x.get("problem") or ""), _cell(detail)))
