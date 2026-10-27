@@ -48,7 +48,7 @@
    "old": ".w{max-width:1040px;margin:0 auto;padding:0 18px}\n"
   },
   {
-   "new": "/* Responsive redesign: readable selected states in dark mode, and touch targets (24px everywhere, 44px at narrow widths) */\n@media(prefers-color-scheme:dark){:root:not([data-theme=\"light\"]) .btn,:root:not([data-theme=\"light\"]) .tabs button[aria-selected=true],:root:not([data-theme=\"light\"]) .chips button[aria-pressed=true],:root:not([data-theme=\"light\"]) #globalBar .gb-sections a[aria-current=true],:root:not([data-theme=\"light\"]) button[data-tf][aria-pressed=true]{color:#0F1524!important}}\n:root[data-theme=\"dark\"] .btn,:root[data-theme=\"dark\"] .tabs button[aria-selected=true],:root[data-theme=\"dark\"] .chips button[aria-pressed=true],:root[data-theme=\"dark\"] #globalBar .gb-sections a[aria-current=true],:root[data-theme=\"dark\"] button[data-tf][aria-pressed=true]{color:#0F1524!important}\nth .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}\n@container page (max-width:1149px){.tabs button,.mk-tabs button,.chips button,select,.btn{min-height:44px}}\na{color:var(--ac)}#detail details>summary{min-height:24px;padding:2px 0;cursor:pointer}\n",
+   "new": "/* Responsive redesign: readable selected states in dark mode, and touch targets (24px everywhere, 44px at narrow widths) */\n@media(prefers-color-scheme:dark){:root:not([data-theme=\"light\"]) .btn,:root:not([data-theme=\"light\"]) .tabs button[aria-selected=true],:root:not([data-theme=\"light\"]) .chips button[aria-pressed=true],:root:not([data-theme=\"light\"]) #globalBar .gb-sections a[aria-current=true],:root:not([data-theme=\"light\"]) button[data-tf][aria-pressed=true]{color:#0F1524!important}}\n:root[data-theme=\"dark\"] .btn,:root[data-theme=\"dark\"] .tabs button[aria-selected=true],:root[data-theme=\"dark\"] .chips button[aria-pressed=true],:root[data-theme=\"dark\"] #globalBar .gb-sections a[aria-current=true],:root[data-theme=\"dark\"] button[data-tf][aria-pressed=true]{color:#0F1524!important}\nth .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}\n@container page (max-width:1149px){.tabs button,.mk-tabs button,.chips button,select,.btn{min-height:44px}}\na{color:var(--ac)}#detail details>summary{min-height:24px;padding:2px 0;cursor:pointer}#finHistTable td:first-child{min-width:10.5rem}\n",
    "old": ""
   },
   {
@@ -128,5 +128,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "4495c7bf43743bdfb7c0b2f4bc70b4bb59c659933e69b7edbef73b800ed779db"
+ "decision_sha256": "12cf51e40d13546aa83c974bfa8dd942209206b8b1b7d3650ba4cbabf7b91cb5"
 }
