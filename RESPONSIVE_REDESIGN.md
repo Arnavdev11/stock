@@ -1,13 +1,13 @@
 # Responsive redesign (English only) — final review package
 
 * **Branch:** `feat/responsive-redesign-rebuild`, based on `main` at `66fe34a589e0149c50fd285029e2a1f20cd8fcf5`. `main` is untouched.
-* **Head:** the last commit in the table below (its full SHA is in the final report). There are 19 commits on top of `66fe34a`.
+* **Head:** the last commit in the table below; its full SHA is in the final report and inside the bundle's file name.
 * **What this is:** a **reconstruction** of the planned responsive work from the agreed specification. It is not the lost branch `feat/responsive-layout-pr1` / `c2658f0`.
-* **Not changed:** nothing was pushed, merged, deployed, published or dispatched. No stock name, market data, calculation, schema, workflow, authentication, rate limit, budget, cache logic or protected-script hash was changed.
+* **Not changed:** nothing was pushed, merged, deployed, published or dispatched. No stock name, market data, historical price, calculation, schema, workflow, API behaviour, authentication, rate limit, budget, cache logic or protected-script hash was changed. The chart dependency is unchanged.
 
 **Status: ready for your review, not for release.** Every automated check below passes. Release still needs:
 * your own visual review;
-* the price chart checked with its library;
+* the price chart checked with its library, and the licence attribution decided (see *Chart library*);
 * real fundamentals, financials, quarterly and market files checked in a browser (only synthetic or fixture versions were available here).
 
 ## Commits (oldest first)
@@ -30,9 +30,12 @@
 | `66c01ad` | Font headroom: NIFTY 50 tiles 2×2 under a 340px card; `--font` stress option |
 | `d159cfd` | Quarterly Results and Investment Checklist as cards on phones; combined preview builder |
 | `00ffece` | Card helper moved into the screen script (the page's script count stays at its pinned 18) |
-| `638b4e8` | `test_checklist.js`: removes a timing tie (same assertion; root cause below) |
-| `8f4152d` | This review package |
-| last commit | Note that the combined preview's mixed dates are a preview artefact; this commit list |
+| `638b4e8` | `test_checklist.js`: removes a timing tie (same assertion) |
+| `8f4152d`, `6e39c78` | Previous review package |
+| `64368e8` | **This round:** Financial History and shareholding quarters as grid cards on phones; stock-table browser checks |
+| `659ef32` | **This round:** screen filters disabled, with a reason, when the fundamentals file is missing; content checks |
+| `d9934ee` | **This round:** screener scale checks against an independent oracle (520 synthetic stocks) |
+| last commit | **This round:** this review package |
 
 ## What changed on the page
 
@@ -40,50 +43,89 @@
 |---|---|
 | Top bar | Page and bar up to 1200px wide. The full link row is used only from a 1150px bar, so the links never wrap inside it. The desktop search keeps a 15.5rem basis, so its placeholder is never cut off. Tablet (600–1149px): brand, search and menu on one row. Phone (under 600px): search on its own row. |
 | Colours | Gains `#0B7A50` and losses `#C23333` pass WCAG AA on white and on the page background. Dark-mode selected tabs, chips, nav items and buttons use dark text on the accent. Links default to the accent colour. |
-| Touch targets | At least 24px everywhere (WCAG 2.5.8); 44px for tabs, selects, buttons, the menu button, the search input, the screen's stock links and "Show more" at compact widths. Shareholding "Source" toggles and comparison-table links are 24px. |
-| Home page | All-Time High / Low and Sector Leaders / Laggards sections, and the Trending "All-Time High / Low" tab button, removed. Their renderers, data and the Stage 8C pinned code are untouched. NIFTY 50 performance tiles are 2×2 on cards under 340px (phones up to about 390px), so values never break before their "%", even in a font 16% wider than the fallback. |
-| Fundamental screen | Filters first: P/E (min, max, which P/E), P/B (min, max, which P/B), ROE at least (existing `#roe`, choices and 15% default kept), Sector. Count line, Clear filters, `aria-sort`, Load more. All three tabs follow the same filters. |
-| Screen tables on phones | Below 640px they are cards: every field labelled, numbers in a two-column grid (kept at 320px), column buttons as sort chips, tabs wrap. |
-| Stock page on phones | Below a 600px page, Quarterly Results and Investment Checklist tables are cards, so no column starts off-screen. Quarterly cards list each quarter and QoQ Growth; Checklist cards show Value and Status side by side, with a Note only when there is one. Major holders become cards below 680px. Financial History labels keep 10.5rem. Financial History and the shareholding quarter table are year grids and keep their sideways scroll. |
-| Stock page on desktop | Wider page, touch-target and contrast fixes. **Still single-column** (see the stock-page section). |
+| Touch targets | At least 24px everywhere (WCAG 2.5.8); 44px for tabs, selects, buttons, the menu button, the search input, the screen's stock links and "Show more" at compact widths. |
+| Home page | All-Time High / Low and Sector Leaders / Laggards sections, and the Trending "All-Time High / Low" tab button, removed. Their renderers, data and the Stage 8C pinned code are untouched. NIFTY 50 tiles are 2×2 on cards under 340px. |
+| Fundamental screen | Filters first: P/E and P/B (min, max, which sign), ROE at least (existing `#roe`, choices and 15% default kept), Sector. Count line, Clear filters, `aria-sort`, Load more. All three tabs follow the same filters. **New:** with no fundamentals file, every filter is disabled and the count line says "Filters are off: the fundamentals file is not loaded." |
+| Screen tables on phones | Below 640px they are cards: every field labelled, numbers in a two-column grid, column buttons as sort chips, tabs wrap. |
+| Stock page on phones | **No table scrolls sideways at 320–430px.** List cards: Quarterly Results and Investment Checklist (below a 600px page). Grid cards, **new this round**: Financial History (one card per measure, years in a grid, below a 680px page because the table is 635px wide) and the shareholding quarter table (one card per quarter, categories in a grid, below 600px). Major holders become cards below 680px. |
+| Stock page on desktop | Wider page, touch-target and contrast fixes. Tables unchanged. **Still single-column** (see below). |
 
-The stock-page card helper only adds a class and each cell's column name to those two sections' tables. It reads nothing, changes no value, row or module code, and runs at the end of the existing screen script, so the page still has exactly 18 script elements.
+**How the stock-page cards work.** A small helper at the end of the existing screen script adds a class and each cell's column name (`data-label`) to those four tables. It reads nothing, changes no value, row or module code, and keeps the page at its pinned 18 script elements.
+
+**What the new grid cards keep.** Nothing is dropped:
+* dashes for missing values;
+* Financial History's per-year source notes;
+* shareholding revision notes ("Revised filing…");
+* each quarter's Source toggle, which joins its quarter's card via `:has()` (browsers without `:has()` show it as a strip under the card). Its sticky `100cqw` box returns to normal flow inside the card.
+
+The trade-off is length: on a phone the shareholding history is 21 quarter cards (about 5,300px, against 2,200px of sideways-scrolling table before).
 
 ## Screener behaviour
 
-* **Strict numbers.** A stored value passes an active numeric filter only if it is a finite JSON number. Missing, blank, "-", text, NaN and infinite values never pass. A typed value must be a plain number of 0 or more (`12`, `12.5`, `.5`). Anything else marks the box invalid, announces the message and shows **no rows** in every tab until it is fixed. A minimum above a maximum is also an error.
-* **Negative P/E.** A P/E range and "Positive only" list P/E > 0 only. "Negative only (loss-making)" lists P/E < 0 and disables the range boxes. P/E of exactly 0 is neither.
-* **Negative P/B.** The same rule: "Negative only (negative book value)" lists P/B < 0 and disables the P/B range. The help text under each choice explains what a negative value means.
-* **Sorting.** Text columns sort A–Z first; numbers high–low first. Missing and text values always sort last. For P/E and P/B, zero and negative values sort after every positive value in both directions. Ties keep the file's order.
-* **Sector.** An exact match on the published sector; a stock without one never passes a chosen sector. The note says how many stocks have a sector. With no sector data the filter is disabled and says why. Today the updater publishes `sector` only for the ten test symbols.
-* **Load more.** Each screen table shows its first 50 matching rows, a "Showing N of M stocks" line and "Show 50 more". Every row is still drawn, so sorting, row links and the other tabs' code are unchanged; rows past the limit are hidden. A filter change starts again at 50; sorting keeps the number shown. Focus moves to the first newly shown stock. Nothing extra is fetched.
+* **Strict numbers.** A stored value passes an active numeric filter only if it is a finite JSON number. Missing, blank, "-", text, NaN and infinite values never pass. A typed value must be a plain number of 0 or more; anything else marks the box invalid, announces the message and shows **no rows** in every tab until it is fixed. A minimum above a maximum is also an error.
+* **Negative P/E and P/B.** A range or "Positive only" lists values > 0 only. "Negative only (loss-making)" and "Negative only (negative book value)" list values < 0 and disable that range. Zero is neither. When sorting, zero and negative values come after every positive value in both directions.
+* **Sorting.** Text A–Z first, numbers high–low first; missing and text values last; ties keep the file's order.
+* **Sector.** Exact match; a stock without a sector never passes a chosen sector. The note says how many stocks have one. With no sector data the filter is disabled and says why.
+* **Load more.** 50 rows per table, then "Show 50 more" with a "Showing N of M stocks" line. All rows are drawn; rows past the limit are hidden. A filter change starts again at 50; sorting keeps the number shown; focus moves to the first newly shown stock.
 
-## Stock page two-column layout: technically possible, but not done without your approval
+**Verified at scale this round:** `tests/browser_screener_scale_checks.py` uses 520 **synthetic** stocks, invented and including negative, missing and text values. It recomputes every expected result in Python from the rules above and compares it with the page:
+* the set and order of rows, including rows behind Load more;
+* each "Show 50 more" (visible rows stay a prefix of the sorted list; filters, sort and count unchanged);
+* no duplicates; count and pager lines;
+* the other two tabs; negative P/E and P/B; a P/B range; invalid input; Clear filters;
+* keyboard-only use;
+* 44px phone controls.
 
-The Stock Detail view (`view(s,d)`) returns one flat list: each `<h3>` (Overview, Financial Health, Cash Flow, Price chart) is a **sibling** of its tiles and notes.
+## Stock page two-column layout: deferred (not implemented, structure unchanged)
 
-**Experiment 1** (previous audit; throwaway worktree): grouping each heading with its content broke:
-* the Investor Snapshot (it disappeared: `stocklens-snapshot` `overviewHeading()` finds the Overview heading only among `#detail`'s direct children);
-* the "Fundamentals" and "Financials" links (`stocklens-nav` `heading()` requires `h3.parentNode===box`).
+**The two guard tests that failed in experiment 2** (a throwaway worktree, never on the branch):
+* `test_research_test_batch.Isolation.test_index_html_differs_from_the_commit_only_by_the_market_cap_header`
+* `test_research_test_batch.Isolation.test_an_unrelated_change_is_still_detected_after_the_stage_8c_reversal`
 
-**Experiment 2** (this audit; throwaway worktree, discarded, never on the branch):
-* *Changes:* the same grouping, plus `overviewHeading()` and `heading()` also accepting a heading inside a direct-child `.sd-group`, plus a desktop grid of whole groups.
-* *Result:* the Investor Snapshot was back, all six stock-page modules placed themselves, the section links scrolled correctly, the mobile layout stayed single-column in source order, all 27 JS test files passed, and the Python suite had 1,808 passes, 1 skip and 2 errors.
-* *The two remaining failures* (`test_research_test_batch`): both probe the guards by renaming the first "Overview" in the page and expect a plain difference. With grouping, that text sits inside a recorded edit, so the guard raises an error instead. The change is still caught, but not in the form the test expects.
-* *Design problems it exposed:* Overview is much shorter than Financial Health (a large empty gap), Cash Flow sits alone, and the price chart becomes half-width. The chart (`autoSize:true`) could not be checked at either width here, because its library is blocked.
+Both check that the guards still detect an unapproved change, by applying `now.replace("Overview", "Overview2", 1)` and expecting a plain difference. The first "Overview" in the page is the Stock Detail view's heading line, `h+='<h3 …>Overview</h3><div class="tiles">…` (`view(s,d)`, line 488 today). The experiment rewrote that line to open a group, so it became part of a recorded edit. The probe then broke that edit, and the guard raised an error instead of returning a difference. The change was still caught, but not in the form the tests expect.
 
-**Why it is not on the branch:**
-* It edits three protected scripts: the Stock Detail view, `stocklens-snapshot` and `stocklens-nav`.
-* It needs the two guard tests above adjusted.
-* It needs layout decisions from you.
+**Why the current architecture makes it risky:**
+* `view(s,d)` returns one flat list, with each `<h3>` a sibling of its content.
+* Seven pieces of code depend on that:
+  * `stocklens-snapshot` `overviewHeading()` (direct-child "Overview" heading);
+  * `stocklens-nav` `heading()` (`h3.parentNode===box`);
+  * Stock Research, Investment Checklist, Financial History, Shareholding and Quarterly Results, which each place themselves only while their node's parent is `#detail`, next to a sibling anchor.
+* All of them are byte-pinned.
+* The chart cannot be checked here.
+* The experiment's grid was unbalanced: short Overview beside tall Financial Health, Cash Flow alone, and a half-width chart.
 
-**Smallest safe next step, if you approve it:**
-1. *Behaviour-neutral prerequisite:* make `overviewHeading()` and `heading()` also accept a heading inside a direct-child `.sd-group`. With today's flat page this changes nothing, which existing tests would show. Record it as approved edits.
-2. *Then:*
-   * group the sections;
-   * decide the pairing (for example Overview with Cash Flow and Financial Health on its own, with the chart full width);
-   * adjust the two guard tests to accept the guard's error as detection;
-   * check the price chart where its library loads.
+**Smallest safe sequence** — each stage is a separate approved commit, and nothing moves on until its checks pass:
+
+| Stage | Change | Tested by, before the next stage |
+|---|---|---|
+| 0 | Your approval of the plan and of a layout (for example: Overview + Cash Flow left, Financial Health right, chart and Technical Snapshot full width). | — |
+| 1 | **Behaviour-neutral:** `overviewHeading()` and `heading()` also accept a heading inside a direct-child `.sd-group`. Nothing in today's page uses that, so nothing changes. Recorded as approved edits. | Both suites unchanged, including the two guard tests. New unit tests that feed both functions a grouped `#detail`. Browser layout and content suites identical to before. |
+| 2 | **Grouping only, no new CSS:** add the group openers and closers as **separate inserted lines** in `view(s,d)`, leaving every heading line byte-identical. The "Overview" probe then hits unrecorded text, so both guard tests pass unchanged and no guard test is weakened. | Both suites. `browser_content_checks.py` (every stock page: snapshot present, all modules placed, no errors). Section links and Back/Forward. Screenshots identical to stage 1 at every width (grouping alone changes no pixel). |
+| 3 | **Desktop grid** of whole groups, from 1000px only; mobile stays single-column in source order; chart full width. | Layout matrices (both fonts, both themes), content checks, the mobile-table checks, and your visual review of balance. |
+| 4 | **Price chart** in its new width. | Checked where the library loads (your machine), including resize. |
+
+## Chart library: options (assessment only, nothing changed)
+
+**Evidence:**
+* The page loads `https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js` at runtime. It's pinned to 4.2.0, and `tests/test_chart.js` asserts that version.
+* There is no `integrity` attribute and no local copy. On failure the page shows "Chart library could not be loaded" with no errors.
+* The page uses the v4 API (`createChart`, `addCandlestickSeries`, `addLineSeries`, `addHistogramSeries`). v5 replaced these, so moving to v5 would mean code changes.
+* The package's declared licence is Apache-2.0 ([Cloudsmith listing](https://cloudsmith.com/navigator/npm/lightweight-charts)).
+* The official package README ([v5.0.7 README on unpkg](https://unpkg.com/lightweight-charts@5.0.7/README.md)) says the licence requires naming TradingView as the product creator. A page users can see must carry the attribution notice from the NOTICE file and a link to tradingview.com. The `attributionLogo` chart option can satisfy the link part.
+* **Licensing finding:** the page has no such notice or link today, and does not set `attributionLogo`. I could not confirm whether 4.2.0's README has identical wording or what 4.2.0's default for `attributionLogo` is (that URL was not reachable here). This needs checking regardless of the option chosen.
+* **Not verifiable here:** the file's SRI hash. The file cannot be downloaded in this environment; compute it with `curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+
+| | 1. CDN + SRI (keep unpkg, exact version, `integrity` + `crossOrigin="anonymous"`) | 2. Vendor a reviewed copy (with LICENSE and NOTICE) | 3. Another available dependency |
+|---|---|---|---|
+| Security | The browser refuses any file that doesn't match the hash. Third-party request at runtime. | Best: the reviewed bytes are in version control; no third-party runtime request. | No other chart library is in the repo. The only alternative is the page's own inline-SVG charting (Financial History, Shareholding, Compare), which has no candlesticks, MACD, crosshair or zoom. |
+| Reliability | Depends on unpkg being up; with SRI, a changed file fails closed (no chart, page intact). | Same availability as the site. | Rewriting the price chart in SVG: large and risky. |
+| Licensing | Attribution notice and link still needed. | Ship LICENSE and NOTICE beside the file; attribution notice and link still needed. | Not applicable. |
+| Offline | No chart. | Works. | Works. |
+| Maintenance | Update the URL and hash together on each upgrade. | Re-vendor and re-review on each upgrade. | High. |
+| Change needed | Two attributes in the chart script (protected: an approved edit), the `test_chart.js` assertion for the integrity value, and a hash computed on a networked machine. | A new file, plus a change to the protected `update.yml` site-build step so the file is copied into `_site` (workflow approval), plus the URL change in the chart script. | A new chart implementation. |
+| Impact on the chart | None if the hash is right. | None. | Total rewrite. |
+
+**Recommendation: option 1 now, plus the attribution notice and link.** It's the smallest change that closes the integrity gap, it needs no workflow change, and it keeps the exact library the chart was built against. Option 2 is the stronger long-term choice if you want the chart to work offline or without a third-party request; it needs a workflow approval. Nothing was implemented.
 
 ## Data verification
 
@@ -91,106 +133,111 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 
 | Preview | Built by | Contents |
 |---|---|---|
-| Synthetic | `tests/synthetic_site.py` | 119 invented stocks, every file marked synthetic |
-| Read-only real copy | `tests/readonly_data_site.py` | From `origin/stocklens-data` at `6f9e7dc`, already in the clone, read with `git show`. The files the workflow copies into the site; `financial_history.json` and `shareholding.json` built offline by the updaters' own `build_output()` (both pass the updaters' `validate_doc`); the committed `company_profiles.json` and `out/growth_events.json`. |
-| Combined | `tests/hybrid_preview_site.py` | The read-only real copy. Plus, **only** where no real file is in git: synthetic fundamentals, financials, scans and FII/DII; and a **fixture** TCS Quarterly Results file, built by `quarterly_results_updater.build_outputs()` from its own test fixture (the verified real response shape, invented numbers). `MANIFEST.json` labels every file. Because it mixes sources, the home page shows the synthetic scan date (2026-10-23) beside the real NIFTY 50 date (2026-10-26); that's an artefact of the preview, not of the page. |
+| Synthetic | `tests/synthetic_site.py [--stocks N]` | 119 invented stocks by default (520 for the scale checks); every file marked synthetic |
+| Read-only real copy | `tests/readonly_data_site.py` | From `origin/stocklens-data` at `6f9e7dc`, already in the clone, read with `git show`. The files the workflow copies into the site; `financial_history.json` and `shareholding.json` built offline by the updaters' own `build_output()` (both pass `validate_doc`); the committed `company_profiles.json` and `out/growth_events.json`. |
+| Combined | `tests/hybrid_preview_site.py` | The read-only real copy, plus only where no real file is in git: synthetic fundamentals, financials, scans and FII/DII, and a fixture TCS Quarterly Results file (built by `quarterly_results_updater.build_outputs()` from its own test fixture). `MANIFEST.json` labels every file. The home page shows the synthetic scan date beside the real NIFTY date, which is an artefact of mixing sources. |
+
+**Content checks on the read-only real copy** (`tests/browser_content_checks.py`, all 10 real stocks plus the home, screener and compare pages, at 390 and 1280px): 26 page views, **0 problems** (no page errors, no leaked `undefined`/`NaN`/`null`, no missing link targets, no broken link addresses).
+* Every section's empty state is honest and specific: "Fundamentals not loaded yet.", "No quarterly results are on file for this company yet.", "Data unavailable — the validated market-activity file is not available".
+* The brand (back to the dashboard) and the desktop menu's Shareholding and Research items are written as `href="#"`. They are scripted controls, verified by clicking: the brand returns to the dashboard; the other two move focus to the stock search.
+* One small usability point (pre-existing, unchanged from `main`): those two items show no message saying why the search was focused.
 
 | Feature | Status |
 |---|---|
-| Header price, day change, Market Cap (TCS) | **Real data** |
-| Technical Snapshot | **Real data** (1,255 daily candles) |
+| Header price, day change, Market Cap (all 10 real stocks) | **Real data** |
+| Technical Snapshot | **Real data** |
 | Investor Snapshot: Price & Performance, Ownership, Future Growth Evidence | **Real data** |
-| Financial History (table, CAGR, 5 SVG charts) | **Real data** (5 fiscal years, built offline from the real ledger) |
-| Shareholding Pattern (snapshot, major holders, trend, quarter table) | **Real data** (21 quarters, built offline from the real ledger) |
+| Financial History (table, CAGR, 5 SVG charts, phone cards) | **Real data** (built offline from the real ledger) |
+| Shareholding Pattern (snapshot, major holders, trend, quarter table, phone cards) | **Real data** (built offline from the real ledger) |
 | Comparison page: prices and Financial History parts | **Real data** |
-| Market Today NIFTY 50 card | **Real data** |
-| Fundamental screen, all three tabs, filters, Load more, mobile cards | **Synthetic only**: `fundamentals.json` and `financials.json` exist only in the Actions cache |
-| Stock page Overview / Financial Health / Cash Flow tiles, Research and Checklist (fundamentals parts), company names | **Synthetic only**, rendered together with the real sections in the combined preview |
-| Quarterly Results (table, QoQ Growth, phone cards) | **Fixture only** (real response shape, invented numbers); no quarterly file is in git |
-| Home market sections (breadth, movers, sectors, volume, FII/DII, swing) | **Synthetic only**. Deriving them from the 10 real stocks would misstate market-wide figures (the code expects every NSE stock, turnover and delivery). |
-| Price chart (TradingView Lightweight Charts 4.2.0) | **Not verified**: the library loads from unpkg, which is blocked here. Only the fallback was seen: "Chart library could not be loaded", with no errors and the rest of the page intact. |
-| Manrope font | **Not verified**: Google Fonts is blocked. The fallback here is Inter, measured identical to what the page used. Stress-tested with DejaVu Sans forced on every element (measured 16–18% wider than Inter): all matrices pass. Manrope's own metrics could not be measured. |
-| SENSEX tab, live test panel | **Not verified in a browser** (their unit tests pass) |
+| NIFTY 50 tiles | **Real data** |
+| Screen with no fundamentals file (filters off, honest message) | **Real data** (the real copy has no fundamentals file) |
+| Screen with data: filters, sector filter, all three tabs, Load more, cards, 520-stock scale | **Synthetic only** |
+| Stock overview tiles, Research and Checklist fundamentals parts, company names | **Synthetic only** (in the combined preview) |
+| Home market sections | **Synthetic only** (their real files exist only in the Actions cache) |
+| Quarterly Results | **Fixture only** (real response shape, invented numbers) |
+| Price chart | **Not verified**: library blocked here; only the fallback was seen |
+| Manrope font | **Not verified**: covered by a stress test with a face 16–18% wider than the fallback |
+| SENSEX tab, live test panel | **Not verified in a browser** (unit tests pass) |
 
 ## Tests and checks (exact commands, actual results on the final code)
 
-| Command | Result |
-|---|---|
-| `python -m unittest discover -p 'test_*.py'` (the CI command) | 1,811 tests, **OK**, 1 skipped (the same skip as on `main`) |
-| `for f in tests/test_*.js; do node "$f"; done` | **27 of 27 files pass** (`test_screener_filters.js` 167 checks, `test_responsive_layout.js` 53 checks) |
-| `python tests/browser_checks.py <synthetic> <report> --no-shots` | 90 checks (15 widths × home/screener/TCS × light/dark), **0 with a problem** |
-| same with `--font "DejaVu Sans"` | 90 checks, **0 with a problem** |
-| `python tests/browser_checks.py <real copy> <report> --no-shots --pages home,tcs,compare` | 90 checks, **0 with a problem** |
-| same with `--font "DejaVu Sans"` | 90 checks, **0 with a problem** |
-| `python tests/browser_checks.py <combined> <report> --pages home,screener,tcs,compare` | 120 checks, **0 with a problem** (screenshots saved) |
-| same with `--no-shots --font "DejaVu Sans"` | 120 checks, **0 with a problem** |
-| `python tests/browser_screener_checks.py <new-dir>` | **39 of 39 pass** |
+| Command | Result | Baseline (`main` at `66fe34a`) |
+|---|---|---|
+| `python -m unittest discover -p 'test_*.py'` | **1,811 tests, OK, 1 skipped** | 1,807 tests, OK, 1 skipped (+4 new manifest tests) |
+| `for f in tests/test_*.js; do node "$f"; done` | **27 of 27 files pass** | 25 of 25 (+2 new: screener filters 170 checks, responsive layout 57 checks) |
+| Protected-script checks (inside both suites: byte-identity guards, Stage 8C, Phase 2B pin, search pin, script count, manifest) | **all pass**; no workflow, guard, pin file, updater or data file differs from `66fe34a` | — |
+| `browser_checks.py`, 15 widths × light/dark | **0 problems in 600 checks**: synthetic 90 + 90 (fallback / DejaVu Sans), real copy 90 + 90 (home, TCS, compare), combined 120 + 120 (home, screener, TCS, compare) | not run on `main` this round (first round: 60 of 60 views had a problem) |
+| `browser_content_checks.py` on the real copy / the combined preview | **26 + 26 page views, 0 problems** | — |
+| `browser_screener_checks.py` | **39 of 39 pass** | — |
+| `browser_screener_scale_checks.py` (520 synthetic stocks) | **29 of 29 pass** | — |
+| `browser_mobile_tables_checks.py` (4 tables, 320–430 and 768/1280px, light/dark) | **799 of 799 pass** | the same check on the previous head `6e39c78`: 100 of 799 fail |
 
-* **What the browser checks look for:**
-  * page overflow;
-  * top-bar rows and overlap, and search placeholder fit;
-  * content spilling out of its card, and card tables wider than their box;
-  * clipped control text, and controls hidden off-screen in a sideways strip;
-  * short numbers that wrap;
-  * targets under 24px, and text below WCAG AA contrast;
-  * console errors.
-* **Widths:** 320, 360, 375, 390, 430, 640, 768, 900, 1000, 1005, 1024, 1280, 1366, 1440 and 1920. The reports also list the tables that scroll sideways, for review.
-* **The earlier fixes, re-confirmed on the final code:**
-  * NIFTY values and card columns at 320–390px: no wrapped numbers in either font.
-  * Negative P/E and P/B, Load more, focus, tabs following the filters, row links and the no-sector state: all 39 screener checks pass.
-  * Clickable targets and text wrapping: no target under 24px and no wrapped number in any matrix.
+**Widths:** 320, 360, 375, 390, 430, 640, 768, 900, 1000, 1005, 1024, 1280, 1366, 1440 and 1920.
 
-**Intermittent failure, now resolved.** The failure was in `tests/test_checklist.js`, "slow files and the user left…", and also happened on `main`.
-* *Root cause:* the fake files arrive at 120ms, and the test left the second stock at exactly 120ms (100 + 20), a timer tie. When the navigation won, the Stock Detail view was never rendered, so no checklist placeholder existed and the check failed, although nothing was painted.
-* *Evidence:* a 5ms stay failed 5/5 with no section placed; a 40ms stay passed 5/5, on `66fe34a` and this branch alike.
-* *Fix:* a 40ms stay, with the same assertion. It passed 30/30, and 15/15 under CPU load. A copy of the page with the checklist's route guard removed fails this check 3/3, so the test still guards what it should.
-* The similar pattern on line 282 waits 700ms before checking, so it can't tie.
+**What could not run:** the price chart with its library, Manrope, Safari, Firefox and real devices.
 
 ## Protections
 
-* **Recorded page edits:** every `index.html` edit is one of the 22 `decision_edits` in `tests/approved_page_edits.json`, generated by `tests/page_edit_manifest.py` from the exact difference with `66fe34a`.
+* **Recorded page edits:** every `index.html` edit is one of the `decision_edits` in `tests/approved_page_edits.json`, generated by `tests/page_edit_manifest.py` from the exact difference with `66fe34a`.
   * The existing guards reverse them first, so every older byte-identity pin still runs and still catches any other change.
   * `test_responsive_redesign.py` keeps the record exact.
-* **Hashes:** the Phase 2B pin in `tests/test_technicals.js` keeps its original hash, checked after reversing exactly the recorded edits. No hash was replaced, the search-module pin is untouched, and the page's pinned script count (18) is unchanged.
-* **Tests changed to describe the new layout:** `test_global_navigation.js` (breakpoints) and `test_market_dashboard_ui.js` (13 sections, the removed two asserted absent; NIFTY grid step). `test_checklist.js` got only the timing change above.
+* **Hashes:** no hash was replaced. The Phase 2B pin keeps its original value (checked after reversing exactly the recorded edits), and the search-module pin and the pinned script count (18) are unchanged.
+* **Tests changed to describe the new layout:** `test_global_navigation.js` and `test_market_dashboard_ui.js`. `test_checklist.js` got only a timing change (same assertion), with its root cause documented in the previous package.
+
+## Files changed (against `66fe34a`)
+
+| File | Why |
+|---|---|
+| `index.html` | All the page changes above, as recorded edits |
+| `tests/approved_page_edits.json` | The recorded edits (`decision_*` keys only; the coverage edits are untouched) |
+| `tests/page_edit_manifest.py`, `test_responsive_redesign.py` | Record and verify the edits |
+| `tests/legacy_5i.js` | Adds `withoutDecisionEdits` (same exactly-once rule) for the Phase 2B pin |
+| `tests/test_technicals.js` | The same Phase 2B hash, checked after reversing the recorded edits |
+| `tests/test_global_navigation.js`, `tests/test_market_dashboard_ui.js` | Describe the new breakpoints and the removed home sections |
+| `tests/test_checklist.js` | Timing fix for a race in the test itself (same assertion) |
+| `tests/test_screener_filters.js`, `tests/test_responsive_layout.js` | New regression tests |
+| `tests/synthetic_site.py`, `tests/readonly_data_site.py`, `tests/hybrid_preview_site.py` | Local preview sites, written to scratch folders only |
+| `tests/browser_checks.py`, `browser_screener_checks.py`, `browser_screener_scale_checks.py`, `browser_mobile_tables_checks.py`, `browser_content_checks.py` | Local browser checks (not run by CI; need Playwright) |
+| `RESPONSIVE_REDESIGN.md` | This review package |
 
 ## Known defects, risks and unverified areas
 
-* **Price chart dependency.** The library is loaded at runtime from unpkg (`lightweight-charts@4.2.0`), with no integrity (SRI) hash and no local copy. If unpkg is down or the file changes, the chart fails or runs unchecked code; the page degrades to its message. Adding SRI or self-hosting changes a protected script, so it needs your approval.
-* **Phones: sideways scrolling.** Financial History and the shareholding quarter table still scroll sideways; later years and categories start off-screen. They are year grids, where cards would not read better.
-* **Real data gaps.** The screener, stock tiles, Research and Checklist fundamentals, home market sections and Quarterly Results were checked only with synthetic or fixture data.
+* **Chart library:** runtime CDN request without SRI; attribution notice and link missing (licence requirement). Needs your decision.
+* **Real data gaps:** the screen with data, stock tiles, Research and Checklist fundamentals, home market sections and Quarterly Results were checked only with synthetic or fixture data.
+* **Phone page length:** the shareholding history and Financial History are now long card lists (all values visible; nothing scrolls sideways).
 * **Sector filter** will offer few sectors with real data until the sector approval gate opens.
-* **Browser coverage.** Headless Chromium only; no Safari, Firefox or real devices.
-* **Manrope.** Not measured; covered only by the wider-font stress test.
+* **Browser coverage:** headless Chromium only.
+* **Manrope:** not measured.
+* **Two-column stock page:** deferred.
 
 ## Needs your approval or decision
 
-1. The stock-page two-column work and its smallest safe next step (protected scripts; two guard tests).
-2. SRI or self-hosting for the chart library.
-3. The 50-row page size for the 500-stock screen.
-4. Any release action (push, pull request, merge, deploy).
+1. Chart library: option 1 (recommended) or 2, plus the attribution notice and link.
+2. The two-column stock page staged plan, and a layout for stage 3.
+3. Any release action (push, pull request, merge, deploy).
 
-## How to review locally
+## How to review locally (separate worktree)
 
 1. **Bring the branch in.** In your repo folder (`C:\Users\HP\Downloads\stock-live-test`), PowerShell:
-   * `git fetch origin` (updates only remote-tracking references, so `66fe34a` is present);
-   * `git fetch <path>\responsive-redesign-rebuild-<sha>.bundle feat/responsive-redesign-rebuild:feat/responsive-redesign-rebuild` (creates the branch without touching your files or untracked data);
+   * `git fetch origin` (updates only remote-tracking references, so `66fe34a` and `origin/stocklens-data` are present);
+   * `git bundle verify <path>\responsive-redesign-rebuild-<sha>.bundle`;
+   * `git fetch <path>\responsive-redesign-rebuild-<sha>.bundle feat/responsive-redesign-rebuild:feat/responsive-redesign-rebuild` (creates the branch without touching your working folder or untracked files);
    * `git worktree add ..\stock-review feat/responsive-redesign-rebuild`, then `cd ..\stock-review`.
 2. **Run the tests:**
    * `python -m unittest discover -p "test_*.py"`
    * `Get-ChildItem tests\test_*.js | ForEach-Object { node $_.FullName }`
-3. **Build the previews into a scratch folder outside the repo:**
+3. **Build the previews outside the repo:**
    * `python tests\synthetic_site.py ..\preview-synthetic`
-   * `python tests\readonly_data_site.py ..\preview-real` (needs `origin/stocklens-data` locally; a plain `git fetch origin` brings it)
+   * `python tests\readonly_data_site.py ..\preview-real`
    * `python tests\hybrid_preview_site.py ..\preview-combined`
-4. **Open a preview** (from inside a preview folder):
-   * Run `python -m http.server 8000 --bind 127.0.0.1`.
-   * Open `http://127.0.0.1:8000/index.html`, then `#screener`, `#stock=TCS` and `#compare=TCS,ITC,INFY`.
-   * With your internet connection on, the chart library and Manrope will load. That's the part that couldn't be checked here.
-   * Check light and dark (your OS theme) and narrow the window, or use the browser's device toolbar at 320–430px.
-5. **Optional browser checks** (need `pip install playwright` and `playwright install chromium`):
+4. **Open a preview.** From inside a preview folder, run `python -m http.server 8000 --bind 127.0.0.1`. Then open `http://127.0.0.1:8000/index.html` and try `#screener`, `#stock=TCS` and `#compare=TCS,ITC,INFY`. With internet on, the chart library and Manrope load: that's what couldn't be checked here. Try light and dark, and 320–430px in the browser's device toolbar.
+5. **Optional browser checks** (`pip install playwright`, then `playwright install chromium`):
    * `python tests\browser_checks.py ..\preview-combined ..\report --pages home,screener,tcs,compare`
-   * `python tests\browser_screener_checks.py ..\screener-check`
+   * `python tests\browser_mobile_tables_checks.py ..\tables-check`
+   * `python tests\browser_screener_scale_checks.py ..\scale-check`
+   * `python tests\browser_content_checks.py ..\preview-real`
+6. **To discard the review copy:** `git worktree remove ..\stock-review`.
 
 ## NIFTY 500 validation plan (separate; nothing here was run)
 
@@ -198,5 +245,5 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 2. Build the 500-symbol directory with `directory_universe.py` from a saved copy of the NIFTY 500 list. Check the count, duplicates and symbol format with the `test_directory_universe.py` rules.
 3. Run the updaters' offline paths with mocked provider responses (`tests/mock_responses.py`), never the live API, and with the request ceilings unchanged.
 4. Run `coverage_report.py --state-dir <scratch>` offline for per-dataset coverage.
-5. Preview 500 rows locally with the screener and Load more, especially on phones.
+5. Preview 500 rows locally with the screener and Load more, especially on phones (the 520-stock synthetic scale check already passes).
 6. Only after your review: a production run through the existing approved workflow, which you dispatch yourself.
