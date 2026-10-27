@@ -17,7 +17,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-WIDTHS = [390, 430, 768, 1000, 1005, 1024, 1280, 1366, 1440, 1920]
+WIDTHS = [320, 360, 375, 390, 430, 640, 768, 900, 1000, 1005, 1024, 1280, 1366, 1440, 1920]   # the 13 widths of the release review plus 1366 and 1920 from the first review
 PAGES = [("home", ""), ("screener", "#screener"), ("tcs", "#stock=TCS")]
 
 PROBE = r"""
@@ -27,6 +27,27 @@ PROBE = r"""
   out.scrollWidth = de.scrollWidth; out.clientWidth = de.clientWidth; out.overflowX = de.scrollWidth > de.clientWidth + 1;
   out.wide = [...document.querySelectorAll("body *")].filter((e) => vis(e) && e.getBoundingClientRect().right > de.clientWidth + 1 && !e.closest(".scroll,.mk-scroll,[data-scroll]"))
     .slice(0, 8).map((e) => (e.id ? "#" + e.id : e.tagName.toLowerCase() + "." + (e.className && e.className.baseVal === undefined ? String(e.className).split(" ")[0] : "")) + " right=" + Math.round(e.getBoundingClientRect().right));
+  /* content that spills out of its card or box (a scrolling region inside the box is allowed to hold wider content) */
+  const nm = (e) => (e.id ? "#" + e.id : e.tagName.toLowerCase() + (typeof e.className === "string" && e.className ? "." + e.className.split(" ")[0] : ""));
+  const scrolls = (e) => { const o = getComputedStyle(e).overflowX; return o === "auto" || o === "scroll" || o === "hidden" || o === "clip"; };
+  out.spill = [];
+  for (const box of document.querySelectorAll(".mk-card,.mk-idx,.mk-adv,.mk-tile,.tile,.fs,.c,.item,#screener-sec tbody tr,#detail > section,#detail > div,#detail > p")) {
+    if (!vis(box)) continue; const B = box.getBoundingClientRect();
+    for (const e of box.querySelectorAll("*")) { if (!vis(e)) continue; let inScroll = false;
+      for (let x = e.parentElement; x && x !== box; x = x.parentElement) if (scrolls(x)) { inScroll = true; break; }
+      if (inScroll) continue; const r = e.getBoundingClientRect();
+      if (r.right > B.right + 1 || r.left < B.left - 1) { out.spill.push(nm(box) + " > " + nm(e) + " (" + Math.round(r.left) + "-" + Math.round(r.right) + " vs " + Math.round(B.left) + "-" + Math.round(B.right) + ")"); break; } } }
+  out.spill = out.spill.slice(0, 10);
+  /* text cut off inside a control, and controls hidden off-screen in a sideways-scrolling strip */
+  out.clipped = [...document.querySelectorAll("button,a[href],label,[role=tab]")].filter((e) => vis(e) && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== "visible").map(nm).slice(0, 10);
+  out.offStrip = [];
+  for (const strip of document.querySelectorAll("[role=tablist],.tabs,.chips")) { if (!vis(strip) || !scrolls(strip)) continue; const S = strip.getBoundingClientRect();
+    for (const b of strip.querySelectorAll("button,[role=tab],a")) { if (!vis(b)) continue; const r = b.getBoundingClientRect(); if (r.right > S.right + 1 || r.left < S.left - 1) out.offStrip.push(nm(strip) + " > " + (b.textContent || "").trim().slice(0, 24)); } }
+  /* a short number (e.g. -0.71% or 12,65,567.21) that wraps onto a second line */
+  const NUMRE = /^[+\-\u2212]?\u20b9?[\d,]+(\.\d+)?\s?(%|x|pts)?$/;
+  out.brokenNumbers = [...document.querySelectorAll("span,b,td,div,small")].filter((e) => vis(e) && e.children.length === 0 && NUMRE.test((e.textContent || "").trim()))
+    .filter((e) => { const rg = document.createRange(); rg.selectNodeContents(e); const tops = new Set([...rg.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))); return tops.size > 1; })   /* the text's own line boxes */
+    .map((e) => nm(e) + ":" + e.textContent.trim()).slice(0, 10);
   const bar = document.querySelector("#globalBar .gb-in");
   if (bar) {
     const parts = [...bar.children].filter(vis), rowsOf = [];
@@ -120,10 +141,10 @@ def run(site, report_dir, shots=True, widths=WIDTHS, pages=PAGES, schemes=("ligh
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
-    res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv)
+    res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv, schemes=("light", "dark"))
     for r in res:
         b = r.get("bar") or {}
         s = r.get("search") or {}
-        print("%-8s %5d overflow=%-5s bar_rows=%s overlaps=%d ph_fits=%s under44=%d under24=%d lowC=%d errors=%d" % (
-            r["page"], r["width"], r["overflowX"], b.get("rows"), len(b.get("overlaps", [])), s.get("placeholderFits"),
-            len(r["under44"]), len(r["under24"]), r["lowContrastCount"], len(r["consoleErrors"])))
+        print("%-5s %-8s %5d overflow=%-5s bar_rows=%s overlaps=%d ph_fits=%s spill=%d clipped=%d offstrip=%d brokenNum=%d under44=%d under24=%d lowC=%d errors=%d" % (
+            r["scheme"], r["page"], r["width"], r["overflowX"], b.get("rows"), len(b.get("overlaps", [])), s.get("placeholderFits"), len(r["spill"]), len(r["clipped"]),
+            len(r["offStrip"]), len(r["brokenNumbers"]), len(r["under44"]), len(r["under24"]), r["lowContrastCount"], len(r["consoleErrors"])))

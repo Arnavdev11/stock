@@ -51,6 +51,6 @@ ok(/#detailCompare a\{[^}]*color:var\(--ac\)/.test(css), "the stock page's Compa
 
 // --- the agreed browser-check widths
 { const py = fs.readFileSync(__dirname + "/browser_checks.py", "utf8"); const w = (py.match(/^WIDTHS = \[([^\]]+)\]/m) || [])[1];
-  eq(w.split(",").map((x) => +x.trim()), [390, 430, 768, 1000, 1005, 1024, 1280, 1366, 1440, 1920], "browser checks cover exactly the ten agreed widths"); }
+  eq(w.split(",").map((x) => +x.trim()), [320, 360, 375, 390, 430, 640, 768, 900, 1000, 1005, 1024, 1280, 1366, 1440, 1920], "browser checks cover the 13 release-review widths and the earlier 1366 and 1920"); }
 
 console.log("Responsive layout tests passed (" + checks + " checks)");
