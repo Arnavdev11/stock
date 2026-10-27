@@ -485,18 +485,24 @@ function view(s,d){
   if(!has)h+='<p class="note" style="padding-left:0">No fundamentals or financial statements were found for '+esc(s)+' in the current data. Missing values show "-".</p>';
   h+='<div class="tiles">'+tile("Symbol",esc(s))+tile("Company",company?esc(company):"-")+tile("Market Cap (₹ crore)",cr(mc.cap))+tile("Latest Price (last close, ₹)",r2(p.price))+tile("Day change vs previous close",pc(p.change),p.change>0?"up":neg(p.change))+'</div>';
   h+='<p class="note" style="padding-left:0">Latest price and day change are the last daily close in the historical data'+(p.date?", as of "+esc(p.date):"")+' (not a live price). They show "-" when the stock has fewer than two valid daily candles'+(p.price===null&&!(d.prices&&d.prices.stocks&&Object.prototype.hasOwnProperty.call(d.prices.stocks,s))?" (no price history has been fetched for this stock yet)":"")+'. '+(mc.cap!==null?"Market Cap = last close × "+esc(N0.format(mc.shares))+" shares (NSE shareholding filing, quarter ended "+esc(mc.quarter)+"), not a live value.":'Market Cap shows "-" unless both a last close and an NSE-filed share count are on file.')+'</p>';
+  h+='<div class="sd-group" id="sdRatios">';   /* group ratios open */
   h+='<h3 style="margin:1.4em 0 .4em">Overview</h3><div class="tiles">'+tile("P/E",r2(v.pe))+tile("P/B",r2(v.pb))+tile("ROE %",r2(v.roe))+tile("ROCE %",r2(v.roce))+tile("ROA %",r2(v.roa))+tile("EV/EBITDA",r2(v.ev_ebitda))+'</div>';
   var vs=stockStatus(d.val,s,findStock(d.val,s));
   h+='<p class="note" style="padding-left:0">'+(d.val&&d.val.as_of?"Fundamentals data: "+esc(d.val.source||"Upstox")+" · Updated: "+esc(d.val.as_of)+(vs?" · "+vs:""):"Fundamentals not loaded yet.")+'</p>';
+  h+='</div>';   /* group ratios close */
+  h+='<div class="sd-group" id="sdHealth">';   /* group health open */
   h+='<h3 style="margin:1.4em 0 .4em">Financial Health <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
   h+='<p class="note" style="padding-left:0">Income statement: '+per(inc)+' · Balance sheet: '+per(bal)+'</p>';
   h+='<div class="tiles">'+tile("Revenue",cr(inc.revenue))+tile("Total revenue",cr(inc.total_revenue))+tile("Profit before tax",cr(inc.profit_before_tax),neg(inc.profit_before_tax))+tile("Profit after tax",cr(inc.profit_after_tax),neg(inc.profit_after_tax))+tile("EPS basic (₹)",r2(inc.eps_basic))+tile("EPS diluted (₹)",r2(inc.eps_diluted))+'</div>';
   h+='<div class="tiles">'+tile("Total assets",cr(bal.total_assets))+tile("Total liabilities",cr(bal.total_liabilities))+tile("Total equity",cr(bal.total_equity),neg(bal.total_equity))+tile("Liabilities / Equity",r2(bal.liabilities_to_equity))+tile("Debt / Equity","N/A")+'</div>';
   h+='<p class="note" style="padding-left:0">Total equity = total assets − total liabilities (Upstox). Liabilities / Equity is not Debt / Equity and is not comparable for banks, whose liabilities are mostly customer deposits. Debt / Equity is N/A because Upstox did not return a clearly identifiable debt line.</p>';
+  h+='</div>';   /* group health close */
+  h+='<div class="sd-group" id="sdCash">';   /* group cash open */
   h+='<h3 style="margin:1.4em 0 .4em">Cash Flow <small style="color:var(--mute);font-weight:400">(₹ crore)</small></h3>';
   h+='<p class="note" style="padding-left:0">Period: '+per(cf)+'</p>';
   h+='<div class="tiles">'+tile("Operating cash flow",cr(cf.operating),neg(cf.operating))+tile("Investing cash flow",cr(cf.investing),neg(cf.investing))+tile("Financing cash flow",cr(cf.financing),neg(cf.financing))+tile("Free cash flow",isn(cf.free_cash_flow)?cr(cf.free_cash_flow):"N/A",neg(cf.free_cash_flow))+'</div>';
   h+='<p class="note" style="padding-left:0">'+(isn(cf.free_cash_flow)?"Free Cash Flow is shown only where Upstox provided an unambiguous capital-expenditure line.":"Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for this stock.")+'</p>';
+  h+='</div>';   /* group cash close */
   h+='<div id="detailTech"></div>';   /* Phase 3 Step 3: Technical Snapshot fills this */
   h+='<h3 style="margin:1.4em 0 .4em">Price chart</h3><div class="panel" style="padding:28px;text-align:center;color:var(--mute)" id="detailChart">Historical Price Chart — Coming in Phase 3 Step 2</div>';
   var fs=d.fin&&!findStock(d.fin,s)?stockStatus(d.fin,s,null):null;

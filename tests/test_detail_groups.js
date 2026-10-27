@@ -53,4 +53,25 @@ const h3 = (t) => el("h3", "", [], t), p = (t) => el("p", "note", [], t), tiles 
   eq(overviewHeading(el("div", "", [el("div", "sd-groups", [h3("Overview")])])), null, "the class must be exactly sd-group");
   { const g = el("div", "x sd-group", [h3("Overview")]); eq(overviewHeading(el("div", "", [g])), g, "sd-group may sit among other classes"); } }
 
+// --- stage 2: the grouping lines in view(s,d)
+const detail = html.slice(html.indexOf("function view(s,d){"), html.indexOf("\n  return h}", html.indexOf("function view(s,d){")));
+const base = withoutDecisionEdits(html), baseDetail = base.slice(base.indexOf("function view(s,d){"), base.indexOf("\n  return h}", base.indexOf("function view(s,d){")));
+const lines = detail.split("\n"), groupLines = lines.filter((l) => /sd-group|<\/div>';\s+\/\* group /.test(l));
+const opens = lines.filter((l) => /^  h\+='<div class="sd-group" id="sd[A-Z][a-z]+">';\s+\/\* group [a-z]+ open \*\/$/.test(l)), closes = lines.filter((l) => /^  h\+='<\/div>';\s+\/\* group [a-z]+ close \*\/$/.test(l));
+eq(opens.length, 3, "three group openers, each a line of its own"); eq(closes.length, 3, "three matching closers, each a line of its own"); eq(groupLines.length, 6, "and no other line mentions a group");
+eq(groupLines.filter((l) => /overview/i.test(l)), [], "no inserted grouping line, id or comment contains the word the guard tests probe");
+eq(lines.filter((l) => !baseDetail.split("\n").includes(l)), groupLines, "the only lines of view(s,d) that differ from the page before the recorded edits are the grouping lines");
+eq(lines.filter((l) => !groupLines.includes(l)), baseDetail.split("\n"), "every other line keeps its order; that those lines (every heading line included) are byte-identical to the shipped page is enforced by the Stock Detail block pins in test_checklist.js, test_research.js and test_profiles.js");
+{ let depth = 0, max = 0; for (const l of lines) { if (opens.includes(l)) depth++; if (closes.includes(l)) depth--; ok(depth >= 0, "groups never close before they open"); max = Math.max(max, depth); } eq(depth, 0, "every group is closed"); eq(max, 1, "groups are not nested"); }
+const ids = opens.map((l) => /id="([^"]+)"/.exec(l)[1]); eq(new Set(ids).size, 3, "group ids are distinct");
+ids.forEach((id) => eq((html.match(new RegExp('id="' + id + '"', "g")) || []).length, 1, id + " is used once in the page"));
+const inside = (open) => { const i = lines.indexOf(open); const j = lines.findIndex((l, k) => k > i && closes.includes(l)); return lines.slice(i + 1, j); };
+ok(/^  h\+='<h3[^>]*>Overview<\/h3>/.test(inside(opens[0])[0]), "the first group opens with the Overview heading line");
+ok(/^  h\+='<h3[^>]*>Financial Health /.test(inside(opens[1])[0]), "the second opens with Financial Health");
+ok(/^  h\+='<h3[^>]*>Cash Flow /.test(inside(opens[2])[0]), "the third opens with Cash Flow");
+ok(!opens.concat(closes).some((l) => /detailChart|detailTech/.test(l)) && !opens.map(inside).flat().some((l) => /detailChart|detailTech/.test(l)), "the chart and the Technical Snapshot stay outside every group");
+{ const css = html.slice(html.indexOf("<style>"), html.indexOf("</style></head>")); const all = html.split("<script").map((b) => b.split("</script>")[0]);
+  ok(!/sd-group|sdRatios|sdHealth|sdCash/.test(css), "no layout CSS for the groups (stage 3 is not implemented)");
+  eq(all.filter((b) => /\.sd-group\s*\{|sd-group[^"'\n]*\{[^}]*grid/.test(b)), [], "and no script adds any"); }
+
 console.log("Detail group tests passed (" + checks + " checks)");

@@ -104,6 +104,22 @@
    "old": "catch(e){st.textContent=\"Fundamentals not loaded yet.\";document.getElementById(\"fund\").innerHTML='<tr><td colspan=\"9\">Fundamentals not loaded yet.</td></tr>';return}\nfund()})();\n"
   },
   {
+   "new": "  h+='<div class=\"sd-group\" id=\"sdRatios\">';   /* group ratios open */\n",
+   "old": ""
+  },
+  {
+   "new": "  h+='</div>';   /* group ratios close */\n  h+='<div class=\"sd-group\" id=\"sdHealth\">';   /* group health open */\n",
+   "old": ""
+  },
+  {
+   "new": "  h+='</div>';   /* group health close */\n  h+='<div class=\"sd-group\" id=\"sdCash\">';   /* group cash open */\n",
+   "old": ""
+  },
+  {
+   "new": "  h+='</div>';   /* group cash close */\n",
+   "old": ""
+  },
+  {
    "new": "  h+='<p class=\"note\" id=\"slAttribution\" style=\"padding:2px 0 0;overflow-wrap:anywhere\">Price, volume and indicator charts: TradingView Lightweight Charts&trade; &middot; Copyright &copy; 2023 TradingView, Inc. &middot; <a href=\"https://www.tradingview.com/\" target=\"_blank\" rel=\"noopener noreferrer\">https://www.tradingview.com/</a></p>';   /* licence attribution (Apache-2.0 NOTICE, v4.2.0) */\n",
    "old": ""
   },
@@ -144,5 +160,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "aaca7f19f55763f266a96f87235297d7859152d339761147418636b0fc316454"
+ "decision_sha256": "7a3db5ea3a253a1cf3afc030cd36bc8c8e18ea9c7fcbeb1a45ef3875ae6334bd"
 }
