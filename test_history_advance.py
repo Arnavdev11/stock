@@ -181,6 +181,40 @@ class Advancing(TwoStocks):
             self.assertEqual(U.saved_symbols(), {"TCS", "INFY", "DOMS"})                                # exactly what is on file: the benchmark is not a stock, nothing else appears
 
 
+class RefreshBudget(TwoStocks):
+    """A scheduled refresh sizes its call budget to every saved stock (historical_updater.refresh_budget), so a filled directory is never left behind
+    by the old 150-call default; a budget given to the run is kept exactly."""
+    def test_unit_rule(self):
+        self.assertEqual(U.refresh_budget(2600, "500", 500), 500)                       # a given budget is kept
+        self.assertEqual(U.refresh_budget(16, "", 150), 150)                            # today: 15 saved stocks + the benchmark fit the old default
+        self.assertEqual(U.refresh_budget(2549, "", 150), 2833)                         # 2,548 saved stocks + the benchmark, / 0.9 headroom
+        self.assertEqual(U.refresh_budget(5000, None, 150), U.REFRESH_CALL_CEILING)     # never more than fits the 120-minute job
+        self.assertEqual(U.REFRESH_CALL_CEILING, 3000)
+
+    def test_a_small_default_budget_no_longer_strands_saved_stocks(self):
+        self.end = TUE
+        self.now = at(WED, 8, 0)
+        self.seed_all(MON)
+        self.answers(TUE)
+        with mock.patch.object(U, "MAX_CALLS_PER_RUN", 2), mock.patch.dict(U.os.environ, {"HISTORICAL_MAX_CALLS": ""}):
+            code, text, doc, summary = self.run_refresh()
+        self.assertEqual(code, 0)
+        self.assertEqual(doc["stocks"]["TCS"]["candles"][-1]["date"], "2026-10-13")
+        self.assertEqual(doc["stocks"]["INFY"]["candles"][-1]["date"], "2026-10-13")
+        self.assertEqual(self.shard("DOMS")[-1]["date"], "2026-10-13")
+
+    def test_a_given_budget_is_still_a_hard_limit(self):
+        self.end = TUE
+        self.now = at(WED, 8, 0)
+        self.seed_all(MON)
+        self.answers(TUE)
+        with mock.patch.object(U, "MAX_CALLS_PER_RUN", 2), mock.patch.dict(U.os.environ, {"HISTORICAL_MAX_CALLS": "2"}):
+            code, text, doc, summary = self.run_refresh()
+        advanced = [s for s in ("TCS", "INFY") if doc["stocks"][s]["candles"][-1]["date"] == "2026-10-13"] + (["DOMS"] if self.shard("DOMS")[-1]["date"] == "2026-10-13" else [])
+        self.assertEqual(len(advanced), 1)                                              # 2 calls: the benchmark and one stock, the stalest first
+        self.assertIn("not reached in this run", summary)
+
+
 class FailuresKeepGoodData(TwoStocks):
     def snapshot(self):
         """Every saved candle of every series (the single file is rewritten with its old content and an errors list, so bytes are compared only for the stock's own file)."""

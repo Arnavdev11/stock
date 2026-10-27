@@ -42,6 +42,8 @@ OVERLAP_DAYS = 10          # re-fetch the last days of an existing file so late 
 DELAY_SECONDS = 1.0        # pause after every call (conservative)
 RETRIES = 3
 MAX_CALLS_PER_RUN = universe.budget("HISTORICAL_MAX_CALLS", 150)   # a NIFTY 500 fill is set by the workflow
+REFRESH_CALL_CEILING = 3000             # a scheduled refresh of saved stocks never plans more than fits the 120-minute job (historical_batch.CALL_CEILING)
+REFRESH_HEADROOM = 0.9                  # share of that budget the refresh plans; the rest absorbs retries (as historical_batch.HEADROOM)
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 PUBLISHED_AFTER = dt.time(7, 30)      # Upstox serves a trading day's candle from about 07:00 IST the NEXT day (its staff: "by the next day by around 7am"); never the same evening
 STALE_ERROR_WEEKDAYS = 3              # a benchmark this many weekdays behind what Upstox should already serve is a red ::error:: annotation, not just a warning
@@ -300,7 +302,15 @@ def prior_candles(old_stocks, sym):
         return []
 
 
+def refresh_budget(needed, given, current):
+    """Call budget for a scheduled refresh: the budget given to the run if any, else enough for every saved stock (+ headroom), never above the ceiling."""
+    if (given or "").strip():
+        return current
+    return min(REFRESH_CALL_CEILING, max(current, int(needed / REFRESH_HEADROOM) + 1))
+
+
 def main():
+    global MAX_CALLS_PER_RUN
     token = get_token()
     old = {}
     if OUT_FILE.exists():
@@ -319,6 +329,8 @@ def main():
     if os.environ.get("HISTORICAL_REFRESH_SAVED") == "true":      # scheduled runs: every stock that already has history, not only the listed ones
         wanted = sorted(set(wanted) | saved_symbols())
     prior_all = {sym: prior_candles(old_stocks, sym) for sym in wanted}
+    if os.environ.get("HISTORICAL_REFRESH_SAVED") == "true":      # size the scheduled run's budget to the saved stocks (+1 for the NIFTY 50 benchmark)
+        MAX_CALLS_PER_RUN = refresh_budget(1 + sum(calls_needed(prior_all[s], end) for s in wanted), os.environ.get("HISTORICAL_MAX_CALLS"), MAX_CALLS_PER_RUN)
     # stalest first (last candle date; never-fetched first) so that a run that stops at its call budget carries on with the rest next time
     wanted = universe.order_stalest(wanted, {s: (prior_all[s][-1]["date"] if prior_all[s] else "") for s in wanted})
     log("Universe:", len(wanted), "stocks | call budget:", MAX_CALLS_PER_RUN)

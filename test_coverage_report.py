@@ -1651,5 +1651,25 @@ class IsinIssuerCode(unittest.TestCase):
         self.assertEqual(C._flag_block([("A", "INE040A01018", "INE040A01034"), ("B", "INE040A01034", "INE002A01018")])["same_issuer_code"], 1)
 
 
+
+class CandleStorage(Case):
+    def test_storage_is_measured_from_the_files_and_projected_to_five_years(self):
+        self.make(4)
+        sh = self.data / "historical" / "shards"
+        for i in range(2):
+            write(sh / ("S%04d.json" % i), {"stocks": {"S%04d" % i: {"candles": [candle("2026-10-1%d" % d) for d in range(10 - i)]}}})
+        m = self.mod(self.build(), "all", "historical_candles")["facts"]["storage"]
+        size = sum((sh / ("S%04d.json" % i)).stat().st_size for i in range(2))
+        self.assertEqual((m["shard_files_measured"], m["shard_bytes_total"], m["candles_in_those_files"]), (2, size, 19))
+        self.assertEqual(m["projected_bytes_every_stock_five_years"], int(size / 19 * C.FIVE_YEAR_SESSIONS * 4))
+        self.assertEqual(C.FIVE_YEAR_SESSIONS, 1255)
+
+    def test_no_candle_file_gives_no_projection(self):
+        self.make(2)
+        write(self.data / "historical" / "historical.json", {"stocks": {}})
+        m = self.mod(self.build(), "all", "historical_candles")["facts"]["storage"]
+        self.assertEqual((m["shard_files_measured"], m["bytes_per_candle"], m["projected_bytes_every_stock_five_years"]), (0, None, None))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -703,5 +703,22 @@
    "+                if universe_symbols is not None and cov[\"universe\"] != len(set(universe_symbols)):",
    "+                    p.append(\"coverage.universe (%d) is not the number of distinct universe symbols (%d)\" % (cov[\"universe\"], len(set(universe_symbols))))"
   ]
+ },
+ "eod_pipeline_changes": {
+  "note": "EOD data pipeline branch (feat/nse-eod-coverage), awaiting the owner's approval at merge. historical_updater.py: a scheduled refresh (HISTORICAL_REFRESH_SAVED) with no budget given sizes its call budget to every saved stock plus the benchmark, divided by 0.9 headroom, capped at 3,000 calls (what fits the 120-minute job); a budget given to the run is kept exactly. historical.yml is unchanged and keeps its pin. The guards compare against HEAD, so this record documents the change for review; it widens nothing.",
+  "historical_updater.py": [
+   "+REFRESH_CALL_CEILING = 3000             # a scheduled refresh of saved stocks never plans more than fits the 120-minute job (historical_batch.CALL_CEILING)",
+   "+REFRESH_HEADROOM = 0.9                  # share of that budget the refresh plans; the rest absorbs retries (as historical_batch.HEADROOM)",
+   "+def refresh_budget(needed, given, current):",
+   "+    \"\"\"Call budget for a scheduled refresh: the budget given to the run if any, else enough for every saved stock (+ headroom), never above the ceiling.\"\"\"",
+   "+    if (given or \"\").strip():",
+   "+        return current",
+   "+    return min(REFRESH_CALL_CEILING, max(current, int(needed / REFRESH_HEADROOM) + 1))",
+   "+",
+   "+",
+   "+    global MAX_CALLS_PER_RUN",
+   "+    if os.environ.get(\"HISTORICAL_REFRESH_SAVED\") == \"true\":      # size the scheduled run's budget to the saved stocks (+1 for the NIFTY 50 benchmark)",
+   "+        MAX_CALLS_PER_RUN = refresh_budget(1 + sum(calls_needed(prior_all[s], end) for s in wanted), os.environ.get(\"HISTORICAL_MAX_CALLS\"), MAX_CALLS_PER_RUN)"
+  ]
  }
 }

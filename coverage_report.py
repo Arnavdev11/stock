@@ -116,6 +116,7 @@ def isin_check_digit_ok(isin):
     return (10 - total % 10) % 10 == int(isin[11])
 
 
+FIVE_YEAR_SESSIONS = 1255            # daily sessions in five years: what the longest saved histories hold (historical_updater.YEARS = 5)
 INSTRUMENT_KEY_FORM = "NSE_EQ|<ISIN>"   # the key every Upstox request uses (historical_updater, coverage_probe): exchange segment + ISIN, nothing looked up
 INDICATOR_SOURCE = "index.html: SLChart (MIN_CANDLES, sma, ema, rsi, supertrend, macd) and SLTech.compute; checked by tests/test_indicator_readiness.js"
 SH_CATEGORIES = tuple(_sl.CATEGORIES)
@@ -384,10 +385,12 @@ class Data:
         d = self.dir / "historical" / "shards"
         h = hashlib.sha256()
         names = []
+        self.shard_bytes = {}
         if d.is_dir():
             for p in sorted(d.iterdir(), key=lambda x: x.name):
                 if p.is_file() and p.name.endswith(".json"):
                     names.append(p.name[:-5])
+                    self.shard_bytes[p.name[:-5]] = p.stat().st_size
                     h.update(p.name.encode("utf-8") + b"\0" + hashlib.sha256(p.read_bytes()).hexdigest().encode("ascii") + b"\n")
         self.shard_names = names
         self.shard_hash = h.hexdigest()
@@ -792,7 +795,7 @@ def candle_facts(d, syms):
     shard_set = set(d.shard_names)
     single = d.hist.get("stocks") if isinstance(d.hist, dict) and isinstance(d.hist.get("stocks"), dict) else {}
     out = {"valid": 0, "missing": 0, "invalid": 0, "mis": {}, "inv": {}, "rows": [], "age": [], "newest": [], "sources": {"shard": 0, "single_file": 0},
-           "cells": {k: [] for k in CANDLE_FIELDS}, "vol_all": 0, "vol_some_null": 0, "vol_none": 0, "per_stock": []}
+           "cells": {k: [] for k in CANDLE_FIELDS}, "vol_all": 0, "vol_some_null": 0, "vol_none": 0, "per_stock": [], "shard_rows": {}}
     for s in syms:
         doc, src = None, None
         if s in shard_set:
@@ -832,7 +835,9 @@ def candle_facts(d, syms):
         out["rows"].append(len(rows))
         out["age"].append((d.as_of - newest).days)
         out["newest"].append(newest.isoformat())
-        out["per_stock"].append((len(rows), _date(rows[0]["date"]), newest))          # rows, first and last candle date: what indicator readiness needs
+        out["per_stock"].append((len(rows), _date(rows[0]["date"]), newest))
+        if src == "shard":
+            out["shard_rows"][s] = len(rows)          # rows, first and last candle date: what indicator readiness needs
         vols = [c.get("volume") for c in rows]
         nn = sum(1 for v in vols if v is not None)
         out["vol_all"] += nn == len(vols)
@@ -861,8 +866,21 @@ def mod_historical(d, syms, scope, cf):
                    fields=fields,
                    facts={"candle_rows_per_stock": _stats(cf["rows"]), "stocks_by_source": cf["sources"],
                           "stocks_with_volume_on_every_row": cf["vol_all"], "stocks_with_some_null_volume_rows": cf["vol_some_null"], "stocks_with_no_volume": cf["vol_none"],
-                          "recorded_failed_attempts_in_attempts_file": len(failed) if failed is not None else None},
+                          "recorded_failed_attempts_in_attempts_file": len(failed) if failed is not None else None,
+                          "storage": _candle_storage(d, cf, n)},
                    missing_reasons=cf["mis"], invalid_reasons=cf["inv"])
+
+
+def _candle_storage(d, cf, n):
+    """Measured bytes of the per-stock candle files and what the scope would need if every stock held five years of daily candles
+    (FIVE_YEAR_SESSIONS, the most any saved stock holds). A projection from measured bytes per candle, labelled as such; nothing else is assumed."""
+    sizes = {k: v for k, v in (getattr(d, "shard_bytes", {}) or {}).items() if k in cf["shard_rows"]}
+    rows = sum(cf["shard_rows"][k] for k in sizes)
+    per_candle = (sum(sizes.values()) / rows) if rows else None
+    return {"shard_files_measured": len(sizes), "shard_bytes_total": sum(sizes.values()), "candles_in_those_files": rows,
+            "bytes_per_candle": round(per_candle, 1) if per_candle else None,
+            "projected_bytes_every_stock_five_years": int(per_candle * FIVE_YEAR_SESSIONS * n) if per_candle else None,
+            "five_year_sessions": FIVE_YEAR_SESSIONS, "projection_basis": "measured bytes per candle x five_year_sessions x stocks in scope"}
 
 
 def mod_indicators(d, syms, scope, cf):
