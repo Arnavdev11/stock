@@ -116,8 +116,16 @@
    "old": "var CSS=\"#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}\"+\n"
   },
   {
+   "new": "  for(var i=0;i<kids.length;i++){var k=kids[i];if(k&&String(k.tagName||\"\").toUpperCase()===\"H3\"&&String(k.textContent||\"\").trim()===\"Overview\")return k\n    if(k&&/(^|\\s)sd-group(\\s|$)/.test(String(k.className||\"\"))){var f=k.firstElementChild||null;   /* two-column stage 1: a group that opens with the heading is the anchor */\n      if(f&&String(f.tagName||\"\").toUpperCase()===\"H3\"&&String(f.textContent||\"\").trim()===\"Overview\")return k}}\n",
+   "old": "  for(var i=0;i<kids.length;i++){var k=kids[i];if(k&&String(k.tagName||\"\").toUpperCase()===\"H3\"&&String(k.textContent||\"\").trim()===\"Overview\")return k}\n"
+  },
+  {
    "new": " +'@container (max-width:680px){#detailShareholding table.mh,#detailShareholding table.mh tbody,#detailShareholding table.mh tr,#detailShareholding table.mh td{display:block;width:100%;max-width:100%;box-sizing:border-box}'\n",
    "old": " +'@container (max-width:560px){#detailShareholding table.mh,#detailShareholding table.mh tbody,#detailShareholding table.mh tr,#detailShareholding table.mh td{display:block;width:100%;max-width:100%;box-sizing:border-box}'\n"
+  },
+  {
+   "new": "  for(var i=0;i<h.length;i++){var up=h[i].parentNode;   /* two-column stage 1: also a heading inside a direct-child .sd-group */\n    if((up===box||(up&&up.parentNode===box&&/(^|\\s)sd-group(\\s|$)/.test(String(up.className||\"\"))))&&String(h[i].textContent||\"\").trim().indexOf(prefix)===0)return h[i]}\n",
+   "old": "  for(var i=0;i<h.length;i++){if(h[i].parentNode===box&&String(h[i].textContent||\"\").trim().indexOf(prefix)===0)return h[i]}\n"
   },
   {
    "new": "  var tab=st.trend||\"movers\",tabs=[[\"movers\",\"Price Movers\"],[\"volume\",\"Volume Shockers\"],[\"52w\",\"52W High / Low\"],[\"active\",\"Most Active\"]],h='<div class=\"tabs mk-tabs\" role=\"tablist\" data-mk-tabs=\"trend\">'+tabs.map(function(t){return'<button type=\"button\" role=\"tab\" data-tab=\"'+t[0]+'\" aria-selected=\"'+(t[0]===tab)+'\">'+t[1]+'</button>'}).join(\"\")+'</div>';\n",
@@ -136,5 +144,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "0353fb3c04335b6c245b8d9367d840e154e4d05ec43093a25d14e33e7e94ce66"
+ "decision_sha256": "aaca7f19f55763f266a96f87235297d7859152d339761147418636b0fc316454"
 }

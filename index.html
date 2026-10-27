@@ -1937,7 +1937,9 @@ function loadAll(){
 var node=null,nodeSym=null;
 function overviewHeading(box){
   var kids=box.children||[];
-  for(var i=0;i<kids.length;i++){var k=kids[i];if(k&&String(k.tagName||"").toUpperCase()==="H3"&&String(k.textContent||"").trim()==="Overview")return k}
+  for(var i=0;i<kids.length;i++){var k=kids[i];if(k&&String(k.tagName||"").toUpperCase()==="H3"&&String(k.textContent||"").trim()==="Overview")return k
+    if(k&&/(^|\s)sd-group(\s|$)/.test(String(k.className||""))){var f=k.firstElementChild||null;   /* two-column stage 1: a group that opens with the heading is the anchor */
+      if(f&&String(f.tagName||"").toUpperCase()==="H3"&&String(f.textContent||"").trim()==="Overview")return k}}
   return null}
 function check(){
   var s=routeSymbol(),box=$("detail");
@@ -2651,7 +2653,8 @@ var SETTLE_MS=6000;
 /* a heading that the Stock Detail script writes directly into #detail */
 function heading(box,prefix){
   var h=box.querySelectorAll?box.querySelectorAll("h3"):[];
-  for(var i=0;i<h.length;i++){if(h[i].parentNode===box&&String(h[i].textContent||"").trim().indexOf(prefix)===0)return h[i]}
+  for(var i=0;i<h.length;i++){var up=h[i].parentNode;   /* two-column stage 1: also a heading inside a direct-child .sd-group */
+    if((up===box||(up&&up.parentNode===box&&/(^|\s)sd-group(\s|$)/.test(String(up.className||""))))&&String(h[i].textContent||"").trim().indexOf(prefix)===0)return h[i]}
   return null}
 /* the destinations that exist today, in menu order; each finds its element inside the Stock Detail view (reusing the existing sections, never copying them) */
 var SECTIONS=[
