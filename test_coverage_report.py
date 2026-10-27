@@ -147,7 +147,8 @@ class SelectionAndCounts(Case):
         r = self.build()
         for label, sc in r["scopes"].items():
             self.assertEqual([m["module"] for m in sc["modules"]], ["directory", "fundamentals", "financial_history", "growth", "historical_candles", "technical_indicators",
-                                                                       "sector", "shareholding", "quarterly_results", "annual_financials_and_balance_sheet", "stock_detail_data"])
+                                                                       "sector", "shareholding", "quarterly_results", "annual_financials_and_balance_sheet", "corporate_actions",
+                                                                       "share_holdings_upstox", "stock_detail_data"])
             for m in sc["modules"]:
                 self.assertEqual(sum(v for v in m["counts"].values() if v is not None), m["denominator"]["value"], (label, m["module"]))
 
@@ -827,6 +828,63 @@ class StateDirCase(Case):
             sym(8): fin_entry(8, cash_flow=fin_section("2027-01-01")), sym(9): fin_entry(9)}})
 
 
+class ExtraState(StateDirCase):
+    """Corporate actions and Upstox share holdings, from a fundamentals_extra_cache.json written by the real updater (invented values)."""
+    def cache(self):
+        import fundamentals_extra_updater as fx
+        import test_fundamentals_extra as tf
+        instr = {sym(i): {"isin": "INE%06dA01" % i} for i in range(4)}
+        responses = {instr[sym(0)]["isin"] + "/corporate-actions": tf.ACTIONS_BODY, instr[sym(0)]["isin"] + "/share-holdings": tf.HOLDINGS_BODY,
+                     instr[sym(1)]["isin"] + "/corporate-actions": {"data": []}, instr[sym(2)]["isin"] + "/corporate-actions": {"data": {"odd": 1}}}
+        c = tf.new_cache()
+        fx.update(tf.FakeApi(responses), [sym(i) for i in range(5)], instr, c, list(fx.KINDS), "2026-10-20")
+        c["stocks"][sym(1)]["share_holdings"] = {"status": "ok", "fetched": "2026-08-01", "attempted": "2026-08-01", "failures": 0, "error": None,
+                                                 "data": {"quarters": []}}
+        c["stocks"][sym(6)] = "junk"
+        return c
+
+    def test_not_supplied_is_not_measured(self):
+        self.make(10)
+        r = self.build_s()
+        for n in ("corporate_actions", "share_holdings_upstox"):
+            m = self.sm(r, n)
+            self.assertEqual((m["measurability"], m["counts"]["unverified"], m["coverage_pct"]), ("not_measurable", 10, None))
+            self.assertIn("no workflow calls fundamentals_extra_updater.py", m["unverified"][0]["reason"])
+
+    def test_wrong_kind_is_not_measured(self):
+        self.make(10)
+        self.put("fundamentals_extra_cache.json", {"kind": "other", "schema_version": 1, "stocks": {}})
+        m = self.sm(self.build_s(), "corporate_actions")
+        self.assertEqual(m["measurability"], "not_measurable")
+        self.assertIn("unsupported_schema", m["unverified"][0]["reason"])
+
+    def test_every_stock_classified(self):
+        self.make(10)
+        self.put("fundamentals_extra_cache.json", self.cache())
+        r = self.build_s()
+        ca = self.sm(r, "corporate_actions")
+        self.assertEqual(ca["counts"], {"valid": 2, "stale": 0, "missing": 7, "invalid": 1, "not_applicable": None, "unverified": None})
+        self.assertEqual(ca["missing_reasons"], {"never_fetched": 4, "not_in_upstox_instrument_list": 1, "request_failed": 1, "response_unusable": 1})
+        self.assertEqual(ca["invalid_reasons"], {"entry_not_an_object": 1})
+        self.assertEqual((ca["facts"]["stocks_with_records"], ca["facts"]["answered_with_no_records"]), (1, 1))
+        self.assertEqual(ca["facts"]["ttm_dividend_computable"], 1)               # sym(0): 5.5 + 2 in the 12 months to 23 Oct 2026
+        self.assertEqual(ca["coverage_pct"], 20.0)
+        sh = self.sm(r, "share_holdings_upstox")
+        self.assertEqual((sh["counts"]["valid"], sh["counts"]["stale"]), (1, 1))     # sym(1)'s answer is older than 30 days
+        self.assertEqual(sh["facts"]["stale_reasons"], {"older_than_30_days": 1})
+        self.assertEqual(sh["missing_reasons"], {"never_fetched": 4, "not_in_upstox_instrument_list": 1, "request_failed": 2})
+        self.assertNotIn("50.1", json.dumps(sh))                                   # no percentage in the report
+
+    def test_ttm_rule_matches_the_updater(self):
+        import fundamentals_extra_updater as fx
+        import test_fundamentals_extra as tf
+        ev = fx.parse_corporate_actions(tf.ACTIONS_BODY)[0]["events"]
+        for day in ("2026-10-28", "2026-08-13", "2026-08-14", "2027-02-05", "2027-02-06", "2025-01-01"):
+            self.assertEqual(C.fx_ttm(ev, day), fx.ttm_dividend(ev, day), day)
+        gap = [dict(ev[0], amount=None)] + ev[1:]
+        self.assertEqual(C.fx_ttm(gap, "2026-10-28"), fx.ttm_dividend(gap, "2026-10-28"))
+
+
 class StateDirBackwardCompatible(StateDirCase):
     def test_without_state_dir_nothing_changes_even_when_a_state_folder_exists(self):
         self.fixture10()
@@ -834,8 +892,8 @@ class StateDirBackwardCompatible(StateDirCase):
         self.assertNotIn("state_files", r)
         names = [m["module"] for m in r["scopes"]["all"]["modules"]]
         self.assertEqual(names, ["directory", "fundamentals", "financial_history", "growth", "historical_candles", "technical_indicators", "sector", "shareholding",
-                                 "quarterly_results", "annual_financials_and_balance_sheet", "stock_detail_data"])
-        for n in ("quarterly_results", "annual_financials_and_balance_sheet"):
+                                 "quarterly_results", "annual_financials_and_balance_sheet", "corporate_actions", "share_holdings_upstox", "stock_detail_data"])
+        for n in ("quarterly_results", "annual_financials_and_balance_sheet", "corporate_actions", "share_holdings_upstox"):
             m = self.sm(r, n)
             self.assertEqual((m["measurability"], m["counts"]["valid"], m["counts"]["unverified"], m["coverage_pct"]), ("not_measurable", None, 10, None))
         self.assertNotIn("state:", json.dumps(r["inputs"]))
@@ -892,7 +950,7 @@ class StateDirClassification(StateDirCase):
         self.fixture10()
         names = [m["module"] for m in self.build_s()["scopes"]["all"]["modules"]]
         self.assertEqual(names[names.index("fundamentals") + 1], "fundamentals_state")
-        self.assertEqual(len(names), 12)
+        self.assertEqual(len(names), 14)
         self.assertEqual(names.count("quarterly_results"), 1)
         self.assertEqual(names.count("annual_financials_and_balance_sheet"), 1)
 

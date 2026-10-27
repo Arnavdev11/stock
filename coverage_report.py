@@ -129,6 +129,8 @@ DIRECTORY_KIND = "stock_directory"      # stock_directory.KIND
 SH_COLLECTOR_SCOPE = tuple(universe.TEST_SYMBOLS) + ("DOMS", "20MICRONS", "21STCENMGM", "360ONE", "3BBLACKBIO")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 STATE_FILES = {"fundamentals": "fundamentals_cache.json", "financials": "financials_cache.json", "quarterly": "quarterly_cache.json"}    # processing_state.KINDS
+EXTRA_STATE_FILE = "fundamentals_extra_cache.json"     # fundamentals_extra_updater.py; not a processing_state kind (no workflow runs it yet)
+EXTRA_KINDS = {"corporate_actions": ("corporate_actions", 14), "share_holdings_upstox": ("share_holdings", 30)}   # module -> (cache kind, refresh days = the updater's KINDS)
 FIN_SECTIONS = ("income", "balance_sheet", "cash_flow")      # financials_updater.SECTIONS
 FIN_SCHEMA = 2                    # financials_updater.SCHEMA_VERSION
 STATEMENT_MAX_AGE_DAYS = 30       # financials_updater.STATEMENT_MAX_AGE_DAYS
@@ -369,6 +371,12 @@ class Data:
             for kind, fname in STATE_FILES.items():
                 doc, prob = self.inputs.read(self.state_dir / fname, label="state:" + fname, pairs_hook=_dup_hook, bound_ints=True)
                 self.state[kind] = (None, prob) if prob else _state_schema(kind, doc)
+        self.extra, self.extra_problem = (None, "not_supplied")
+        if self.state_dir is not None and (self.state_dir / EXTRA_STATE_FILE).is_file():
+            doc, prob = self.inputs.read(self.state_dir / EXTRA_STATE_FILE, label="state:" + EXTRA_STATE_FILE, pairs_hook=_dup_hook, bound_ints=True)
+            if prob is None and not (isinstance(doc, dict) and doc.get("kind") == "fundamentals_extra_cache" and doc.get("schema_version") == 1 and isinstance(doc.get("stocks"), dict)):
+                prob = "unsupported_schema: not a fundamentals_extra_cache of schema 1"
+            self.extra, self.extra_problem = (None, prob) if prob else (doc, None)
 
     def load_universe(self):
         doc, prob = self.inputs.read(self.dir / "universe.json")
@@ -1437,6 +1445,91 @@ def mod_financials_state(d, syms, scope):
                          extra_unverified=sum(unv.values()), extra_warnings=_isin_facts_and_warning(iacc)[1])
 
 
+def mod_extra(name, d, syms, scope):
+    """Corporate actions or Upstox share holdings, from fundamentals_extra_cache.json (supplied with --state-dir). Each stock is one of:
+    valid (answered within the refresh interval: data, or a valid empty answer), stale (older answer, or saved data kept after a failed refresh),
+    missing (never_fetched / not_in_upstox_instrument_list / request_failed / response_unusable) or invalid (an entry the updater would not write)."""
+    kind, refresh = EXTRA_KINDS[name]
+    n = len(syms)
+    if d.extra is None:
+        why = ("%s was not supplied (the updater has not run: no workflow calls fundamentals_extra_updater.py yet)" % EXTRA_STATE_FILE if d.extra_problem == "not_supplied"
+               else "%s cannot be used (%s)" % (EXTRA_STATE_FILE, d.extra_problem))
+        return _not_measurable(name, n, _basis(scope), [EXTRA_STATE_FILE], [why + "; nothing is counted as covered or as missing"])
+    stocks = d.extra["stocks"]
+    dups = set(getattr(stocks, "dups", ()))
+    facts = {"answered_with_no_records": 0, "stocks_with_records": 0}
+    if kind == "corporate_actions":
+        facts.update({"stocks_with_a_dividend_in_the_last_12_months": 0, "ttm_dividend_computable": 0, "ttm_dividend_blank_amount_missing": 0})
+    else:
+        facts.update({"newest_quarter_counts": {}, "newest_quarter_flagged": 0})
+
+    def classify(sym, e, as_of):
+        st = (e or {}).get(kind) if isinstance(e, dict) else None
+        if e is not None and not isinstance(e, dict):
+            return "invalid", "entry_not_an_object"
+        if st is None:
+            return "missing", "never_fetched"
+        if not isinstance(st, dict) or st.get("status") not in ("ok", "none_reported", "failed", "unusable", "not_in_upstox"):
+            return "invalid", "status_not_recognised"
+        f = _date(st.get("fetched")) if st.get("fetched") is not None else None
+        if (st.get("fetched") is not None and (f is None or f > as_of)):
+            return "invalid", "fetched_not_a_past_date"
+        data = st.get("data")
+        if st["status"] == "not_in_upstox":
+            return "missing", "not_in_upstox_instrument_list"
+        if st["status"] in ("failed", "unusable") and not data:
+            return "missing", "request_failed" if st["status"] == "failed" else "response_unusable"
+        if not isinstance(data, dict) or f is None:
+            return "invalid", "answer_without_data_or_fetch_date"
+        rows = data.get("events" if kind == "corporate_actions" else "quarters")
+        if not isinstance(rows, list):
+            return "invalid", "data_not_shaped_like_the_updaters_output"
+        if rows:
+            facts["stocks_with_records"] += 1
+        else:
+            facts["answered_with_no_records"] += 1
+        if kind == "corporate_actions":
+            t = fx_ttm(rows, as_of.isoformat())
+            if t is not None:
+                facts["stocks_with_a_dividend_in_the_last_12_months"] += t["events"] > 0
+                facts["ttm_dividend_computable"] += t["value"] is not None
+                facts["ttm_dividend_blank_amount_missing"] += t["reason"] == "a_dividend_amount_is_missing"
+        elif rows and isinstance(rows[0], dict):
+            _tally(facts["newest_quarter_counts"], str(rows[0].get("quarter_end")))
+            facts["newest_quarter_flagged"] += bool(rows[0].get("flags"))
+        if st["status"] in ("failed", "unusable"):
+            return "stale", "saved_data_kept_after_a_failed_refresh"
+        return ("valid", None) if (as_of - f).days < refresh else ("stale", "older_than_%d_days" % refresh)
+
+    tally, mis, inv, _, stl = _classify_all(syms, stocks, dups, classify, d.as_of)
+    if "newest_quarter_counts" in facts:
+        facts["newest_quarter_counts"] = _sorted_dict(facts["newest_quarter_counts"])
+    facts["stale_reasons"] = _sorted_dict(stl)
+    facts["values"] = "no amount or percentage appears in this report"
+    return _module(name, "offline", n, _counts(valid=tally["valid"], stale=tally["stale"], missing=tally["missing"], invalid=tally["invalid"]), [EXTRA_STATE_FILE],
+                   basis=_basis(scope), source_as_of=None,
+                   freshness={"status": "configured", "threshold_days": refresh, "threshold_source": "fundamentals_extra_updater.KINDS refresh_days", "age_taken_from": "fetched"},
+                   facts=facts, missing_reasons=mis, invalid_reasons=inv,
+                   unverified=[{"what": "whether the cached answers were published", "count": tally["valid"] + tally["stale"],
+                                "reason": "a cache record is not proof of publication; the per-stock files and the site are not part of the state folder"}])
+
+
+def fx_ttm(events, as_of):
+    """The same rule as fundamentals_extra_updater.ttm_dividend (a test keeps them equal; that module is not imported here because it can reach the
+    provider): dividends with an ex-date in (as_of - 365 days, as_of]; empty when any of them has no amount. None when the events are not shaped
+    like the updater's output."""
+    try:
+        start = (dt.date.fromisoformat(as_of) - dt.timedelta(days=365)).isoformat()
+        window = [e for e in events if e["type"] == "dividend" and e["ex_date"] and start < e["ex_date"] <= as_of]
+        if not window:
+            return {"value": None, "reason": "no_dividend_in_the_last_12_months", "events": 0, "from": start, "to": as_of}
+        if any(e["amount"] is None for e in window):
+            return {"value": None, "reason": "a_dividend_amount_is_missing", "events": len(window), "from": start, "to": as_of}
+        return {"value": round(sum(e["amount"] for e in window), 2), "reason": None, "events": len(window), "from": start, "to": as_of}
+    except (KeyError, TypeError, AttributeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------- the report
 def build_report(data_dir, as_of, scope="both", fundamentals_path=None, state_dir=None):
     if scope not in ("first500", "all", "both"):
@@ -1461,6 +1554,7 @@ def build_report(data_dir, as_of, scope="both", fundamentals_path=None, state_di
                 mod_indicators(d, syms, label, cf), mod_sector(d, syms, label), sh_mod,
                 mod_cache_only("quarterly_results", d, syms, label, ["data/quarterly_cache.json", "out/by_symbol/quarterly_results/", "out/quarterly_results.json"]),
                 mod_cache_only("annual_financials_and_balance_sheet", d, syms, label, ["out/financials.json"]),
+                mod_extra("corporate_actions", d, syms, label), mod_extra("share_holdings_upstox", d, syms, label),
                 mod_detail(d, syms, label, cf, fh_mod, sh_mod)]
         if d.state_dir is not None:          # measured from the supplied state files; without --state-dir the list above is the whole report
             mods = [mod_quarterly_state(d, syms, label) if m["module"] == "quarterly_results" else mod_financials_state(d, syms, label)
