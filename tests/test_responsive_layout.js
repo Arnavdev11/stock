@@ -11,11 +11,17 @@ const ok = (c, m) => { checks++; assert.ok(c, m); }, eq = (a, b, m) => { checks+
 
 const vars = (block) => Object.fromEntries([...block.matchAll(/--([a-z]+):(#[0-9A-Fa-f]{3,6})/g)].map((m) => [m[1], m[2]]));
 const light = vars((css.match(/:root\{([^}]*)\}/) || [])[1] || ""), dark = vars((css.match(/:root\[data-theme="dark"\]\{([^}]*)\}/) || [])[1] || "");
-eq(vars((css.match(/@media\(prefers-color-scheme:dark\)\{:root:not\(\[data-theme="light"\]\)\{([^}]*)\}/) || [])[1] || ""), dark, "the system dark palette equals the explicit dark theme, so both are covered below");
 const hex = (h) => { h = h.replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); };
 const lum = (h) => { const [r, g, b] = hex(h).map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 const card = (t) => (t.card === "#fff" ? "#FFFFFF" : t.card);
+
+// --- light theme by default (approved): white page, no system dark-mode override, no theme toggle
+ok(!/prefers-color-scheme/.test(html), "no prefers-color-scheme rule anywhere: the operating system's dark mode cannot change the page");
+eq(light.bg, "#FFFFFF", "the page background is white"); eq(card(light), "#FFFFFF", "cards are white too");
+ok(/:root\{[^}]*color-scheme:light/.test(css), "the page declares color-scheme: light, so form controls and scrollbars stay light under a dark system setting");
+ok(!/setAttribute\(\s*["']data-theme|dataset\.theme|\.theme\s*=/.test(html), "no script sets a theme (there is no theme toggle), so the light theme always applies");
+for (const [fg, name] of [["ink", "text"], ["mute", "muted text"]]) ok(ratio(light[fg], light.soft) >= 4.5, name + " on the --soft chip background meets 4.5:1 (" + ratio(light[fg], light.soft).toFixed(2) + ")");
 
 // --- colour contrast (WCAG 2.2 AA, 4.5:1 for normal text)
 for (const [name, t] of [["light", light], ["dark", dark]]) {
@@ -29,9 +35,10 @@ ok(ratio("#FFFFFF", light.ac) >= 4.5, "light: white text on the accent (selected
 ok(ratio("#FFFFFF", dark.ac) < 4.5, "dark: white on the dark accent would fail ...");
 ok(ratio("#0F1524", dark.ac) >= 4.5, "... so dark mode uses #0F1524 on the accent (" + ratio("#0F1524", dark.ac).toFixed(2) + ":1)");
 for (const sel of [".btn", ".tabs button[aria-selected=true]", ".chips button[aria-pressed=true]", "#globalBar .gb-sections a[aria-current=true]", "button[data-tf][aria-pressed=true]"]) {
-  ok(css.includes(':root[data-theme="dark"] ' + sel) && css.includes(':root:not([data-theme="light"]) ' + sel), "dark-mode selected text covers " + sel + " (explicit dark theme and the system setting)");
+  ok(css.includes(':root[data-theme="dark"] ' + sel), "dark-theme selected text still covers " + sel + " (the explicit data-theme=\"dark\" rules are kept, unused: nothing sets that theme)");
+  ok(!css.includes(':root:not([data-theme="light"]) ' + sel), "and no system-setting rule restyles " + sel + " (light is the default whatever the OS preference)");
 }
-ok(/\{color:#0F1524!important\}\}\n:root\[data-theme="dark"\]/.test(css), "the system-setting rule sets the dark text");
+ok(/\n:root\[data-theme="dark"\] \.btn,[^\n]*\{color:#0F1524!important\}\n/.test(css), "the explicit dark-theme rule still sets the dark selected text (unused while nothing sets data-theme)");
 ok(/\na\{color:var\(--ac\)\}#detail details>summary\{min-height:24px;/.test(css), "links default to the accent (the browser's blue was 1.72:1 in dark mode on the company-profile links) and disclosure toggles are 24px targets");
 ok(/@container \(max-width:680px\)\{#detailShareholding table\.mh,/.test(html), "major shareholders switch to cards below 680px, so long share counts (e.g. 2,59,54,99,419) never break in a squeezed 18% column");
 ok(css.includes("#finHistTable td:first-child{min-width:10.5rem}"), "Financial History's row labels keep 10.5rem on a phone (they wrapped to six lines in 97px); the table already scrolls sideways in its own box");

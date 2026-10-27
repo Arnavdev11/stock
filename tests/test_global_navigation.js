@@ -224,6 +224,7 @@ async function loadSearch({ bar = true } = {}) {
   re(bar, /gb-sections ul\{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap/, "desktop: the links wrap instead of overflowing");
   re(bar, /grid-template-columns:repeat\(auto-fit,minmax\(min\(130px,100%\),1fr\)\)/, "mobile: a grid whose columns can never be wider than the screen");
   re(bar, /overflow-wrap:anywhere/, "long labels wrap");
-  eq(css.match(/@media[^{]+/g).length >= 1, true, "(the existing media rules are untouched)");
+  eq(css.match(/@media[^{]+/g), null, "the main style block has no media rule: its only ones were the system dark-mode rules, removed on purpose so the light theme is the default (approved)");
+  eq(html.match(/@media[^{]+/g), ["@media(max-width:640px)"], "and the page's one other media rule is unchanged");
   console.log("Global navigation tests passed (" + checks + " checks)");
 })().catch((e) => { console.error("GLOBAL NAVIGATION TEST FAILED:", e && e.message ? e.message : e); if (e && e.stack) console.error(e.stack.split("\n").slice(0, 4).join("\n")); process.exit(1); });
