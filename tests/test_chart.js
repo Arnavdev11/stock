@@ -150,6 +150,18 @@ const titles = (t) => t.charts.flatMap((c) => c.series.map((s) => s.opts.title |
   ok(t.fetched.filter((u) => u.includes("historical")).length === 2, "requested once by the chart and once by the Stock Detail price tiles (5D.1, in place of scans.json)");
   eq(candleData(t).length, n("1Y"), "TCS candles drawn"); eq(candleData(t)[candleData(t).length - 1].close, all[DAYS - 1].close, "TCS last close drawn");
   re(t.box().innerHTML, /data-tf="1Y"/, "timeframe controls rendered"); no(t.box().innerHTML, /Coming in Phase 3 Step 2/, "placeholder replaced by the chart");
+  // TradingView licence attribution (Apache-2.0 NOTICE of lightweight-charts v4.2.0): visible notice text + link, and the logo left on
+  { const box = t.box().innerHTML, attr = (box.match(/<p class="note" id="slAttribution"[^>]*>[\s\S]*?<\/p>/) || [""])[0];
+    ok(attr !== "", "the chart shows a visible attribution line");
+    re(attr, /TradingView Lightweight Charts&trade;/, "attribution names TradingView Lightweight Charts™ (NOTICE text)");
+    re(attr, /Copyright &copy; 2023 TradingView, Inc\./, "attribution carries the NOTICE copyright line");
+    re(attr, /<a href="https:\/\/www\.tradingview\.com\/" target="_blank" rel="noopener noreferrer">https:\/\/www\.tradingview\.com\/<\/a>/, "attribution links to https://www.tradingview.com/, opening without an opener");
+    no(attr, /style="[^"]*(display:\s*none|visibility:\s*hidden|font-size:\s*0)/, "the attribution is not hidden");
+    eq((box.match(/id="slAttribution"/g) || []).length, 1, "exactly one attribution line");
+    ok(t.charts.length > 0 && t.charts.every((c) => c.opts.layout && c.opts.layout.attributionLogo === true), "every chart is created with the TradingView logo on (attributionLogo: true)");
+    no(chartCode, /attributionLogo\s*:\s*(false|0|!)/, "the chart code never turns the TradingView logo off");
+    ok(chartCode.includes('"https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"'), "library URL and pinned version unchanged");
+    no(chartCode, /integrity|crossOrigin/i, "no SRI attribute is claimed (none was added: the hash has not been verified)"); }
   // 17. INFY routing: INFY data, not TCS
   await t.nav("#stock=INFY");
   eq(candleData(t)[candleData(t).length - 1].close, HIST.stocks.INFY.candles[DAYS - 1].close, "INFY last close drawn"); ok(candleData(t)[candleData(t).length - 1].close !== all[DAYS - 1].close, "INFY does not show TCS candles");
@@ -178,7 +190,7 @@ const titles = (t) => t.charts.flatMap((c) => c.series.map((s) => s.opts.title |
   t = await boot("#stock=TINY"); eq(t.box().innerHTML, "Not enough historical data.", "insufficient history message");
   t = await boot("#stock=ZZZ"); eq(t.box().innerHTML, "Not enough historical data.", "invalid symbol: message, no crash"); re(t.detail(), /Stock Detail: ZZZ/, "detail page for an unknown symbol still renders");
   t = await boot("#stock=TCS", { "historical.json": { updated: "x" } }); eq(t.box().innerHTML, "Historical data unavailable.", "malformed historical.json -> message");
-  t = await boot("#stock=TCS", { "historical.json": HIST }, { lib: false }); eq(t.box().innerHTML, "Chart library could not be loaded.", "library failure is reported, page keeps working");
+  t = await boot("#stock=TCS", { "historical.json": HIST }, { lib: false }); eq(t.box().innerHTML, "Chart library could not be loaded.", "library failure is reported, page keeps working (no TradingView chart, so no attribution line)");
   t = await boot("#stock=TCS", { "historical.json": HIST }, { lib: "inject" });
   ok(t.charts.length > 0 && t.injected.length === 1 && /lightweight-charts@4\.2\.0/.test(t.injected[0]), "library loaded lazily (pinned version) only when a chart is needed");
   t = await boot("#stock=TCS"); eq(t.injected, [], "library not injected when already present");

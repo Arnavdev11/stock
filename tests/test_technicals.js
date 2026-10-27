@@ -142,8 +142,13 @@ const tile = (h, label) => text((h.match(new RegExp('<div class="tile"><b[^>]*>(
 
   // ---- the existing chart and the other blocks are untouched
   const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
-  eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart script block matches the Phase 3 Step 4 (MACD) version - re-pinned when MACD was added to the chart");
-  eq(sha(blocks[blocks.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B script block is byte-identical");
+  eq(sha(require("./legacy_5i.js").withoutDecisionEdits(html).split("<script>").slice(1).map((b) => b.split("</script>")[0]).find((b) => b.includes("Phase 3 Step 2 - historical price chart"))), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart script block matches the Phase 3 Step 4 (MACD) version - re-pinned when MACD was added to the chart; the same pin, checked after reversing exactly the recorded edits (TradingView attribution)");
+  { // the Phase 2B block was changed on purpose by the responsive redesign (the screen tabs follow the filter panel): the SAME pin now holds once exactly those recorded edits are reversed,
+    // so any other change to the block still fails here (tests/approved_page_edits.json decision_edits; tests/page_edit_manifest.py)
+    const { withoutDecisionEdits } = require("./legacy_5i.js");
+    const before = withoutDecisionEdits(html).split("<script>").slice(1).map((b) => b.split("</script>")[0]);
+    eq(sha(before[before.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B script block is byte-identical apart from the recorded responsive-redesign edits");
+    ok(before.length === blocks.length, "reversing the recorded edits adds or removes no script block"); }
   eq(blocks.indexOf(techCode) > blocks.indexOf(chartCode) && blocks.indexOf(techCode) < blocks.length - 1, true, "snapshot block sits after the chart and before the final Phase 2B block");
   ok(blocks.find((b) => b === chartCode).includes("window.SLChart="), "chart module still exposes its API");
   const t2 = await page(docOf(mkA()), "#stock=TCS", true); ok(!!t2.els.detailChart, "chart container still exists with the chart module loaded");

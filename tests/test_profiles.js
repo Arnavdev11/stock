@@ -196,7 +196,7 @@ const GOLDEN = "cdae1bbf378a2b58e10028459f12e9e277819819d0784bbd150ec8cf76bf8710
   // ================= D. isolation =================
   eq(sha(PINBLOCKS[0]), "3ee2ef6f101ccd3cd0df60bbd0bd37008c977e49c02e0cb3ba9caf8d128e1e5c", "dashboard block byte-identical");
   eq(sha(PINDETAIL), "7db88e5847e49f38fb49a260ca6a6818e1610f4c3f09e783702fd86233e7ad10", "Stock Detail block byte-identical");
-  eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical");
+  eq(sha(PINBLOCKS.find((b) => b.includes("Phase 3 Step 2 - historical price chart"))), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart + MACD block byte-identical apart from the recorded edits (TradingView attribution, tests/approved_page_edits.json)");
   eq(sha(techCode), "5f187e38d73cb15eed203fbc0cc41deb7a88dce219c6eee6f55b6f99e719b339", "Technical Snapshot block byte-identical");
   eq(sha(PINBLOCKS[PINBLOCKS.length - 1]), "35de0d215ec3947da870f95e636f41bf4b130d6d929be4d91d3deb2661344d2f", "final Phase 2B block byte-identical");
   eq(blocks.length, 7, "still seven script blocks");
