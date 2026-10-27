@@ -100,7 +100,7 @@
    "old": "if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error(\"empty\");FD=j.stocks;\n"
   },
   {
-   "new": "catch(e){st.textContent=\"Fundamentals not loaded yet.\";fel(\"fund\").innerHTML='<tr><td colspan=\"9\">Fundamentals not loaded yet.</td></tr>';const cnt=fel(\"fsCount\");if(cnt)cnt.textContent=\"\";return}\nfsectors();fund()})();\n",
+   "new": "catch(e){st.textContent=\"Fundamentals not loaded yet.\";fel(\"fund\").innerHTML='<tr><td colspan=\"9\">Fundamentals not loaded yet.</td></tr>';const cnt=fel(\"fsCount\");if(cnt)cnt.textContent=\"\";return}\nfsectors();fund()})();\n/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards (CSS under \"Stock page cards\").\n   This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the modules that draw\n   them, and it reads nothing. Wider tables that compare years (Financial History, Shareholding) keep their sideways scroll. */\n(function(){\n\"use strict\";\nvar SEL=\"#detailQuarterly table,#detailChecklist table\";\nfunction label(){var ts=document.querySelectorAll?document.querySelectorAll(SEL):[];\n  for(var i=0;i<ts.length;i++){var t=ts[i];if(t.className.indexOf(\"sl-cardt\")<0)t.className=(t.className?t.className+\" \":\"\")+\"sl-cardt\";\n    var hs=t.querySelectorAll(\"thead th\"),names=[];for(var j=0;j<hs.length;j++)names.push(String(hs[j].textContent||\"\").trim());\n    var rows=t.querySelectorAll(\"tbody tr\");\n    for(var r=0;r<rows.length;r++){var cells=rows[r].children;for(var c=0;c<cells.length;c++){var n=names[c]||\"\";if(n&&cells[c].getAttribute(\"data-label\")!==n)cells[c].setAttribute(\"data-label\",n)}}}}\nvar d=document.getElementById&&document.getElementById(\"detail\");\nif(d&&typeof MutationObserver!==\"undefined\"){label();new MutationObserver(label).observe(d,{childList:true,subtree:true})}\n})();\n",
    "old": "catch(e){st.textContent=\"Fundamentals not loaded yet.\";document.getElementById(\"fund\").innerHTML='<tr><td colspan=\"9\">Fundamentals not loaded yet.</td></tr>';return}\nfund()})();\n"
   },
   {
@@ -116,10 +116,6 @@
    "old": "  var tab=st.trend||\"movers\",tabs=[[\"movers\",\"Price Movers\"],[\"volume\",\"Volume Shockers\"],[\"52w\",\"52W High / Low\"],[\"ath\",\"All-Time High / Low\"],[\"active\",\"Most Active\"]],h='<div class=\"tabs mk-tabs\" role=\"tablist\" data-mk-tabs=\"trend\">'+tabs.map(function(t){return'<button type=\"button\" role=\"tab\" data-tab=\"'+t[0]+'\" aria-selected=\"'+(t[0]===tab)+'\">'+t[1]+'</button>'}).join(\"\")+'</div>';\n"
   },
   {
-   "new": "<script type=\"module\" id=\"stocklens-cards\">\n/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards (CSS under \"Stock page cards\").\n   This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the modules that draw\n   them, and it reads nothing. Wider tables that compare years (Financial History, Shareholding) keep their sideways scroll. */\n(function(){\n\"use strict\";\nvar SEL=\"#detailQuarterly table,#detailChecklist table\";\nfunction label(){var ts=document.querySelectorAll?document.querySelectorAll(SEL):[];\n  for(var i=0;i<ts.length;i++){var t=ts[i];if(t.className.indexOf(\"sl-cardt\")<0)t.className=(t.className?t.className+\" \":\"\")+\"sl-cardt\";\n    var hs=t.querySelectorAll(\"thead th\"),names=[];for(var j=0;j<hs.length;j++)names.push(String(hs[j].textContent||\"\").trim());\n    var rows=t.querySelectorAll(\"tbody tr\");\n    for(var r=0;r<rows.length;r++){var cells=rows[r].children;for(var c=0;c<cells.length;c++){var n=names[c]||\"\";if(n&&cells[c].getAttribute(\"data-label\")!==n)cells[c].setAttribute(\"data-label\",n)}}}}\nvar d=document.getElementById&&document.getElementById(\"detail\");\nif(d&&typeof MutationObserver!==\"undefined\"){label();new MutationObserver(label).observe(d,{childList:true,subtree:true})}\n})();\n</script>\n",
-   "old": ""
-  },
-  {
    "new": " const SC=typeof window!==\"undefined\"&&window.SLScreen&&window.SLScreen.ready?window.SLScreen:null;   /* the filter panel's rules (P/E, P/B, ROE, Sector), when the fundamentals are loaded */\n if(SC&&SC.error){box.innerHTML='<p class=\"note\">Fix the filter marked above to see the results.</p>';return}\n const useRoe=!SC&&m>0&&Object.keys(ROE).length>0;\n const rows=src.stocks.filter(s=>SC?SC.pass(s.symbol):(!useRoe||(typeof ROE[s.symbol]===\"number\"&&isFinite(ROE[s.symbol])&&ROE[s.symbol]>=m))).map(s=>t.row(s)),st=ST[id];\n",
    "old": " const useRoe=m>0&&Object.keys(ROE).length>0;\n const rows=src.stocks.filter(s=>!useRoe||(ROE[s.symbol]!=null&&ROE[s.symbol]>=m)).map(s=>t.row(s)),st=ST[id];\n"
   },
@@ -132,5 +128,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "cf0c253bb95705d0ca09dde77318e208b10a8b0accfc2c70ffb0e7830f01fe85"
+ "decision_sha256": "77a0700d131f981d37219774c7197f4cead3459605a8cc464a50d8e9bfdeb4cf"
 }

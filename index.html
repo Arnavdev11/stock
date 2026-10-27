@@ -374,6 +374,20 @@ FD.forEach(x=>{if(typeof x.symbol==="string")FBY[x.symbol]=x});
 st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
 catch(e){st.textContent="Fundamentals not loaded yet.";fel("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';const cnt=fel("fsCount");if(cnt)cnt.textContent="";return}
 fsectors();fund()})();
+/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards (CSS under "Stock page cards").
+   This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the modules that draw
+   them, and it reads nothing. Wider tables that compare years (Financial History, Shareholding) keep their sideways scroll. */
+(function(){
+"use strict";
+var SEL="#detailQuarterly table,#detailChecklist table";
+function label(){var ts=document.querySelectorAll?document.querySelectorAll(SEL):[];
+  for(var i=0;i<ts.length;i++){var t=ts[i];if(t.className.indexOf("sl-cardt")<0)t.className=(t.className?t.className+" ":"")+"sl-cardt";
+    var hs=t.querySelectorAll("thead th"),names=[];for(var j=0;j<hs.length;j++)names.push(String(hs[j].textContent||"").trim());
+    var rows=t.querySelectorAll("tbody tr");
+    for(var r=0;r<rows.length;r++){var cells=rows[r].children;for(var c=0;c<cells.length;c++){var n=names[c]||"";if(n&&cells[c].getAttribute("data-label")!==n)cells[c].setAttribute("data-label",n)}}}}
+var d=document.getElementById&&document.getElementById("detail");
+if(d&&typeof MutationObserver!=="undefined"){label();new MutationObserver(label).observe(d,{childList:true,subtree:true})}
+})();
 </script>
 <script>
 /* StockLens Phase 3 Step 1 - Stock Detail view (#stock=SYMBOL). Separate from the dashboard scripts; reads existing JSON only. */
@@ -3455,22 +3469,6 @@ function start(g,env){
 window.SLLive={gate:gate,publicGate:publicGate,publicTestGate:publicTestGate,PUBLIC_TEST_ORIGIN:PUBLIC_TEST_ORIGIN,PUBLIC_LIVE:PUBLIC_LIVE,validate:validate,accepts:accepts,Controller:Controller,Ui:Ui,CFG:CFG,start:start,labelOf:labelOf};
 var g=gate(window.location);
 if(g)start(g,{document:document,setTimeout:window.setTimeout.bind(window)});
-})();
-</script>
-<script type="module" id="stocklens-cards">
-/* Responsive redesign: on a phone the Quarterly Results and Investment Checklist tables become cards (CSS under "Stock page cards").
-   This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the modules that draw
-   them, and it reads nothing. Wider tables that compare years (Financial History, Shareholding) keep their sideways scroll. */
-(function(){
-"use strict";
-var SEL="#detailQuarterly table,#detailChecklist table";
-function label(){var ts=document.querySelectorAll?document.querySelectorAll(SEL):[];
-  for(var i=0;i<ts.length;i++){var t=ts[i];if(t.className.indexOf("sl-cardt")<0)t.className=(t.className?t.className+" ":"")+"sl-cardt";
-    var hs=t.querySelectorAll("thead th"),names=[];for(var j=0;j<hs.length;j++)names.push(String(hs[j].textContent||"").trim());
-    var rows=t.querySelectorAll("tbody tr");
-    for(var r=0;r<rows.length;r++){var cells=rows[r].children;for(var c=0;c<cells.length;c++){var n=names[c]||"";if(n&&cells[c].getAttribute("data-label")!==n)cells[c].setAttribute("data-label",n)}}}}
-var d=document.getElementById&&document.getElementById("detail");
-if(d&&typeof MutationObserver!=="undefined"){label();new MutationObserver(label).observe(d,{childList:true,subtree:true})}
 })();
 </script>
 <script>
