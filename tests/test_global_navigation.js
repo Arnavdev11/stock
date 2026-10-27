@@ -25,7 +25,8 @@ if (base) {
   eq(legacy(html).replace(SRCHMOD, "") === base.replace(SRCHMOD, ""), true, "the page minus the Phase 5I layer and minus the search module is byte-for-byte the Phase 5H.6 page minus its search module: nothing else changed");
   eq(legacy(html).indexOf('<script type="module" id="stocklens-search">') === base.indexOf('<script type="module" id="stocklens-search">'), true, "the search module still sits at exactly the same place in the page");
 }
-eq((html.match(/<script/g) || []).length, 18, "eighteen script elements: thirteen before, plus the navigation module (5I), the market module (5J), the per-stock-file layer (Stage 1 coverage), the opt-in local live layer (Phase 3) and the read-only Quarterly Results module");
+eq((html.match(/<script/g) || []).length, 19, "nineteen script elements: thirteen before, plus the navigation module (5I), the market module (5J), the per-stock-file layer (Stage 1 coverage), the opt-in local live layer (Phase 3), the read-only Quarterly Results module and the read-only Dividends & Corporate Actions module");
+eq(html.split('<script type="module" id="stocklens-corporate-actions">').length, 2, "the nineteenth is the Corporate Actions module, exactly once");
 
 // ---------- 2. the global bar: one search, persistent, outside the views that are hidden by detail/compare mode ----------
 const bodyAt = html.indexOf("<body>"), wAt = html.indexOf('<div class="w">'), barAt = html.indexOf('<div id="globalBar">');
@@ -96,7 +97,7 @@ for (const bad of ["", "#", "#stock=", "#stock=&section=research", "#stock=%E0%A
 eq(N.parse(null), null, "no address at all");
 { // the existing routing in every module accepts the new form and rejects what it always rejected
   const routes = html.match(/var m=\/\^#stock=\(\[\^&\]\+\)\(\?:&section=\[A-Za-z0-9_-\]\{1,30\}\)\?\$\/\.exec\(window\.location\.hash\|\|""\);if\(!m\)return null;/g) || [];
-  eq(routes.length, 9, "all nine route readers accept an optional &section=");
+  eq(routes.length, 10, "all ten route readers accept an optional &section= (the tenth: the Dividends & Corporate Actions module)");
   const R = /^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/;
   for (const [h, want] of [["#stock=TCS", "TCS"], ["#stock=TCS&section=shareholding", "TCS"], ["#stock=TCS&section=zzz", "TCS"], ["#stock=TCS&x=1", null], ["#stock=TCS&section=a/b", null], ["#compare-pick=TCS", null], ["", null]]) { const m = R.exec(h); eq(m ? m[1] : null, want, "reader: " + JSON.stringify(h)); }
   no(html, /\^#stock=\(\[\^&\]\+\)\$\//, "no reader still has the old strict pattern (they would drop the stock on a section link)");
