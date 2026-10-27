@@ -151,5 +151,8 @@ function boot(doc) {
   re(html, /@container \(max-width:640px\)\{\n#screener-sec \.panel\.scroll\{overflow:visible/, "mobile cards are a container query on the screen itself");
   re(html, /#screener-sec td:before\{content:attr\(data-label\)/, "each card field shows its column name");
   re(code, /function flabel\(root\)\{/, "the column names are added to the cells from the table headers");
+  re(html, /@container \(max-width:640px\)\{[^]*?#ftabs\{flex-wrap:wrap;overflow:visible\}/, "on a phone the screen tabs wrap, so no tab is hidden off-screen");
+  re(html, /#screener-sec td\.n\{grid-column:auto;display:block;/, "numbers sit in a compact grid inside each card (label above value)");
+  re(html, /#screener-sec td:first-child\{[^}]*min-height:44px/, "the stock link in each card is a 44px target");
   console.log("Screener filter tests passed (" + checks + " checks)");
 })().catch((e) => { console.error("SCREENER FILTER TEST FAILED:", e && e.message ? e.message : e); if (e && e.stack) console.error(e.stack.split("\n").slice(1, 4).join("\n")); process.exit(1); });

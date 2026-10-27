@@ -57,7 +57,7 @@ td.symlink{cursor:pointer;color:var(--ac);font-weight:600;text-decoration:underl
 /* Responsive redesign: readable selected states in dark mode, and touch targets (24px everywhere, 44px at narrow widths) */
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn,:root:not([data-theme="light"]) .tabs button[aria-selected=true],:root:not([data-theme="light"]) .chips button[aria-pressed=true],:root:not([data-theme="light"]) #globalBar .gb-sections a[aria-current=true],:root:not([data-theme="light"]) button[data-tf][aria-pressed=true]{color:#0F1524!important}}
 :root[data-theme="dark"] .btn,:root[data-theme="dark"] .tabs button[aria-selected=true],:root[data-theme="dark"] .chips button[aria-pressed=true],:root[data-theme="dark"] #globalBar .gb-sections a[aria-current=true],:root[data-theme="dark"] button[data-tf][aria-pressed=true]{color:#0F1524!important}
-th .lk{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}
+th .lk,button.lk[data-snap-go]{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}#detailBack{display:inline-flex;align-items:center;min-height:44px}
 @container page (max-width:1149px){.tabs button,.mk-tabs button,.chips button,select,.btn{min-height:44px}}
 #globalBar{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);container-type:inline-size}
 #globalBar .gb-in{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1200px;margin:0 auto;padding:8px 18px}
@@ -131,10 +131,12 @@ th .lk{display:inline-block;min-height:24px;min-width:24px;padding:2px 0}.mk-sym
 #screener-sec thead tr{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 0 10px}#screener-sec thead tr:before{content:"Sort by";font-size:.8rem;font-weight:600;color:var(--mute);margin-right:2px}
 #screener-sec th{border:0;padding:0}#screener-sec th .lk{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:20px;background:var(--card);text-decoration:none;font-size:.85rem}
 #screener-sec th[aria-sort] .lk{border-color:var(--ac)}
-#screener-sec tbody tr{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px;margin-bottom:10px}
-#screener-sec td{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;border-bottom:1px solid var(--line);padding:8px 0;text-align:right;overflow-wrap:anywhere}
-#screener-sec td:last-child{border-bottom:0}#screener-sec td:before{content:attr(data-label);flex:0 0 auto;max-width:55%;text-align:left;color:var(--mute);font-weight:600;font-size:.8rem}
-#screener-sec td:first-child{font-size:1.05rem;min-height:44px;align-items:center}#screener-sec td[colspan]{display:block;text-align:left}#screener-sec td[colspan]:before{content:none}
+#ftabs{flex-wrap:wrap;overflow:visible}
+#screener-sec tbody tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(8.5rem,100%),1fr));gap:0 14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px 10px;margin-bottom:10px}
+#screener-sec td{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;border-bottom:1px solid var(--line);padding:8px 0;text-align:right;overflow-wrap:anywhere;min-width:0}
+#screener-sec td:before{content:attr(data-label);flex:0 0 auto;max-width:55%;text-align:left;color:var(--mute);font-weight:600;font-size:.8rem}
+#screener-sec td.n{grid-column:auto;display:block;text-align:left;border-bottom:0;padding:8px 0 0}#screener-sec td.n:before{display:block;max-width:none;margin-bottom:1px}
+#screener-sec td:first-child{font-size:1.05rem;min-height:44px;align-items:center;text-decoration:none}#screener-sec td[colspan]{display:block;text-align:left}#screener-sec td[colspan]:before{content:none}
 }
 </style></head><body>
 <div id="globalBar"><div class="gb-in"><a class="gb-brand" id="gbBrand" href="#">StockLens</a><button type="button" class="gb-toggle" id="gbToggle" aria-expanded="false" aria-controls="gbSections" hidden></button><nav class="gb-sections" id="gbSections" aria-label="Stock sections" hidden></nav><div class="gb-search" id="globalSearchHost"></div></div></div>
