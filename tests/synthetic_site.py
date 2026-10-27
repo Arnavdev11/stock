@@ -1,7 +1,7 @@
 """
 SYNTHETIC preview site for local browser checks of index.html. NOT market data.
 
-    python tests/synthetic_site.py <empty-output-dir>
+    python tests/synthetic_site.py <empty-output-dir> [--stocks N]       (N: a larger invented list for scale checks; default 119)
 
 Writes <dir>/index.html (a copy of the repository page) and <dir>/out/*.json filled with INVENTED companies and numbers
 (plus TCS, so the TCS stock page can be opened, with made-up figures). Every file carries "synthetic": true and a
@@ -66,12 +66,24 @@ def candles(base, n=260, seed=1):
     return sorted(out, key=lambda x: x["date"])
 
 
-def build(dest):
+def extra_stock(i):
+    """Further invented stocks for scale checks (python tests/synthetic_site.py <dir> --stocks N): every 13th has a negative P/E, every 17th a
+    negative P/B, every 11th no P/E, every 19th a P/E stored as text, every 7th no sector. Not market data."""
+    pe = None if i % 11 == 0 else "%.1f" % (i % 40) if i % 19 == 0 else -round(1 + i % 30, 2) if i % 13 == 0 else round(3 + (i * 3.7) % 70, 2)
+    pb = -round(0.5 + i % 4, 2) if i % 17 == 0 else round(0.3 + (i * 1.3) % 12, 2)
+    sec = None if i % 7 == 0 else ["Information Technology", "Financials", "Industrials", "Materials", "Health Care", "Utilities"][i % 6]
+    return ("SCALE%04d" % i, "Scale Test Company %04d Limited" % i, sec, pe, pb, round(2 + (i * 2.3) % 40, 2), round(3 + (i * 1.9) % 35, 2),
+            round(0.5 + (i * 0.7) % 15, 2), round(2 + (i * 1.1) % 30, 2), round(40 + i * 3.1, 2))
+
+
+def build(dest, total=None):
+    """total: build this many stocks in all (default: the 119 above); the extra ones come from extra_stock()."""
+    STOCKS_ = STOCKS + [extra_stock(i) for i in range(1, max(0, (total or len(STOCKS)) - len(STOCKS)) + 1)]
     files = {}
     files["fundamentals.json"] = {"synthetic": True, "as_of": AS_OF, "source": SOURCE, "stocks": [
         {"symbol": s, "isin": "INE%08dX1" % i, "company_name": n, "sector": sec, "pe": pe, "pb": pb, "roe": roe, "roce": roce, "roa": roa, "ev_ebitda": ev,
          "revenue_growth": None, "profit_growth": None, "missing": [k for k, v in (("pe", pe), ("pb", pb), ("roe", roe), ("roce", roce), ("roa", roa), ("ev_ebitda", ev)) if v is None], "fetched": AS_OF}
-        for i, (s, n, sec, pe, pb, roe, roce, roa, ev, _) in enumerate(STOCKS)]}
+        for i, (s, n, sec, pe, pb, roe, roce, roa, ev, _) in enumerate(STOCKS_)]}
 
     def inc(i):
         return {"period": "Mar 2026", "basis": "consolidated", "revenue": 1000.0 * i, "other_income": 10.0 * i, "total_revenue": 1010.0 * i, "profit_before_tax": 200.0 * i,
@@ -83,13 +95,13 @@ def build(dest):
                            "liabilities_to_equity": 1.5, "total_debt": None, "debt_to_equity": None, "debt_lines_found": [], "line_items": [], "checks": {}},
          "cash_flow": {"period": "Mar 2026", "basis": "consolidated", "operating": 400.0 * (i + 1), "investing": -300.0 * (i + 1), "financing": -50.0 * (i + 1), "capex": None,
                        "capex_line": None, "free_cash_flow": None, "capex_candidates": [], "capex_status": "none", "line_items": ["x"]}}
-        for i, (s, n, *_rest) in enumerate(STOCKS)]}
+        for i, (s, n, *_rest) in enumerate(STOCKS_)]}
     files["historical.json"] = {"synthetic": True, "as_of": AS_OF, "source": SOURCE, "benchmark": {"symbol": "NIFTY 50", "candles": candles(24500, seed=3)},
-                                "stocks": {row[0]: {"symbol": row[0], "candles": candles(row[-1], seed=i + 2)} for i, row in enumerate(STOCKS[:18])}}
+                                "stocks": {row[0]: {"symbol": row[0], "candles": candles(row[-1], seed=i + 2)} for i, row in enumerate(STOCKS_[:18])}}
     files["shareholding.json"] = {"synthetic": True, "schema": 1, "source": SOURCE, "stocks": {
         "TCS": {"symbol": "TCS", "quarters": [{"quarter_end": "2026-06-30", "status": "available", "diagnostics": {"share_basis_total": 3618087518}}]}}}
-    files["stock_directory.json"] = {"synthetic": True, "schema_version": 1, "kind": "stock_directory", "stage": "synthetic-fixture", "count": len(STOCKS),
-                                     "symbols": [{"symbol": s, "isin": None, "name": n} for (s, n, *_r) in STOCKS]}
+    files["stock_directory.json"] = {"synthetic": True, "schema_version": 1, "kind": "stock_directory", "stage": "synthetic-fixture", "count": len(STOCKS_),
+                                     "symbols": [{"symbol": s, "isin": None, "name": n} for (s, n, *_r) in STOCKS_]}
     files["scans.json"] = {"synthetic": True, "as_of": AS_OF, "source": SOURCE,
                            "gainers": [{"symbol": "ALPHA", "price": 812.5, "change_pct": 6.5, "volume_x_avg": 2.5}, {"symbol": "ETA", "price": 2650, "change_pct": 2.1, "volume_x_avg": 0.8}, {"symbol": "XI", "price": 333, "change_pct": 4.4, "volume_x_avg": 3.1}],
                            "losers": [{"symbol": "DELTA", "price": 98.4, "change_pct": -7.2, "volume_x_avg": 3.4}, {"symbol": "NU", "price": 45, "change_pct": -1.1, "volume_x_avg": 2.4}],
@@ -115,6 +127,6 @@ def build(dest):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 4) or (len(sys.argv) == 4 and sys.argv[2] != "--stocks"):
         raise SystemExit(__doc__)
-    print("\n".join(build(sys.argv[1])))
+    print("\n".join(build(sys.argv[1], int(sys.argv[3]) if len(sys.argv) == 4 else None)))
