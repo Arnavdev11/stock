@@ -1,7 +1,7 @@
 """
 Local browser checks of index.html against the SYNTHETIC preview site (tests/synthetic_site.py). Not run by CI.
 
-    python tests/browser_checks.py <site-dir> <report-dir> [--no-shots]
+    python tests/browser_checks.py <site-dir> <report-dir> [--no-shots] [--pages home,screener,tcs,compare]
 
 Serves <site-dir> on 127.0.0.1 only, opens it in headless Chromium (Playwright) at each agreed width and records, per page:
 horizontal overflow, the top bar's rows and any overlap between its parts, whether the search placeholder fits, touch targets
@@ -19,6 +19,7 @@ from playwright.sync_api import sync_playwright
 
 WIDTHS = [320, 360, 375, 390, 430, 640, 768, 900, 1000, 1005, 1024, 1280, 1366, 1440, 1920]   # the 13 widths of the release review plus 1366 and 1920 from the first review
 PAGES = [("home", ""), ("screener", "#screener"), ("tcs", "#stock=TCS")]
+ALL_PAGES = dict(PAGES + [("compare", "#compare=TCS,ITC,INFY")])
 
 PROBE = r"""
 () => {
@@ -141,10 +142,15 @@ def run(site, report_dir, shots=True, widths=WIDTHS, pages=PAGES, schemes=("ligh
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
-    res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv, schemes=("light", "dark"))
+    names = sys.argv[sys.argv.index("--pages") + 1].split(",") if "--pages" in sys.argv else [n for n, _ in PAGES]
+    res = run(sys.argv[1], sys.argv[2], shots="--no-shots" not in sys.argv, schemes=("light", "dark"), pages=[(n, ALL_PAGES[n]) for n in names])
+    bad = [r for r in res if r["overflowX"] or r["spill"] or r["clipped"] or r["offStrip"] or r["brokenNumbers"] or r["under24"] or r["lowContrastCount"]
+           or r["consoleErrors"] or (r.get("bar") or {}).get("overlaps") or (r.get("search") and not r["search"]["placeholderFits"])]
     for r in res:
         b = r.get("bar") or {}
         s = r.get("search") or {}
         print("%-5s %-8s %5d overflow=%-5s bar_rows=%s overlaps=%d ph_fits=%s spill=%d clipped=%d offstrip=%d brokenNum=%d under44=%d under24=%d lowC=%d errors=%d" % (
             r["scheme"], r["page"], r["width"], r["overflowX"], b.get("rows"), len(b.get("overlaps", [])), s.get("placeholderFits"), len(r["spill"]), len(r["clipped"]),
             len(r["offStrip"]), len(r["brokenNumbers"]), len(r["under44"]), len(r["under24"]), r["lowContrastCount"], len(r["consoleErrors"])))
+    print("\n%d checks, %d with a problem" % (len(res), len(bad)))
+    sys.exit(1 if bad else 0)
