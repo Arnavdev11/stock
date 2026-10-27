@@ -37,6 +37,14 @@ class DecisionEditsRecord(unittest.TestCase):
         self.assertEqual(M.reverse(PAGE, self.edits), self.base)
         self.assertEqual(M.reverse(self.base, self.edits), self.base, "a page without the edits is returned unchanged")
         for e in self.edits:
+            self.assertEqual(self.base.count(e["new"]), 0, "no recorded new text already occurs in the base page")
+        for commit in ("aa4ace1", "4eb39f7"):                                    # pages the older pins compare against
+            r = subprocess.run(["git", "show", commit + ":index.html"], cwd=str(ROOT), capture_output=True)
+            if r.returncode == 0:
+                older = r.stdout.decode("utf-8")
+                self.assertEqual(G.without_coverage_fixes(older), M.reverse(G.without_coverage_fixes(older), self.edits))
+                self.assertEqual(M.reverse(older, self.edits), older, commit + " carries none of the edits")
+        for e in self.edits:
             self.assertEqual(PAGE.count(e["new"]), 1)
             self.assertTrue(e["new"], "every recorded edit has a non-empty new text")
 

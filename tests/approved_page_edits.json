@@ -72,12 +72,12 @@
    "old": ""
   },
   {
-   "new": "<section class=\"mk-sec\" id=\"mk-52w\"><h2>New 52-Week High / Low</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n",
-   "old": "<section class=\"mk-sec\" id=\"mk-52w\"><h2>New 52-Week High / Low</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-ath\"><h2>All-Time High / Low</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n"
+   "new": "<section class=\"mk-sec\" id=\"mk-52w\"><h2>New 52-Week High / Low</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-volume\"><h2>Volume Shockers</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n",
+   "old": "<section class=\"mk-sec\" id=\"mk-52w\"><h2>New 52-Week High / Low</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-ath\"><h2>All-Time High / Low</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-volume\"><h2>Volume Shockers</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n"
   },
   {
-   "new": "<section class=\"mk-sec\" id=\"mk-fiidii\"><h2>FII / DII Activity</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n",
-   "old": "<section class=\"mk-sec\" id=\"mk-fiidii\"><h2>FII / DII Activity</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-sectorlead\"><h2>Sector Leaders / Laggards</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n"
+   "new": "<section class=\"mk-sec\" id=\"mk-fiidii\"><h2>FII / DII Activity</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-swing\"><h2>Swing Market Watch</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n",
+   "old": "<section class=\"mk-sec\" id=\"mk-fiidii\"><h2>FII / DII Activity</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-sectorlead\"><h2>Sector Leaders / Laggards</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n<section class=\"mk-sec\" id=\"mk-swing\"><h2>Swing Market Watch</h2><div data-mk><p class=\"mk-na\">Loading…</p></div></section>\n"
   },
   {
    "new": "<form id=\"fscreen\" class=\"fs\" novalidate aria-labelledby=\"fsTitle\">\n<h3 id=\"fsTitle\" class=\"fs-title\">Filters</h3>\n<div class=\"fs-grid\">\n<fieldset class=\"fs-set\"><legend>P/E</legend><div class=\"fs-pair\"><div><label for=\"fsPeMin\">Min</label><input id=\"fsPeMin\" type=\"text\" inputmode=\"decimal\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Any\" aria-describedby=\"fsPeHelp\"></div><div><label for=\"fsPeMax\">Max</label><input id=\"fsPeMax\" type=\"text\" inputmode=\"decimal\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Any\" aria-describedby=\"fsPeHelp\"></div></div>\n<label for=\"fsPeMode\">Which P/E</label><select id=\"fsPeMode\" aria-describedby=\"fsPeHelp\"><option value=\"any\" selected>Any</option><option value=\"positive\">Positive only</option><option value=\"negative\">Negative only (loss-making)</option></select>\n<p id=\"fsPeHelp\" class=\"fs-help\">A P/E range lists positive P/E only. A negative P/E means a loss, not a cheap price; choose “Negative only” to list those stocks.</p></fieldset>\n<fieldset class=\"fs-set\"><legend>P/B</legend><div class=\"fs-pair\"><div><label for=\"fsPbMin\">Min</label><input id=\"fsPbMin\" type=\"text\" inputmode=\"decimal\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Any\"></div><div><label for=\"fsPbMax\">Max</label><input id=\"fsPbMax\" type=\"text\" inputmode=\"decimal\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Any\"></div></div></fieldset>\n<div class=\"fs-set\"><label for=\"roe\">ROE at least</label><select id=\"roe\"><option value=\"0\">Any</option><option value=\"15\" selected>15%</option><option value=\"20\">20%</option><option value=\"25\">25%</option></select>\n<label for=\"fsSector\">Sector</label><select id=\"fsSector\" aria-describedby=\"fsSectorNote\"><option value=\"\">All sectors</option></select><p id=\"fsSectorNote\" class=\"fs-help\"></p></div>\n</div>\n<p id=\"fsErr\" class=\"fs-err\" role=\"alert\" hidden></p>\n<div class=\"fs-foot\"><p id=\"fsCount\" class=\"fs-count\" role=\"status\" aria-live=\"polite\"></p><button type=\"button\" id=\"fsReset\" class=\"fs-reset\">Clear filters</button></div>\n</form>\n",
@@ -116,5 +116,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "63b3afc68c86c1acc73c529f4b3f81b4be62e6c2d1c80a7198df4852393d1314"
+ "decision_sha256": "30133edaa6c36a8d82cd88cbe050ee14383687554f8706ea47f546ee4ddd6f18"
 }

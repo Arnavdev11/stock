@@ -55,15 +55,16 @@ def build(old, new):
     out = []
     for h in hunks:
         i1, i2, j1, j2 = h
-        while True:                                    # widen with unchanged neighbouring lines until the new text is non-empty and occurs once
-            text = "".join(b[j1:j2])
-            if text and count(new, text) == 1:
+        while True:                                    # widen with unchanged neighbouring lines (both sides) until the new text is non-empty,
+            text = "".join(b[j1:j2])                   # occurs once in the page, and does not occur at all in the base page (so a page without the edits is left unchanged)
+            if text and count(new, text) == 1 and count(old, text) == 0:
                 break
+            grew = False
             if j1 > 0 and i1 > 0 and a[i1 - 1] == b[j1 - 1]:
-                i1, j1 = i1 - 1, j1 - 1
-            elif j2 < len(b) and i2 < len(a) and a[i2] == b[j2]:
-                i2, j2 = i2 + 1, j2 + 1
-            else:
+                i1, j1, grew = i1 - 1, j1 - 1, True
+            if j2 < len(b) and i2 < len(a) and a[i2] == b[j2]:
+                i2, j2, grew = i2 + 1, j2 + 1, True
+            if not grew:
                 raise ValueError("cannot make an edit unique near line %d" % (j1 + 1))
         if out and j1 <= out[-1][3]:                   # touching or overlapping the previous edit: one edit
             p = out[-1]
@@ -73,6 +74,8 @@ def build(old, new):
     edits = [{"new": "".join(b[j1:j2]), "old": "".join(a[i1:i2])} for i1, i2, j1, j2 in out]
     if [count(new, e["new"]) for e in edits] != [1] * len(edits):
         raise ValueError("an edit does not occur exactly once")
+    if any(count(old, e["new"]) for e in edits):
+        raise ValueError("an edit's new text already occurs in the base page")
     if reverse(new, edits) != old:
         raise ValueError("reversing the edits does not give back the base page")
     return edits
