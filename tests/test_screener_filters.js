@@ -143,6 +143,9 @@ function boot(doc) {
 
   // --- no data, empty data, no sector data
   t = boot(undefined); await t.ready(); re(t.els.fstat.textContent, /Fundamentals not loaded yet\./); re(t.msg(), /Fundamentals not loaded yet\./); eq(t.ctx.window.SLScreen, undefined, "without fundamentals the other tabs keep their own (unfiltered) behaviour");
+  ok(["fsPeMin", "fsPeMax", "fsPeMode", "fsPbMin", "fsPbMax", "fsPbMode", "roe", "fsSector", "fsReset"].every((id) => t.els[id].disabled === true), "without fundamentals every filter control is disabled (it could not work)");
+  re(t.els.fsCount.textContent, /^Filters are off: the fundamentals file is not loaded\.$/, "and the panel says why");
+  { const ok2 = boot(DATA()); await ok2.ready(); ok(["fsPeMin", "fsPbMode", "roe", "fsSector", "fsReset"].every((id) => ok2.els[id].disabled === false), "with fundamentals the filters stay enabled"); }
   t = boot({ as_of: "x", source: "y", stocks: [] }); await t.ready(); re(t.els.fstat.textContent, /Fundamentals not loaded yet\./);
   t = boot({ as_of: "2026-10-01", source: "Fixture", stocks: [ROW("AAA", { sector: null }), null, ROW("BBB", { sector: null })] }); await t.ready();
   ok(t.els.fsSector.disabled, "no published sector: the sector filter is off"); re(t.els.fsSectorNote.textContent, /No sector is published in the fundamentals data yet/);

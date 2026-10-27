@@ -387,7 +387,9 @@ try{const r=await fetch("out/fundamentals.json",{cache:"no-store"});if(!r.ok)thr
 if(!j||!Array.isArray(j.stocks)||!j.stocks.length)throw new Error("empty");FD=j.stocks.filter(x=>x&&typeof x==="object");                 /* every published row is kept; only an empty (null) entry, which has nothing to show, is skipped */
 FD.forEach(x=>{if(typeof x.symbol==="string")FBY[x.symbol]=x});
 st.textContent="Fundamentals data: "+j.source+" · Updated: "+j.as_of}
-catch(e){st.textContent="Fundamentals not loaded yet.";fel("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';const cnt=fel("fsCount");if(cnt)cnt.textContent="";return}
+catch(e){st.textContent="Fundamentals not loaded yet.";fel("fund").innerHTML='<tr><td colspan="9">Fundamentals not loaded yet.</td></tr>';
+ ["fsPeMin","fsPeMax","fsPeMode","fsPbMin","fsPbMax","fsPbMode","roe","fsSector","fsReset"].forEach(id=>{const x=fel(id);if(x)x.disabled=true});   /* no data: the filters cannot work, so they are off and say why */
+ const cnt=fel("fsCount");if(cnt)cnt.textContent="Filters are off: the fundamentals file is not loaded.";return}
 fsectors();fund()})();
 /* Responsive redesign: on a phone the Quarterly Results, Investment Checklist, Financial History and shareholding quarter tables become cards (CSS under
    "Stock page cards"). This only adds a class to those tables and the column name to each cell (data-label); it never changes a value, a row or the
