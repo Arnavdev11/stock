@@ -104,6 +104,19 @@ INDICATOR_MIN_ROWS = {"chart_drawn": 30, "sma20": 30, "ema20": 30, "rsi14": 30, 
                       "sma50": 50, "ema50": 50, "sma200": 200,
                       "snapshot_atr14": 14, "snapshot_volume_ratio_20d": 21, "snapshot_dma200": 200}
 INDICATOR_WINDOW_DAYS = {"snapshot_52_week_range": 365}
+def isin_check_digit_ok(isin):
+    """ISO 6166 check digit: letters become numbers (A=10 ... Z=35), then the Luhn sum over the first 11 characters must give the 12th."""
+    if not isinstance(isin, str) or not universe.ISIN_RE.match(isin):
+        return False
+    digits = "".join(str(int(ch, 36)) for ch in isin[:11])
+    total = 0
+    for k, ch in enumerate(reversed(digits)):
+        v = int(ch) * (2 if k % 2 == 0 else 1)
+        total += v // 10 + v % 10
+    return (10 - total % 10) % 10 == int(isin[11])
+
+
+INSTRUMENT_KEY_FORM = "NSE_EQ|<ISIN>"   # the key every Upstox request uses (historical_updater, coverage_probe): exchange segment + ISIN, nothing looked up
 INDICATOR_SOURCE = "index.html: SLChart (MIN_CANDLES, sma, ema, rsi, supertrend, macd) and SLTech.compute; checked by tests/test_indicator_readiness.js"
 SH_CATEGORIES = tuple(_sl.CATEGORIES)
 SH_STATUS = ("available", "unavailable")
@@ -282,7 +295,15 @@ def _flag_block(items):
     both identifiers, so it can be looked at. Nothing is remapped and no cause is assumed."""
     rows = sorted(items)
     return {"count": len(rows), "symbols": [r[0] for r in rows][:OUTSIDE_LIST_LIMIT],
-            "details": [{"symbol": r[0], "stored_isin": r[1], "universe_isin": r[2]} for r in rows[:OUTSIDE_LIST_LIMIT]]}
+            "same_issuer_code": sum(1 for r in rows if same_issuer_code(r[1], r[2])),
+            "details": [{"symbol": r[0], "stored_isin": r[1], "universe_isin": r[2], "same_issuer_code": same_issuer_code(r[1], r[2])}
+                        for r in rows[:OUTSIDE_LIST_LIMIT]]}
+
+
+def same_issuer_code(a, b):
+    """True when two Indian ISINs carry the same 4-character issuer code (characters 4-7: IN + issuer type + issuer code + security + check digit).
+    Such a pair is the same company's other or earlier security (for example after a split), not a different company; nothing is remapped either way."""
+    return all(isinstance(x, str) and universe.ISIN_RE.match(x) and x.startswith("IN") for x in (a, b)) and a[3:7] == b[3:7]
 
 
 def _warnings(flags, extra):
@@ -456,6 +477,9 @@ def mod_directory(d, syms, scope):
         elif not universe.ISIN_RE.match(i) or not universe.SYMBOL_RE.match(s):
             invalid += 1
             _tally(inv, "bad_symbol_or_isin")
+        elif not isin_check_digit_ok(i):
+            invalid += 1
+            _tally(inv, "isin_check_digit_wrong")
         else:
             well_formed += 1
             if not st["usable"]:
@@ -476,6 +500,8 @@ def mod_directory(d, syms, scope):
             else:
                 valid += 1
     facts = {"duplicate_symbols": dup_sym, "duplicate_isins": dup_isin,
+             "instrument_key": {"form": INSTRUMENT_KEY_FORM, "derivable": well_formed, "denominator": n,
+                                "note": "derived from a well-formed ISIN with a correct check digit; whether Upstox still lists it is checked only when a request is made"},
              "universe_identifier_check": {"well_formed": well_formed, "denominator": n, "pct": _pct(well_formed, n),
                                            "note": "checked against universe.json alone; this is not a directory cross-check"},
              "directory_cross_check": {"performed": st["usable"], "reason": st.get("reason"),

@@ -26,7 +26,9 @@ SECRET_HOLDER = "ZZ SECRET HOLDER LTD"
 
 
 def isin(i):
-    return "INE%08d0" % i
+    """A test ISIN with a correct ISO 6166 check digit, as every real ISIN has (the directory module checks it)."""
+    base = "INE%08d" % i
+    return next(base + str(d) for d in range(10) if C.isin_check_digit_ok(base + str(d)))
 
 
 def sym(i):
@@ -415,7 +417,7 @@ class MissingFilesAndInvalidRecords(Case):
         self.assertEqual(m["invalid_reasons"], {"duplicate_fiscal_year": 1, "non_numeric_value": 1, "years_not_a_list": 1})
         f = m["flags"]["isin_differs_from_universe"]
         self.assertEqual((f["count"], f["symbols"]), (1, ["S0003"]))      # still counted, but named
-        self.assertEqual(f["details"], [{"symbol": "S0003", "stored_isin": isin(777), "universe_isin": isin(3)}])
+        self.assertEqual(f["details"], [{"symbol": "S0003", "stored_isin": isin(777), "universe_isin": isin(3), "same_issuer_code": True}])   # the test ISINs share issuer code 0000
 
     def test_invalid_candles(self):
         self.make(6)
@@ -1611,6 +1613,42 @@ class IndicatorReadiness(Case):
             f.unlink()
         m = self.mod(self.build(), "all", "technical_indicators")
         self.assertEqual((m["measurability"], m["counts"]["valid"], m["coverage_pct"]), ("not_measurable", None, None))
+
+
+
+class IsinCheckDigit(Case):
+    """ISO 6166 check digit: a well-formed ISIN with a wrong last digit is an identity error, counted invalid with its own reason."""
+    def test_known_isins(self):
+        for good in ("INE002A01018", "INE467B01029", "IN9175A01010", "INE0Q9301021", "US0378331005"):     # RELIANCE, TCS, a DVR share, a newer INE0 ISIN, Apple
+            self.assertTrue(C.isin_check_digit_ok(good), good)
+        for bad in ("INE002A01019", "INE467B01020", "INE002A0101", None, 12, "ine002a01018"):
+            self.assertFalse(C.isin_check_digit_ok(bad), bad)
+
+    def test_a_wrong_check_digit_is_invalid_with_its_reason_and_no_instrument_key(self):
+        self.make(3)
+        u = json.loads((self.data / "universe.json").read_text())
+        good = u["symbols"][1]["isin"]
+        u["symbols"][1]["isin"] = good[:11] + str((int(good[11]) + 1) % 10)
+        write(self.data / "universe.json", u)
+        d = json.loads((self.data / "stock_directory.json").read_text())
+        d["symbols"][1]["isin"] = u["symbols"][1]["isin"]                                   # the directory agrees: the error is in the identifier itself
+        write(self.data / "stock_directory.json", d)
+        m = self.mod(self.build(), "all", "directory")
+        self.assertEqual((m["counts"]["valid"], m["counts"]["invalid"]), (2, 1))
+        self.assertEqual(m["invalid_reasons"], {"isin_check_digit_wrong": 1})
+        self.assertEqual(m["facts"]["instrument_key"]["form"], "NSE_EQ|<ISIN>")
+        self.assertEqual(m["facts"]["instrument_key"]["derivable"], 2)
+
+
+
+class IsinIssuerCode(unittest.TestCase):
+    def test_same_issuer_code_marks_another_security_of_the_same_company(self):
+        self.assertTrue(C.same_issuer_code("INE040A01018", "INE040A01034"))           # HDFCBANK: earlier ISIN of the same issuer
+        self.assertTrue(C.same_issuer_code("IN9090A01011", "INE090A01021"))           # same issuer code, different issuer-type letter
+        self.assertFalse(C.same_issuer_code("INE040A01034", "INE002A01018"))          # a different company
+        self.assertFalse(C.same_issuer_code("US0378331005", "INE002A01018"))          # not Indian ISINs: no claim is made
+        self.assertFalse(C.same_issuer_code(None, "INE002A01018"))
+        self.assertEqual(C._flag_block([("A", "INE040A01018", "INE040A01034"), ("B", "INE040A01034", "INE002A01018")])["same_issuer_code"], 1)
 
 
 if __name__ == "__main__":
