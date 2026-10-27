@@ -142,7 +142,7 @@ const tile = (h, label) => text((h.match(new RegExp('<div class="tile"><b[^>]*>(
 
   // ---- the existing chart and the other blocks are untouched
   const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
-  eq(sha(chartCode), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart script block matches the Phase 3 Step 4 (MACD) version - re-pinned when MACD was added to the chart");
+  eq(sha(require("./legacy_5i.js").withoutDecisionEdits(html).split("<script>").slice(1).map((b) => b.split("</script>")[0]).find((b) => b.includes("Phase 3 Step 2 - historical price chart"))), "ef5a348496d6aafa87c6352665fd3475d56d0bd778e73c062af759ec7b9dfc53", "chart script block matches the Phase 3 Step 4 (MACD) version - re-pinned when MACD was added to the chart; the same pin, checked after reversing exactly the recorded edits (TradingView attribution)");
   { // the Phase 2B block was changed on purpose by the responsive redesign (the screen tabs follow the filter panel): the SAME pin now holds once exactly those recorded edits are reversed,
     // so any other change to the block still fails here (tests/approved_page_edits.json decision_edits; tests/page_edit_manifest.py)
     const { withoutDecisionEdits } = require("./legacy_5i.js");

@@ -104,6 +104,14 @@
    "old": "catch(e){st.textContent=\"Fundamentals not loaded yet.\";document.getElementById(\"fund\").innerHTML='<tr><td colspan=\"9\">Fundamentals not loaded yet.</td></tr>';return}\nfund()})();\n"
   },
   {
+   "new": "  h+='<p class=\"note\" id=\"slAttribution\" style=\"padding:2px 0 0;overflow-wrap:anywhere\">Price, volume and indicator charts: TradingView Lightweight Charts&trade; &middot; Copyright &copy; 2023 TradingView, Inc. &middot; <a href=\"https://www.tradingview.com/\" target=\"_blank\" rel=\"noopener noreferrer\">https://www.tradingview.com/</a></p>';   /* licence attribution (Apache-2.0 NOTICE, v4.2.0) */\n",
+   "old": ""
+  },
+  {
+   "new": "  var base={layout:{background:{color:\"transparent\"},textColor:mute,attributionLogo:true},grid:{vertLines:{color:line},horzLines:{color:line}},\n",
+   "old": "  var base={layout:{background:{color:\"transparent\"},textColor:mute},grid:{vertLines:{color:line},horzLines:{color:line}},\n"
+  },
+  {
    "new": "var CSS=\"#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}#compareView th a{display:inline-block;min-height:24px;min-width:24px;padding:4px 0}\"+\n",
    "old": "var CSS=\"#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}\"+\n"
   },
@@ -128,5 +136,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "093730bd4edbab1cd24b3a61abb3944fca4c490e0006e923e39fc82dd2ee219f"
+ "decision_sha256": "0353fb3c04335b6c245b8d9367d840e154e4d05ec43093a25d14e33e7e94ce66"
 }

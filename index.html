@@ -730,9 +730,10 @@ function draw(box,L){
   else h+='<div class="note" style="padding:10px 0 0"><b>Relative Strength vs Nifty 50</b> &mdash; Not enough historical data.</div>';
   h+='<p class="note" style="padding:8px 0 0">VWAP &mdash; Available in a future intraday-data phase</p>';
   h+='<p class="note" style="padding:2px 0 0">Daily candles: '+esc(cur.doc.source||"Upstox")+(cur.doc.updated?" · Updated: "+esc(cur.doc.updated):"")+' · last candle '+esc(m.last)+'. DMA = simple moving average. Supertrend: ATR '+ST_PERIOD+', multiplier '+ST_MULT+'. Indicators are research tools, not recommendations.</p>';
+  h+='<p class="note" id="slAttribution" style="padding:2px 0 0;overflow-wrap:anywhere">Price, volume and indicator charts: TradingView Lightweight Charts&trade; &middot; Copyright &copy; 2023 TradingView, Inc. &middot; <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">https://www.tradingview.com/</a></p>';   /* licence attribution (Apache-2.0 NOTICE, v4.2.0) */
   box.innerHTML=h;
   cur.charts.forEach(function(c){try{c.remove()}catch(e){}});cur.charts=[];
-  var base={layout:{background:{color:"transparent"},textColor:mute},grid:{vertLines:{color:line},horzLines:{color:line}},
+  var base={layout:{background:{color:"transparent"},textColor:mute,attributionLogo:true},grid:{vertLines:{color:line},horzLines:{color:line}},
             rightPriceScale:{borderColor:line,minimumWidth:70},timeScale:{borderColor:line,rightOffset:2},autoSize:true,
             crosshair:{mode:0}};
   function make(id,height,extra){var el=$(id);if(!el)return null;el.setAttribute("style","height:"+height+"px");
