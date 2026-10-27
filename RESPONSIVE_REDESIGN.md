@@ -3,11 +3,11 @@
 * **Branch:** `feat/responsive-redesign-rebuild`, based on `main` at `66fe34a589e0149c50fd285029e2a1f20cd8fcf5`. `main` is untouched.
 * **Head:** the last commit in the table below; its full SHA is in the final report and inside the bundle's file name.
 * **What this is:** a **reconstruction** of the planned responsive work from the agreed specification. It is not the lost branch `feat/responsive-layout-pr1` / `c2658f0`.
-* **Not changed:** nothing was pushed, merged, deployed, published or dispatched. No stock name, market data, historical price, calculation, schema, workflow, API behaviour, authentication, rate limit, budget, cache logic or protected-script hash was changed. The chart dependency is unchanged.
+* **Not changed:** nothing was pushed, merged, deployed, published or dispatched. No stock name, market data, historical price, calculation, schema, workflow, API behaviour, authentication, rate limit, budget, cache logic or protected-script hash was changed. The chart dependency (URL and pinned version 4.2.0) is unchanged, and no SRI attribute has been added.
 
 **Status: ready for your review, not for release.** Every automated check below passes. Release still needs:
 * your own visual review;
-* the price chart checked with its library, and the licence attribution decided (see *Chart library*);
+* the price chart checked with its library loaded (the attribution line and logo are tested here only with a stand-in library), and SRI added once a verified hash is available (see *Chart library*);
 * real fundamentals, financials, quarterly and market files checked in a browser (only synthetic or fixture versions were available here).
 
 ## Commits (oldest first)
@@ -32,10 +32,14 @@
 | `00ffece` | Card helper moved into the screen script (the page's script count stays at its pinned 18) |
 | `638b4e8` | `test_checklist.js`: removes a timing tie (same assertion) |
 | `8f4152d`, `6e39c78` | Previous review package |
-| `64368e8` | **This round:** Financial History and shareholding quarters as grid cards on phones; stock-table browser checks |
-| `659ef32` | **This round:** screen filters disabled, with a reason, when the fundamentals file is missing; content checks |
-| `d9934ee` | **This round:** screener scale checks against an independent oracle (520 synthetic stocks) |
-| last commit | **This round:** this review package |
+| `64368e8` | Round 5: Financial History and shareholding quarters as grid cards on phones; stock-table browser checks |
+| `659ef32` | Round 5: screen filters disabled, with a reason, when the fundamentals file is missing; content checks |
+| `d9934ee` | Round 5: screener scale checks against an independent oracle (520 synthetic stocks) |
+| `a81cca8`, `00dfb56` | Rounds 5 and 6 review packages |
+| `fa318be` | **Round 7:** visible TradingView attribution (NOTICE text and link); logo kept on explicitly |
+| `4d4ba74` | **Round 7:** two-column stage 1 (heading helpers accept a heading inside a direct-child `.sd-group`) |
+| `c603466` | **Round 7:** two-column stage 2 (grouping lines, no layout CSS) |
+| last commit | **Round 7:** this review package |
 
 ## What changed on the page
 
@@ -76,9 +80,24 @@ The trade-off is length: on a phone the shareholding history is 21 quarter cards
 * keyboard-only use;
 * 44px phone controls.
 
-## Stock page two-column layout: deferred (not implemented, structure unchanged)
+## Stock page two-column layout: stages 1 and 2 done; stage 3 not approved
 
-**The two guard tests that failed in experiment 2** (a throwaway worktree, never on the branch):
+**Round 7, implemented (approved):**
+* **Stage 1** (`4d4ba74`): `overviewHeading()` (Investor Snapshot) also accepts a direct-child `.sd-group` whose **first** element is the "Overview" heading. It returns the group, so the snapshot is still inserted directly before it with `insertBefore` on `#detail`. `heading()` (section menu) also accepts a heading whose parent is a direct-child `.sd-group`, and returns the heading itself as the scroll target. On today's flat page both return exactly what they returned before.
+* **Stage 2** (`c603466`): `view(s,d)` gains six inserted lines that wrap three existing runs in `<div class="sd-group">`:
+  * `#sdRatios`: the Overview heading, its tiles and the fundamentals note;
+  * `#sdHealth`: Financial Health with its notes and two tile rows;
+  * `#sdCash`: Cash Flow with its note, tiles and free-cash-flow note.
+  The Technical Snapshot and the price chart stay outside every group. No line of `view(s,d)` was changed or moved, and **no CSS was added**, so the groups are plain blocks.
+* **Guard probe:** the inserted ids and comments are neutral (`sdRatios`, `group ratios open`, …). The first "Overview" in the page is still line 489, outside every recorded edit.
+* **Tests:** new `tests/test_detail_groups.js` (64 checks).
+  * Stage 1: both helpers on a flat and a grouped `#detail`, including cases that must not match: too deep, a group that doesn't open with the heading, another wrapper, a near-miss class name.
+  * Stage 2: exactly three openers and closers on lines of their own, balanced and not nested, distinct ids, the right first heading in each group, chart and Technical Snapshot outside, no grouping line containing the probed word, no layout CSS, and no other line of `view(s,d)` differing from the page with recorded edits reversed.
+  * Mutation-checked on scratch copies: a group id or comment containing "Overview", an unclosed group and an added `.sd-group{display:grid}` each fail it. A changed heading line is caught by the existing Stock Detail pins (`test_checklist.js`, `test_research.js`) rather than by this file.
+* **What changed visually: nothing.** See the results under *Tests and checks*.
+
+**Earlier investigation (round 5):** the two guard tests failed in experiment 2:
+
 * `test_research_test_batch.Isolation.test_index_html_differs_from_the_commit_only_by_the_market_cap_header`
 * `test_research_test_batch.Isolation.test_an_unrelated_change_is_still_detected_after_the_stage_8c_reversal`
 
@@ -112,7 +131,7 @@ Both check that the guards still detect an unapproved change, by applying `now.r
 * Content checks: 26 page views, 0 problems (snapshot present, all 6 modules placed, section links correct). Stock-table checks: 799 of 799 pass. Screenshots at 390 and 1280px, light and dark, pixel-identical to the branch (grouping alone changes nothing visible).
 * Stage 3 needs a layout decision from you; stage 4 needs a machine where the library loads.
 
-## Chart library: options (assessment only, nothing changed)
+## Chart library: attribution done (round 7); SRI not added
 
 **Evidence:**
 * The page loads `https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js` at runtime. It's pinned to 4.2.0, and `tests/test_chart.js` asserts that version.
@@ -123,10 +142,29 @@ Both check that the guards still detect an unapproved change, by applying `now.r
   * `NOTICE`: "TradingView Lightweight Charts™ / Copyright (с) 2023 TradingView, Inc. https://www.tradingview.com/".
   * README at that tag: the licence requires naming TradingView as the product creator. The page users see must carry the attribution notice from `NOTICE` and a link to https://www.tradingview.com/. The `attributionLogo` chart option "will satisfy the link requirement".
   * `src/api/options/layout-options-defaults.ts`: `attributionLogo: true` by default. The logo is a link to tradingview.com titled "Charting by TradingView".
-* **What the page does today:** the chart's `layout` options set only `background`, so the default logo (and therefore the link) appears whenever the chart loads. **The NOTICE attribution text is not on the page.** That is the remaining licence gap.
-* **SRI hash: not computed.** The exact file could not be obtained here: the npm registry is not reachable from this environment, and the GitHub release/API route was refused for this session. I did not work around either refusal or guess a hash. The tag's source is not the built `dist` file, so it cannot be hashed from the clone. Compute it on a networked machine from two CDNs and check that they agree:
-  `curl -s https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js | openssl dgst -sha384 -binary | openssl base64 -A`
-  (and the same with `https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js`).
+* **Before round 7:** the chart's `layout` options set only `background`, so the default logo (and therefore the link) appeared whenever the chart loaded, but the NOTICE attribution text was not on the page.
+* **SRI hash: still not computed (round 7).** The exact pinned file could not be obtained here, and I did not guess a hash:
+  * `unpkg.com` and `cdn.jsdelivr.net`: refused by this environment's network policy (proxy `CONNECT` 403). Per the environment's rules, not retried or routed around.
+  * `registry.npmjs.org` (the npm tarball): the host does not resolve from here.
+  * The GitHub tag's source is not the built `dist` file, so it cannot be hashed from the clone. A page-to-text fetcher does not return exact bytes, so it was not used for hashing.
+* **Commands to run on your machine** (either shell). They download from both CDNs and from npm, confirm all three files are byte-identical, and print the SRI value:
+  ```bash
+  F=lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js
+  curl -fsSL "https://unpkg.com/$F" -o lw-unpkg.js
+  curl -fsSL "https://cdn.jsdelivr.net/npm/$F" -o lw-jsdelivr.js
+  npm pack lightweight-charts@4.2.0 && tar -xzf lightweight-charts-4.2.0.tgz package/dist/lightweight-charts.standalone.production.js
+  npm view lightweight-charts@4.2.0 dist.integrity        # the registry's own integrity value for the tarball
+  cmp lw-unpkg.js lw-jsdelivr.js && cmp lw-unpkg.js package/dist/lightweight-charts.standalone.production.js && echo "all three identical"
+  echo "sha384-$(openssl dgst -sha384 -binary lw-unpkg.js | openssl base64 -A)"
+  ```
+  ```powershell
+  $F = "lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"
+  Invoke-WebRequest "https://unpkg.com/$F" -OutFile lw-unpkg.js
+  Invoke-WebRequest "https://cdn.jsdelivr.net/npm/$F" -OutFile lw-jsdelivr.js
+  (Get-FileHash lw-unpkg.js -Algorithm SHA384).Hash -eq (Get-FileHash lw-jsdelivr.js -Algorithm SHA384).Hash   # True = byte-identical
+  "sha384-" + [Convert]::ToBase64String([Security.Cryptography.SHA384]::Create().ComputeHash([IO.File]::ReadAllBytes("$PWD\lw-unpkg.js")))
+  ```
+  Send me the printed `sha384-…` value and the result of the identity check. Only if all copies agree will SRI be added, as a separate approved change.
 
 | | 1. CDN + SRI (keep unpkg, exact version, `integrity` + `crossOrigin="anonymous"`) | 2. Vendor a reviewed copy (with LICENSE and NOTICE) | 3. Another available dependency |
 |---|---|---|---|
@@ -138,9 +176,16 @@ Both check that the guards still detect an unapproved change, by applying `now.r
 | Change needed | Two attributes in the chart script (protected: an approved edit), the `test_chart.js` assertion for the integrity value, and a hash computed on a networked machine. | A new file, plus a change to the protected `update.yml` site-build step so the file is copied into `_site` (workflow approval), plus the URL change in the chart script. | A new chart implementation. |
 | Impact on the chart | None if the hash is right. | None. | Total rewrite. |
 
-**Recommendation: option 1, with the attribution done first.** Nothing was implemented; both parts edit protected chart code and need your approval.
-1. **Attribution (can be done now):** one small visible line under the price chart: "Charts: TradingView Lightweight Charts™, Copyright © 2023 TradingView, Inc." with a link to https://www.tradingview.com/. Keep `attributionLogo` at its default (on). Make it one recorded page edit, add a `test_chart.js` assertion that the line and link exist, and add a check that the chart options never set `attributionLogo:false`.
-2. **SRI (needs the hash from a networked machine):** add `integrity="sha384-…"` and `crossOrigin="anonymous"` to the script the chart code creates. Update the `test_chart.js` assertion to expect that exact value, then check where the library loads that the chart renders and that a wrong hash shows the existing "Chart library could not be loaded" fallback.
+**Round 7: attribution implemented** (`fa318be`, approved):
+* One inserted line in the chart's `draw()`, shown under the indicator notes whenever the chart is drawn: "Price, volume and indicator charts: TradingView Lightweight Charts™ · Copyright © 2023 TradingView, Inc. · https://www.tradingview.com/". The address is a real link (`target="_blank" rel="noopener noreferrer"`). The NOTICE file writes the copyright sign as "(с)"; the page shows "©".
+* The chart options now set `attributionLogo:true` explicitly (the library default), so the TradingView logo link stays on and is testable.
+* If the library fails to load, no TradingView chart is shown, so neither the line nor the logo appears. The existing "Chart library could not be loaded." message is unchanged.
+* The library URL and pinned version are unchanged, and no `integrity` or `crossOrigin` attribute was added. `test_chart.js` asserts both: there is no SRI claim, and adding SRI later must update that assertion.
+* Tested by `test_chart.js` (+11 checks: the line, its NOTICE text, the exact link, not hidden, exactly once, every chart created with `attributionLogo: true`, the code never turning the logo off, URL unchanged, no SRI attribute).
+* **Browser check with a stand-in library:** the real library cannot load here, so a test-only stub was served for its URL. The stub records the chart options and draws a placeholder logo link. Read-only real TCS page, widths 320, 360, 375, 390, 430, 768 and 1280, light and dark: **14 of 14 views pass.** Text contrast is 5.65:1 (light) and 6.64:1 (dark); link contrast is 6.83:1 and 6.30:1; font 12.8px; no horizontal overflow at any width; the logo option is on for all 5 chart panels. The link is an inline text link (about 181×15px), which the WCAG 2.2 target-size rule exempts.
+* **Not verified:** the real library's logo rendering, and the attribution with the real chart drawn.
+
+**Next for the chart: SRI (option 1), once a verified hash is available.** Add `integrity="sha384-…"` and `crossOrigin="anonymous"` to the script the chart code creates, and update the `test_chart.js` assertion to the exact value. Then check, where the library loads, that the chart renders and that a wrong hash shows the existing fallback.
 
 Option 2 (vendoring) remains the stronger long-term choice for offline use; it needs a workflow approval.
 
@@ -177,20 +222,31 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 | Manrope font | **Not verified**: covered by a stress test with a face 16–18% wider than the fallback |
 | SENSEX tab, live test panel | **Not verified in a browser** (unit tests pass) |
 
-## Tests and checks (exact commands, actual results on the final code)
+## Tests and checks (exact commands, actual results on the final code, round 7)
+
+Run after each task (`fa318be`, `4d4ba74`, `c603466`) and again on the final commit; every run gave the results below.
 
 | Command | Result | Baseline (`main` at `66fe34a`) |
 |---|---|---|
 | `python -m unittest discover -p 'test_*.py'` | **1,811 tests, OK, 1 skipped** | 1,807 tests, OK, 1 skipped (+4 new manifest tests) |
-| `for f in tests/test_*.js; do node "$f"; done` | **27 of 27 files pass** | 25 of 25 (+2 new: screener filters 170 checks, responsive layout 57 checks) |
-| Protected-script checks (inside both suites: byte-identity guards, Stage 8C, Phase 2B pin, search pin, script count, manifest) | **all pass**; no workflow, guard, pin file, updater or data file differs from `66fe34a` | — |
-| `browser_checks.py`, 15 widths × light/dark | **0 problems in 600 checks**: synthetic 90 + 90 (fallback / DejaVu Sans), real copy 90 + 90 (home, TCS, compare), combined 120 + 120 (home, screener, TCS, compare) | not run on `main` this round (first round: 60 of 60 views had a problem) |
-| `browser_content_checks.py` on the real copy / the combined preview | **26 + 26 page views, 0 problems** | — |
+| `for f in tests/test_*.js; do node "$f"; done` | **28 of 28 files pass** | 25 of 25 (+3 new: screener filters 170 checks, responsive layout 57, detail groups 64) |
+| The two guard tests, `test_research_test_batch.Isolation.test_index_html_differs_from_the_commit_only_by_the_market_cap_header` and `…test_an_unrelated_change_is_still_detected_after_the_stage_8c_reversal` | **both OK**, after each task; `test_research_test_batch.py` is byte-identical to `66fe34a` and `origin/main` | — |
+| `node tests/test_chart.js` | **176 checks pass** (includes the 10 new attribution checks) | — |
+| Protected-script checks (inside both suites: byte-identity guards, Stage 8C, Phase 2B pin, chart pins, Stock Detail pins, search pin, script count, manifest) | **all pass**; no hash value changed; no workflow, guard, pin file, updater or data file differs from `66fe34a` | — |
+| `browser_checks.py`, 15 widths × light/dark, on stage 2 | **0 problems in 600 checks**: synthetic 90 + 90 (fallback font / DejaVu Sans), real copy 90 + 90 (home, TCS, compare), combined 120 + 120 (home, screener, TCS, compare) | — |
+| `browser_content_checks.py` on the real copy / the combined preview | Stage 1: **26 page views, 0 problems** (real copy). Stage 2: **26 + 26, 0 problems** | — |
+| Screenshot comparison against `00dfb56` (start of round 7): full-page stock pages, 15 widths × light/dark | Stage 1: **90 of 90 pixel-identical**. Stage 2: **90 of 90 pixel-identical** (real copy TCS and HDFCBANK, combined TCS) | — |
+| Grouped-structure probe in the browser (real copy TCS, HDFCBANK, RELIANCE; combined TCS; 390 and 1280px) | **8 of 8 pass**: three `.sd-group` children of `#detail` in order, each opening with its heading; the Investor Snapshot directly before `#sdRatios`; groups computed as plain blocks; the Fundamentals, Financials and Technical section links scroll their target to the top (69px at 1280, 119px at 390, under the sticky bar); Back and Forward return to the right sections | — |
+| Attribution check with a stand-in library (real copy TCS, 7 widths × light/dark) | **14 of 14 pass** (see *Chart library*) | — |
 | `browser_screener_checks.py` | **39 of 39 pass** | — |
 | `browser_screener_scale_checks.py` (520 synthetic stocks) | **29 of 29 pass** | — |
-| `browser_mobile_tables_checks.py` (4 tables, 320–430 and 768/1280px, light/dark) | **799 of 799 pass** | the same check on the previous head `6e39c78`: 100 of 799 fail |
+| `browser_mobile_tables_checks.py` (4 tables, 320–430 and 768/1280px, light/dark) | **799 of 799 pass** | — |
 
 **Widths:** 320, 360, 375, 390, 430, 640, 768, 900, 1000, 1005, 1024, 1280, 1366, 1440 and 1920.
+
+**Not real-data verification:** the screener, scale, mobile-table and combined-preview results use synthetic or fixture data wherever no real file is in git (see the data table below). The attribution check used a stand-in for the chart library.
+
+**Timing flake found (pre-existing, not changed):** `tests/test_chart.js` waits a fixed 40ms after loading a page before asserting. Under heavy CPU load (load average about 19, while six browser runs were in progress) it failed 9 of 12 times, and the copy at `00dfb56` failed at the same rate. Idle, both passed 20 of 20. Under a synthetic CPU load the current copy failed 3 of 8. It is the same kind of race already fixed in `test_checklist.js`. All results above come from runs on an idle machine. Fixing it (waiting for the chart instead of a fixed time) would be a separate test-only change.
 
 **What could not run:** the price chart with its library, Manrope, Safari, Firefox and real devices.
 
@@ -219,7 +275,7 @@ A passing test here does not show the feature works with live production data; n
 * **Recorded page edits:** every `index.html` edit is one of the `decision_edits` in `tests/approved_page_edits.json`, generated by `tests/page_edit_manifest.py` from the exact difference with `66fe34a`.
   * The existing guards reverse them first, so every older byte-identity pin still runs and still catches any other change.
   * `test_responsive_redesign.py` keeps the record exact.
-* **Hashes:** no hash was replaced. The Phase 2B pin keeps its original value (checked after reversing exactly the recorded edits), and the search-module pin and the pinned script count (18) are unchanged.
+* **Hashes:** no hash value was replaced. The Phase 2B pin and the chart-block pins (`ef5a3484…`, in `test_technicals.js`, `test_profiles.js`, `test_checklist.js`, `test_research.js`) keep their original values and are checked after reversing exactly the recorded edits. The Stock Detail, dashboard and search-module pins and the pinned script count (18) are unchanged.
 * **Tests changed to describe the new layout:** `test_global_navigation.js` and `test_market_dashboard_ui.js`. `test_checklist.js` got only a timing change (same assertion), with its root cause documented in the previous package.
 
 ## Files changed (against `66fe34a`)
@@ -230,9 +286,12 @@ A passing test here does not show the feature works with live production data; n
 | `tests/approved_page_edits.json` | The recorded edits (`decision_*` keys only; the coverage edits are untouched) |
 | `tests/page_edit_manifest.py`, `test_responsive_redesign.py` | Record and verify the edits |
 | `tests/legacy_5i.js` | Adds `withoutDecisionEdits` (same exactly-once rule) for the Phase 2B pin |
-| `tests/test_technicals.js` | The same Phase 2B hash, checked after reversing the recorded edits |
+| `tests/test_technicals.js` | The same Phase 2B and chart-block hashes, checked after reversing the recorded edits |
+| `tests/test_profiles.js`, `tests/test_research.js` | The same chart-block hash, checked on the page with recorded edits reversed (as their other pins already were) |
+| `tests/test_chart.js` | TradingView attribution checks (round 7) |
+| `tests/test_detail_groups.js` | New: two-column stages 1 and 2 (round 7) |
 | `tests/test_global_navigation.js`, `tests/test_market_dashboard_ui.js` | Describe the new breakpoints and the removed home sections |
-| `tests/test_checklist.js` | Timing fix for a race in the test itself (same assertion) |
+| `tests/test_checklist.js` | Timing fix for a race in the test itself (same assertion); the same chart-block hash, checked with recorded edits reversed |
 | `tests/test_screener_filters.js`, `tests/test_responsive_layout.js` | New regression tests |
 | `tests/synthetic_site.py`, `tests/readonly_data_site.py`, `tests/hybrid_preview_site.py` | Local preview sites, written to scratch folders only |
 | `tests/browser_checks.py`, `browser_screener_checks.py`, `browser_screener_scale_checks.py`, `browser_mobile_tables_checks.py`, `browser_content_checks.py` | Local browser checks (not run by CI; need Playwright) |
@@ -240,19 +299,21 @@ A passing test here does not show the feature works with live production data; n
 
 ## Known defects, risks and unverified areas
 
-* **Chart library:** runtime CDN request without SRI (hash not computable here). The NOTICE attribution text is missing from the page (a licence requirement). The link part is met by the default TradingView logo, but only when the chart loads. Needs your decision.
+* **Chart library:** runtime CDN request without SRI; the hash could not be obtained here. The attribution line and logo are tested only with a stand-in library; the real library's rendering is not verified.
 * **Real data gaps:** the screen with data, stock tiles, Research and Checklist fundamentals, home market sections and Quarterly Results were checked only with synthetic or fixture data.
 * **Phone page length:** the shareholding history and Financial History are now long card lists (all values visible; nothing scrolls sideways).
 * **Sector filter** will offer few sectors with real data until the sector approval gate opens.
 * **Browser coverage:** headless Chromium only.
 * **Manrope:** not measured.
-* **Two-column stock page:** deferred.
+* **Two-column stock page:** stages 1 and 2 done (no visible change); stage 3 (the desktop layout) not approved and not implemented.
+* **`test_chart.js` timing flake** under heavy CPU load (pre-existing; see *Tests and checks*).
 
 ## Needs your approval or decision
 
-1. Chart library: approve step 1 (the visible attribution line, as one recorded edit plus `test_chart.js` assertions). Separately, approve step 2 (SRI) once you supply a hash computed on a networked machine from both CDNs.
-2. Two-column stock page: approve stage 1 (heading helpers accept `.sd-group`, behaviour-neutral) and stage 2 (grouping lines). Choose a stage-3 layout later.
-3. Any release action (push, pull request, merge, deploy).
+1. **SRI:** run the commands in *Chart library* on your machine and send the `sha384-…` value with the identity result. Adding it would be a separate approved edit.
+2. **Two-column stage 3:** choose a desktop layout (for example: Overview + Cash Flow left, Financial Health right, chart and Technical Snapshot full width), then approve stage 3. Not started.
+3. **Optional:** a test-only fix for the `test_chart.js` timing flake.
+4. Any release action (push, pull request, merge, deploy).
 
 ## How to review locally (separate worktree)
 
