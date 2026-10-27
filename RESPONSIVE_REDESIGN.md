@@ -1,7 +1,7 @@
 # Responsive redesign (English only) — final review package
 
 * **Branch:** `feat/responsive-redesign-rebuild`, based on `main` at `66fe34a589e0149c50fd285029e2a1f20cd8fcf5`. `main` is untouched.
-* **Head:** the commit that adds this file (see the final report for its full SHA). All 17 commits are listed below.
+* **Head:** the last commit in the table below (its full SHA is in the final report). There are 19 commits on top of `66fe34a`.
 * **What this is:** a **reconstruction** of the planned responsive work from the agreed specification. It is not the lost branch `feat/responsive-layout-pr1` / `c2658f0`.
 * **Not changed:** nothing was pushed, merged, deployed, published or dispatched. No stock name, market data, calculation, schema, workflow, authentication, rate limit, budget, cache logic or protected-script hash was changed.
 
@@ -31,7 +31,8 @@
 | `d159cfd` | Quarterly Results and Investment Checklist as cards on phones; combined preview builder |
 | `00ffece` | Card helper moved into the screen script (the page's script count stays at its pinned 18) |
 | `638b4e8` | `test_checklist.js`: removes a timing tie (same assertion; root cause below) |
-| this commit | This review package |
+| `8f4152d` | This review package |
+| last commit | Note that the combined preview's mixed dates are a preview artefact; this commit list |
 
 ## What changed on the page
 
@@ -92,7 +93,7 @@ Previews are built only in scratch folders; nothing is written to `out/` or `dat
 |---|---|---|
 | Synthetic | `tests/synthetic_site.py` | 119 invented stocks, every file marked synthetic |
 | Read-only real copy | `tests/readonly_data_site.py` | From `origin/stocklens-data` at `6f9e7dc`, already in the clone, read with `git show`. The files the workflow copies into the site; `financial_history.json` and `shareholding.json` built offline by the updaters' own `build_output()` (both pass the updaters' `validate_doc`); the committed `company_profiles.json` and `out/growth_events.json`. |
-| Combined | `tests/hybrid_preview_site.py` | The read-only real copy. Plus, **only** where no real file is in git: synthetic fundamentals, financials, scans and FII/DII; and a **fixture** TCS Quarterly Results file, built by `quarterly_results_updater.build_outputs()` from its own test fixture (the verified real response shape, invented numbers). `MANIFEST.json` labels every file. |
+| Combined | `tests/hybrid_preview_site.py` | The read-only real copy. Plus, **only** where no real file is in git: synthetic fundamentals, financials, scans and FII/DII; and a **fixture** TCS Quarterly Results file, built by `quarterly_results_updater.build_outputs()` from its own test fixture (the verified real response shape, invented numbers). `MANIFEST.json` labels every file. Because it mixes sources, the home page shows the synthetic scan date (2026-10-23) beside the real NIFTY 50 date (2026-10-26); that's an artefact of the preview, not of the page. |
 
 | Feature | Status |
 |---|---|
