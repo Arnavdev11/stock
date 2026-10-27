@@ -148,6 +148,10 @@
    "old": "  var base={layout:{background:{color:\"transparent\"},textColor:mute},grid:{vertLines:{color:line},horzLines:{color:line}},\n"
   },
   {
+   "new": "  var src=String(m.source||\"\"),cut=src.indexOf(\" - \"),srcHead=cut>0?src.slice(0,cut):src,srcMore=cut>0?src.slice(cut+3):\"\";   /* source note: the provider stays visible; its explanation goes in the disclosure */\n  var h=head()+'<p class=\"note\" style=\"padding:0 0 6px\">'+esc(m.basis.charAt(0).toUpperCase()+m.basis.slice(1))+' · ₹ crore (EPS in ₹)'+(srcHead?\" · Source: \"+esc(srcHead):\"\")+(m.as_of?\" · Updated: \"+esc(m.as_of):\"\")+'.</p><details class=\"src-more\"><summary>About these figures</summary><p class=\"note\" style=\"padding:4px 0 6px\">'+(srcMore?esc(srcMore.charAt(0).toUpperCase()+srcMore.slice(1))+\". \":\"\")+'\"-\" means the value is not available; nothing is estimated.</p></details>';\n",
+   "old": "  var h=head()+'<p class=\"note\" style=\"padding:0 0 6px\">'+esc(m.basis.charAt(0).toUpperCase()+m.basis.slice(1))+' · ₹ crore (EPS in ₹)'+(m.source?\" · Source: \"+esc(m.source):\"\")+(m.as_of?\" · Updated: \"+esc(m.as_of):\"\")+'. \"-\" means the value is not available; nothing is estimated.</p>';\n"
+  },
+  {
    "new": "var CSS=\"#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}#compareView th a{display:inline-block;min-height:24px;min-width:24px;padding:4px 0}\"+\n",
    "old": "var CSS=\"#compareView{display:none}.compare-mode .w>*:not(#compareView){display:none!important}.compare-mode #compareView{display:block}\"+\n"
   },
@@ -188,5 +192,5 @@
    "old": ""
   }
  ],
- "decision_sha256": "7c09e3d9c32fc53980988e8cb4e1a8df4a51fca9cf974c6cceffcc7fd9ebdf0c"
+ "decision_sha256": "58fd19b5ddd26f616ece4f46236b7b05faf5e08530fc3bb494e114b920b00540"
 }

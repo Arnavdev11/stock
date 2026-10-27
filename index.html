@@ -1370,7 +1370,8 @@ function build(s,doc){
   var m=model(doc,s);
   if(m.state==="unavailable")return wrap(head()+'<p class="note" style="padding:0">Financial history unavailable.</p>');
   if(m.state==="none")return wrap(head()+'<p class="note" style="padding:0">No financial history is on file for '+esc(s)+'.</p>');
-  var h=head()+'<p class="note" style="padding:0 0 6px">'+esc(m.basis.charAt(0).toUpperCase()+m.basis.slice(1))+' · ₹ crore (EPS in ₹)'+(m.source?" · Source: "+esc(m.source):"")+(m.as_of?" · Updated: "+esc(m.as_of):"")+'. "-" means the value is not available; nothing is estimated.</p>';
+  var src=String(m.source||""),cut=src.indexOf(" - "),srcHead=cut>0?src.slice(0,cut):src,srcMore=cut>0?src.slice(cut+3):"";   /* source note: the provider stays visible; its explanation goes in the disclosure */
+  var h=head()+'<p class="note" style="padding:0 0 6px">'+esc(m.basis.charAt(0).toUpperCase()+m.basis.slice(1))+' · ₹ crore (EPS in ₹)'+(srcHead?" · Source: "+esc(srcHead):"")+(m.as_of?" · Updated: "+esc(m.as_of):"")+'.</p><details class="src-more"><summary>About these figures</summary><p class="note" style="padding:4px 0 6px">'+(srcMore?esc(srcMore.charAt(0).toUpperCase()+srcMore.slice(1))+". ":"")+'"-" means the value is not available; nothing is estimated.</p></details>';
   h+='<div class="scroll"><table id="finHistTable"><thead><tr><th></th>'+m.cols.map(function(c){return"<th>"+esc(c.label)+"</th>"}).join("")+'</tr></thead><tbody>';
   m.metrics.forEach(function(x){h+='<tr data-row="'+x.key+'"><td>'+esc(x.label)+'</td>'+m.cols.map(function(c){return'<td class="n">'+x.fmt(val(c,x.key))+"</td>"}).join("")+"</tr>"});
   m.metrics.filter(function(x){return x.growth}).forEach(function(x){
