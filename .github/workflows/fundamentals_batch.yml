@@ -1,0 +1,215 @@
+name: Fundamentals coverage batch
+
+# Manual only. Fills or refreshes fundamentals (P/E, P/B, ROE, ROCE, ROA, EV/EBITDA) for the whole universe in controlled batches.
+#   mode = audit : the coverage report from the saved cache only - no token, no instrument file, no API call.
+#   mode = run   : one batch. A NEW batch id plans the next max_stocks eligible stocks (missing, invalid, failed and due, then stale - stalest first) and starts
+#                  only if every earlier batch was validated or explicitly accepted. Re-running an id that was interrupted resumes it (only its unfinished stocks).
+#                  The batch is then validated in the same run (including the maximum failure rate; a batch with no successful update never passes); the job
+#                  fails if validation fails, and the next batch cannot start until it passes or is accepted.
+#   mode = accept: records that the person who dispatches it accepts ONE batch that failed validation or was interrupted (batch_id + accept_reason; the
+#                  GitHub user is recorded as the acceptor). No token, no API call. There is no blanket override.
+# It never publishes the site: "Update data and publish site" publishes fundamentals.json on its next run (it restores this run's saved cache).
+# It shares the stocklens-ledger concurrency group with every workflow that writes the saved caches or ledgers, so two of them never run at once.
+
+"on":
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "audit (report only, no API call), run (one batch) or accept (record your acceptance of one batch that failed validation; no API call)"
+        required: true
+        default: "audit"
+      batch_id:
+        description: "Batch id for mode=run, e.g. 1, 2, 3 (letters, digits, - or _). Re-use an id only to resume an interrupted batch."
+        required: false
+        default: ""
+      max_stocks:
+        description: "Stocks in a new batch (1-600). Default 500."
+        required: false
+        default: "500"
+      max_calls:
+        description: "Upstox call cap for this run (1-1500; about 2.3 s per call). Default 1200."
+        required: false
+        default: "1200"
+      max_failure_rate:
+        description: "Validation fails when more than this share of the attempted stocks failed (0 to 1). Default 0.10."
+        required: false
+        default: "0.10"
+      accept_reason:
+        description: "mode=accept only: why this batch is accepted although it did not pass validation (10-500 characters). Recorded with your GitHub user name."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stocklens-ledger
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          BATCH_ID: ${{ inputs.batch_id }}
+          MAX_STOCKS: ${{ inputs.max_stocks }}
+          MAX_CALLS: ${{ inputs.max_calls }}
+          MAX_FAILURE_RATE: ${{ inputs.max_failure_rate }}
+          ACCEPT_REASON: ${{ inputs.accept_reason }}
+        run: |
+          case "$MODE" in audit|run|accept) ;; *) echo "::error::mode must be audit, run or accept"; exit 1 ;; esac
+          if [ "$MODE" = run ] || [ "$MODE" = accept ]; then
+            echo "$BATCH_ID" | grep -Eq '^[A-Za-z0-9_-]{1,32}$' || { echo "::error::batch_id must be 1-32 letters, digits, - or _"; exit 1; }
+          fi
+          if [ "$MODE" = run ]; then
+            echo "$MAX_STOCKS" | grep -Eq '^[0-9]+$' && [ "$MAX_STOCKS" -ge 1 ] && [ "$MAX_STOCKS" -le 600 ] || { echo "::error::max_stocks must be 1-600"; exit 1; }
+            echo "$MAX_CALLS" | grep -Eq '^[0-9]+$' && [ "$MAX_CALLS" -ge 1 ] && [ "$MAX_CALLS" -le 1500 ] || { echo "::error::max_calls must be 1-1500"; exit 1; }
+            echo "$MAX_FAILURE_RATE" | grep -Eq '^(0(\.[0-9]+)?|1(\.0+)?)$' || { echo "::error::max_failure_rate must be a number from 0 to 1"; exit 1; }
+          fi
+          if [ "$MODE" = accept ]; then
+            [ "${#ACCEPT_REASON}" -ge 10 ] && [ "${#ACCEPT_REASON}" -le 500 ] || { echo "::error::accept_reason must be 10-500 characters"; exit 1; }
+          fi
+
+      - name: Look for the data branch
+        id: databranch
+        run: |
+          rc=0
+          git ls-remote --exit-code --heads origin stocklens-data >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            2) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not check for the stocklens-data branch (git exit $rc)."; exit 1 ;;
+          esac
+
+      - name: Check out the data branch
+        if: steps.databranch.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Select the coverage universe
+        run: |
+          if [ -f ledger-branch/universe.json ]; then
+            python universe.py check ledger-branch/universe.json
+            echo "STOCKLENS_UNIVERSE_FILE=$GITHUB_WORKSPACE/ledger-branch/universe.json" >> "$GITHUB_ENV"
+          else
+            echo "No universe.json on the data branch: the 10 development stocks are used."
+          fi
+
+      # The same saved-data cache as "Update data and publish site" (it holds data/fundamentals_cache.json, where batches and their checkpoints live).
+      - name: Restore saved data
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-${{ github.run_id }}
+          restore-keys: nse-data-
+
+      # A batch never starts from an empty state. Only the scheduled "Update data and publish site" run recovers a missing state (from the published
+      # site, and only after a genuine cache miss); a batch never does, and it never starts without a usable state. Without this a batch would save a small
+      # new state that the next publish would restore and show as the whole universe.
+      - name: Require the saved fundamentals state
+        if: inputs.mode != 'audit'
+        env:
+          MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          if [ ! -f data/fundamentals_cache.json ]; then
+            echo "::error::No saved fundamentals state was restored (the restore resolved: '${MATCHED:-no cache}')."
+            echo "A batch never recovers the state. If no cache exists at all, the next scheduled 'Update data and publish site' run recovers it from the published site; if a cache was restored without the state, or the restore failed, that run stops with an explanation and a maintainer must decide (see its 'Check the restored fundamentals state' step)."
+            echo "Nothing was changed."; exit 1
+          fi
+          python fundamentals_updater.py check-state --require-records
+
+      - name: Merge the durable processing state (if the data branch has one)
+        run: |
+          if [ -d ledger-branch/state ]; then python processing_state.py seed ledger-branch/state .; else echo "No state/ on the data branch."; fi
+
+      - name: Keep the published file as it was before the batch
+        run: |
+          mkdir -p before
+          if [ -f out/fundamentals.json ]; then cp out/fundamentals.json before/fundamentals.json; fi
+
+      - name: Coverage report (no API call)
+        if: inputs.mode == 'audit'
+        env:
+          FUNDAMENTALS_REPORT_DIR: report
+        run: python fundamentals_updater.py report
+
+      - name: Run the batch
+        id: run
+        if: inputs.mode == 'run'
+        continue-on-error: true
+        env:
+          UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
+          FUNDAMENTALS_BATCH_ID: ${{ inputs.batch_id }}
+          FUNDAMENTALS_MAX_STOCKS: ${{ inputs.max_stocks }}
+          FUNDAMENTALS_MAX_CALLS: ${{ inputs.max_calls }}
+          FUNDAMENTALS_REPORT_DIR: report
+        run: python fundamentals_updater.py
+
+      # Runs whenever the batch step ran, even if it failed or was stopped after writing: a batch whose published output lost metrics must be caught
+      # (and those stocks held at their earlier values) before the next scheduled publish. A batch that was never created simply fails here.
+      - name: Validate the batch
+        id: validate
+        if: always() && inputs.mode == 'run' && steps.run.outcome != 'skipped'
+        continue-on-error: true
+        env:
+          FUNDAMENTALS_REPORT_DIR: report
+          FUNDAMENTALS_MAX_FAILURE_RATE: ${{ inputs.max_failure_rate }}
+          BATCH_ID: ${{ inputs.batch_id }}
+        run: |
+          prev=""
+          if [ -f before/fundamentals.json ]; then prev="--previous before/fundamentals.json"; fi
+          python fundamentals_updater.py validate --batch "$BATCH_ID" $prev
+
+      # A person's explicit acceptance of one batch: who (the GitHub user who dispatched this run) and why are recorded in the batch. No token, no API call.
+      - name: Accept the batch
+        id: accept
+        if: inputs.mode == 'accept'
+        env:
+          FUNDAMENTALS_REPORT_DIR: report
+          BATCH_ID: ${{ inputs.batch_id }}
+          ACCEPTED_BY: ${{ github.actor }}
+          ACCEPT_REASON: ${{ inputs.accept_reason }}
+        run: python fundamentals_updater.py accept --batch "$BATCH_ID" --by "$ACCEPTED_BY" --reason "$ACCEPT_REASON"
+
+      # Saved even when the batch or its validation failed: the progress (and the batch's status, e.g. failed_validation) must not be lost.
+      - name: Save the data
+        if: always() && ((inputs.mode == 'run' && steps.run.outcome != 'skipped') || (inputs.mode == 'accept' && steps.accept.outcome == 'success'))
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-${{ github.run_id }}
+
+      - name: Keep the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fundamentals-coverage-${{ inputs.mode }}-${{ inputs.batch_id || 'audit' }}
+          path: report
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Result
+        if: always() && inputs.mode == 'run'
+        run: |
+          echo "run: ${{ steps.run.outcome }}  validation: ${{ steps.validate.outcome }}"
+          if [ "${{ steps.run.outcome }}" != "success" ]; then echo "::error::The batch run failed; its progress was saved. Re-run the same batch id to resume."; exit 1; fi
+          if [ "${{ steps.validate.outcome }}" != "success" ]; then echo "::error::The batch did not pass validation; the next batch cannot start. See the coverage report."; exit 1; fi

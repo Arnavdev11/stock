@@ -392,8 +392,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertRegex(upd, r'(?m)^permissions:\n  contents: read\n')                                    # the workflow-level default is unchanged
         self.assertNotIn("contents: write", job_block(upd, "build")); self.assertNotIn("contents: write", job_block(upd, "deploy"))
         self.assertIn("pages: write", job_block(upd, "deploy")); self.assertIn("id-token: write", job_block(upd, "deploy"))
-        self.assertEqual(upd.count("contents: write"), 2)                                                   # save-history (reusable call) and, since Phase 5H.5, save-shareholding: nothing else can write
+        self.assertEqual(upd.count("contents: write"), 3)                                                   # save-history (reusable call), save-shareholding (Phase 5H.5) and save-coverage: nothing else can write
         self.assertIn("contents: write", job_block(upd, "save-shareholding"))
+        cov = job_block(upd, "save-coverage")                                                              # writes only coverage/coverage_report.{json,md}, after both ledger saves
+        self.assertIn("contents: write", cov)
+        self.assertIn("needs: [build, save-history, save-shareholding]", cov)
+        self.assertIn("git add coverage/coverage_report.json coverage/coverage_report.md", cov)
+        self.assertNotIn("secrets.", cov); self.assertNotIn("ledger.json", cov)
         hist = wf("financial_history.yml")
         self.assertNotIn("contents: write", job_block(hist, "history"))
         self.assertEqual(hist.count("contents: write"), 1)

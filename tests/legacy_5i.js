@@ -6,8 +6,29 @@
 const FX = JSON.parse(require("fs").readFileSync(__dirname + "/fixtures/home_before_5j.json", "utf8"));   /* the Phase 5H.6/5I home page, exactly, for the pins that predate Phase 5J */
 const NEWRE = '/^#stock=([^&]+)(?:&section=[A-Za-z0-9_-]{1,30})?$/', OLDRE = '/^#stock=([^&]+)$/';
 const OLDNAV = "<nav aria-label=\"Main\"><b>StockLens India</b><a href=\"#demo\">Demo</a><a href=\"#all\">All scans</a><a href=\"#more\">More data</a><a href=\"#news\">News &amp; filings</a><a href=\"#stock\">Stock page</a><a href=\"#tools\">More tools</a><a href=\"#road\">Roadmap</a><a href=\"#cost\">Costs</a><a href=\"#money\">Earning</a><a href=\"#pc\">Pros &amp; cons</a><a href=\"#law\">SEBI rules</a></nav>";
+const PAGE_EDITS = JSON.parse(require("fs").readFileSync(__dirname + "/approved_page_edits.json", "utf8"));   /* the approved universe-wide coverage edits */
+const EDIT_SETS = ["decision_edits", "edits"].map((k) => PAGE_EDITS[k]).filter((x) => x && x.length);   /* a separately approved decision's edits are reversed first */
+function withoutCoverageFixes(s) {
+  /* exactly the approved coverage edits reversed; none present -> unchanged; only some, or one twice -> an error (same rule as guard_update_yml.without_coverage_fixes) */
+  for (const edits of EDIT_SETS) {
+    const n = edits.map((e) => s.split(e.new).length - 1);
+    if (!n.some(Boolean)) continue;
+    if (n.some((x) => x !== 1)) throw new Error("coverage edits: each approved edit must occur exactly once, found " + JSON.stringify(n));
+    for (const e of edits) s = s.replace(e.new, () => e.old);
+  }
+  return s;
+}
+function withoutDecisionEdits(s) {
+  /* only the separately approved decision's edits (the responsive redesign, tests/page_edit_manifest.py) reversed, with the same rule: none present -> unchanged; only some, or one twice -> an error */
+  const edits = PAGE_EDITS.decision_edits || [];
+  const n = edits.map((e) => s.split(e.new).length - 1);
+  if (!n.some(Boolean)) return s;
+  if (n.some((x) => x !== 1)) throw new Error("decision edits: each approved edit must occur exactly once, found " + JSON.stringify(n));
+  for (const e of edits) s = s.replace(e.new, () => e.old);
+  return s;
+}
 function legacy(h) {
-  let s = String(h);
+  let s = withoutCoverageFixes(String(h));
   /* Stage 1 coverage: the per-stock-file layer (a classic script with its own id) is an addition; the older pins see the page without it */
   s = s.replace(/<script type="module" id="stocklens-live">[\s\S]*?<\/script>\n/, "");
   s = s.replace(/<script id="stocklens-shards">[\s\S]*?<\/script>\n/, "");
@@ -43,4 +64,4 @@ function legacy(h) {
   s = s.replace(/<script type="module" id="stocklens-nav">[\s\S]*?<\/script>\n/, "");
   return s;
 }
-module.exports = { legacy };
+module.exports = { withoutCoverageFixes, withoutDecisionEdits, legacy };

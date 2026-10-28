@@ -98,7 +98,12 @@ eq(cells(h, "total_revenue")[0], "Total income", "bank row label"); eq(cells(h, 
 no(h, /data-row="revenue"/, "bank has no Revenue row"); no(text(h).replace(/Total income/g, ""), /\bRevenue\b/, "the word Revenue does not appear for a bank");
 eq(cagrLine(h, "total_revenue"), "Total income · 3-yr CAGR (FY23–FY26): +10.00%", "bank CAGR is labelled Total income");
 re(text(h), /the first row is the bank's total income as reported/, "bank note"); no(pageOf("TCS"), /Total income/, "non-bank never says Total income");
-{ const d = DOC(); d.stocks.TCS.years.forEach((y) => { y.values.total_revenue = 5555; }); ok(!/5,555/.test(pageOf("TCS", d)), "non-bank Revenue row never substitutes total_revenue"); d.stocks.TCS.years.forEach((y) => { y.values.revenue = null; }); eq(cells(pageOf("TCS", d), "revenue").slice(1), ["-", "-", "-", "-", "-"], "a missing Revenue shows '-' for a non-bank"); }
+{ const d = DOC(); d.stocks.TCS.years.forEach((y) => { y.values.total_revenue = 5555; }); ok(!/5,555/.test(pageOf("TCS", d)), "non-bank Revenue row never substitutes total_revenue"); d.stocks.TCS.years.forEach((y) => { y.values.revenue = null; });
+  /* approved change (universe-wide coverage): when Revenue is missing in EVERY year and Total revenue is there, the row shows Total revenue under its own name */
+  const hh = pageOf("TCS", d); no(hh, /data-row="revenue"/, "no empty Revenue row"); eq(cells(hh, "total_revenue")[0], "Total revenue", "labelled Total revenue, never Revenue or Total income");
+  eq(cells(hh, "total_revenue").slice(1).every((v) => v === "5,555"), true, "every year shows the stored Total revenue");
+  const d2 = DOC(); d2.stocks.TCS.years.forEach((y) => { y.values.revenue = null; y.values.total_revenue = null; });
+  eq(cells(pageOf("TCS", d2), "revenue").slice(1).every((v) => v === "-"), true, "neither line: the Revenue row shows '-', never 0"); }
 
 // ================= 5. CAGR calculation and year count =================
 { const m = F.model(DOC(), "TCS"), c = F.cagr(m, "revenue");

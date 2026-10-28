@@ -854,6 +854,11 @@ class Hygiene(unittest.TestCase):
         self.assertEqual(sorted(su.SYMBOLS), sorted("RELIANCE TCS INFY HDFCBANK ICICIBANK SBIN ITC BHARTIARTL LT MARUTI".split()))
 
 
+def universe_fallback_plus_batch(five):
+    import universe
+    return universe.TEST_SYMBOLS + list(five)
+
+
 class ResearchTestBatch(unittest.TestCase):
     """shareholding_updater.py also requests the five-stock research test batch (research_test_batch.py); nothing else about it changes."""
     FIVE = ["DOMS", "20MICRONS", "21STCENMGM", "360ONE", "3BBLACKBIO"]
@@ -885,20 +890,61 @@ class ResearchTestBatch(unittest.TestCase):
         self.assertEqual(got[:10], universe.TEST_SYMBOLS)
         self.assertEqual(got[10:], self.FIVE)
 
-    def test_a_configured_universe_gets_no_batch(self):
+    def big_universe(self, d, n=2548):
+        f = Path(d) / "universe.json"
+        syms = [{"symbol": "S%04d" % i, "isin": "INE%08d1" % i, "name": "STOCK %d" % i} for i in range(n)]
+        syms[0] = {"symbol": "ITC", "isin": "INE154A01025", "name": "ITC LIMITED"}
         import universe
+        universe.write_doc(f, {"schema_version": 1, "kind": "universe", "stage": "directory", "source": "t", "as_of": "2026-10-10", "count": n, "symbols": syms})
+        return f
+
+    def test_a_configured_universe_never_widens_the_collector(self):
+        """Growing universe.json from nothing to 2,548 stocks must leave the NSE/XBRL collector on exactly the bounded fifteen."""
+        import universe
+        bounded = universe.TEST_SYMBOLS + self.FIVE
+        self.assertEqual(su.collection_symbols({}), bounded)
         with tempfile.TemporaryDirectory() as d:
-            f = Path(d) / "universe.json"
-            import universe
-            universe.write_doc(f, {"schema_version": 1, "kind": "universe", "stage": "x", "source": "t", "as_of": "2026-10-10", "count": 1,
-                                   "symbols": [{"symbol": "ITC", "isin": "INE154A01025", "name": "ITC LIMITED"}]})
+            for n in (50, 600, 2548):
+                f = self.big_universe(d, n)
+                for env in ({"STOCKLENS_UNIVERSE_FILE": str(f)}, {"STOCKLENS_UNIVERSE_FILE": str(f), su.FOLLOW_UNIVERSE_ENV: ""},
+                            {"STOCKLENS_UNIVERSE_FILE": str(f), su.FOLLOW_UNIVERSE_ENV: "true"}, {"STOCKLENS_UNIVERSE_FILE": str(f), su.FOLLOW_UNIVERSE_ENV: "YES"},
+                            {"STOCKLENS_UNIVERSE_FILE": str(f), su.FOLLOW_UNIVERSE_ENV: "1"}):
+                    self.assertEqual(su.collection_symbols(env), bounded, (n, env))
+
+    def test_a_configured_universe_changes_nothing_in_a_real_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = self.big_universe(d)
+            n = FakeNse(self.nse.records, self.nse.files)
+            asked = []
+            orig = n.index
+            n.index = lambda sym: (asked.append(sym), orig(sym))[1]
             with mock.patch.dict(os.environ, {"STOCKLENS_UNIVERSE_FILE": str(f)}):
+                rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": ""}, nse=n)
+            self.assertEqual(rc, 0, text)
+            import universe
+            self.assertEqual(sorted(asked), sorted(universe.TEST_SYMBOLS + self.FIVE))           # fifteen, not 2,548
+            self.assertIn("universe: 15 ", text)
+            self.assertIn("does not follow it", text)
+            with mock.patch.dict(os.environ, {"STOCKLENS_UNIVERSE_FILE": str(f)}):
+                rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "S0005"})
+            self.assertEqual(rc, 1)
+            self.assertIn("Unknown symbols: S0005", text)                                         # a universe-only stock cannot be requested either
+
+    def test_only_an_explicit_yes_follows_the_universe_and_a_bad_universe_then_stops_the_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = self.big_universe(d, 60)
+            got = su.collection_symbols({"STOCKLENS_UNIVERSE_FILE": str(f), su.FOLLOW_UNIVERSE_ENV: "yes"})
+            self.assertEqual(len(got), 60)
+            self.assertIn("S0007", got)
+            bad = Path(d) / "bad.json"
+            bad.write_text("not json")
+            with mock.patch.dict(os.environ, {"STOCKLENS_UNIVERSE_FILE": str(bad)}):
                 rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "ITC"})
-                self.assertEqual(rc, 0, text)
-                self.assertIn("universe: 1 ", text)
-                rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "DOMS"})
+                self.assertEqual(rc, 0, text)                                                     # ignored while not following
+                rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "ITC", su.FOLLOW_UNIVERSE_ENV: "yes"})
                 self.assertEqual(rc, 1)
-                self.assertIn("Unknown symbols: DOMS", text)
+                self.assertIn("universe file", text)                                              # opted in: fail closed
+            self.assertEqual(su.collection_symbols({su.FOLLOW_UNIVERSE_ENV: "yes"}), universe_fallback_plus_batch(self.FIVE))
 
     def test_the_five_are_selectable_and_unknown_is_still_rejected(self):
         rc, text = self.run_main({"SHAREHOLDING_SYMBOLS": "DOMS,360ONE"})

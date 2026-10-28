@@ -111,14 +111,81 @@ def financial_warnings(doc):
     return w
 
 
-def check_fundamentals(doc):
+RATIO_METRICS = ("pe", "pb", "roa", "roe", "roce", "ev_ebitda")
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+FUNDAMENTALS_CATEGORIES = ("published_listed", "published_not_listed", "held_isin_change", "invalid", "failed", "not_in_upstox", "not_yet_fetched")
+
+
+def _dups(seq):
+    seen, dup = set(), set()
+    for x in seq:
+        (dup if x in seen else seen).add(x)
+    return sorted(dup, key=str)
+
+
+def check_fundamentals(doc, universe_symbols=None):
+    """universe_symbols (optional): the distinct symbols the coverage must describe; then every published or error symbol must be one of them."""
     if not isinstance(doc, dict) or not isinstance(doc.get("stocks"), list):
         return ["fundamentals.json has no stocks list"]
     p = []
+    syms = [s.get("symbol") for s in doc["stocks"] if isinstance(s, dict)]
+    if _dups(syms):
+        p.append("fundamentals.json lists a stock more than once: " + ", ".join(map(str, _dups(syms)[:10])))
+    errs = [e.get("symbol") for e in doc.get("errors") or [] if isinstance(e, dict)]
+    if _dups(errs):
+        p.append("fundamentals.json lists an error for a stock more than once: " + ", ".join(map(str, _dups(errs)[:10])))
+    if universe_symbols is not None:
+        outside = sorted({s for s in syms + errs if s not in universe_symbols}, key=str)
+        if outside:
+            p.append("fundamentals.json has stocks outside the universe: " + ", ".join(map(str, outside[:10])))
     for s in doc["stocks"]:
         for f in VAL_FIELDS:
             if f in s and not is_num_or_null(s[f]):
                 p.append("%s.%s is not a number or null" % (s.get("symbol"), f))
+        if "missing" in s:                       # explicit gaps: exactly the null ratio metrics, in the fixed order, nothing else
+            want = [m for m in RATIO_METRICS if s.get(m) is None]
+            if s["missing"] != want:
+                p.append("%s.missing does not list exactly the null ratio metrics (%s)" % (s.get("symbol"), ", ".join(want) or "none"))
+    cov = doc.get("coverage")
+    if cov is not None:
+        keys = ("universe", "published", "metrics_complete", "metrics_partial", "metrics_none", "not_yet_fetched", "not_in_upstox", "with_error")
+        if not isinstance(cov, dict) or not all(_count(cov.get(k)) for k in keys):
+            p.append("coverage must hold non-negative whole numbers for " + ", ".join(keys))
+        else:
+            rows = doc["stocks"]
+            if cov["published"] != len(rows):
+                p.append("coverage.published (%d) does not equal the number of stocks (%d)" % (cov["published"], len(rows)))
+            if cov["metrics_complete"] + cov["metrics_partial"] + cov["metrics_none"] != cov["published"]:
+                p.append("coverage: complete + partial + none does not equal published")
+            if cov["metrics_complete"] != sum(1 for s in rows if s.get("missing") == []):
+                p.append("coverage.metrics_complete does not match the rows with nothing missing")
+            if cov["universe"] < cov["published"]:
+                p.append("coverage.universe is smaller than published")
+            ma = cov.get("metric_available")
+            if not isinstance(ma, dict) or any(ma.get(m) != sum(1 for s in rows if s.get(m) is not None) for m in RATIO_METRICS):
+                p.append("coverage.metric_available does not match the rows")
+            cats = cov.get("categories")
+            if cats is not None:             # files written since the coverage partition exists: every symbol counted once
+                if not isinstance(cats, dict) or set(cats) != set(FUNDAMENTALS_CATEGORIES) or not all(_count(cats.get(k)) for k in FUNDAMENTALS_CATEGORIES):
+                    p.append("coverage.categories must hold a non-negative whole number for each of " + ", ".join(FUNDAMENTALS_CATEGORIES))
+                else:
+                    if sum(cats.values()) != cov["universe"]:
+                        p.append("coverage.categories add up to %d, not the universe of %d" % (sum(cats.values()), cov["universe"]))
+                    if cats["published_listed"] + cats["published_not_listed"] != cov["published"]:
+                        p.append("coverage.categories: published_listed + published_not_listed does not equal published")
+                    if cats["not_in_upstox"] != cov["not_in_upstox"]:
+                        p.append("coverage.not_in_upstox counts a published stock (it must be published_not_listed)")
+                    if cov["published"] + cov["not_in_upstox"] + cov["not_yet_fetched"] != cov["universe"]:
+                        p.append("coverage: published + not_in_upstox + not_yet_fetched does not equal the universe")
+                if cov.get("duplicate_symbols"):
+                    p.append("coverage: the universe lists symbols more than once: " + ", ".join(map(str, cov["duplicate_symbols"][:10])))
+                if universe_symbols is not None and cov["universe"] != len(set(universe_symbols)):
+                    p.append("coverage.universe (%d) is not the number of distinct universe symbols (%d)" % (cov["universe"], len(set(universe_symbols))))
     return p
 
 

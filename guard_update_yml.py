@@ -1,7 +1,8 @@
 """
 Shared by the protected-file guard tests. The workflow files are protected, with exactly the exceptions recorded in tests/approved_workflow_changes.json:
   * .github/workflows/update.yml may differ from HEAD only by the listed added lines (guarded copies into the site folder; an empty difference is fine);
-  * .github/workflows/historical.yml and .github/workflows/save_historical.yml must be byte-for-byte the pinned versions (SHA-256).
+  * .github/workflows/historical.yml and .github/workflows/save_historical.yml must be byte-for-byte the pinned versions (SHA-256);
+  * a file listed under coverage_fixes_changes (the universe-wide coverage fixes) must differ from HEAD by exactly its listed lines.
 is_approved(root, path) is True only for those exact states. Any other edit, or any other file, is False.
 """
 import hashlib
@@ -15,7 +16,8 @@ PATH = _CFG["update_yml"]["path"]
 ADDED = _CFG["update_yml"]["added_lines"]
 PINNED = _CFG["pinned_files"]
 UPDATERS = _CFG["updater_changes"]            # {path: the exact diff lines (with their + / - prefix) against HEAD}
-APPROVED_PATHS = [PATH] + list(PINNED) + list(UPDATERS)
+COVERAGE = _CFG.get("coverage_fixes_changes", {})   # the universe-wide coverage fixes: the exact diff of each file they touch (wins over UPDATERS for its paths)
+APPROVED_PATHS = [PATH] + list(PINNED) + list(UPDATERS) + [p for p in COVERAGE if p not in UPDATERS]
 
 
 def approved_change_only(root):
@@ -36,6 +38,8 @@ def exact_diff(root, path, expected):
 def is_approved(root, path):
     if path == PATH:
         return approved_change_only(root)
+    if path in COVERAGE:
+        return exact_diff(root, path, COVERAGE[path])
     if path in UPDATERS:
         return exact_diff(root, path, UPDATERS[path])
     if path in PINNED:
@@ -46,11 +50,31 @@ def is_approved(root, path):
     return False
 
 
+# ---------------------------------------------------------------- index.html: the approved universe-wide coverage edits (tests/approved_page_edits.json)
+_PAGE_DOC = json.loads((Path(__file__).parent / "tests" / "approved_page_edits.json").read_text(encoding="utf-8"))
+_PAGE_EDIT_SETS = [_PAGE_DOC[k] for k in ("decision_edits", "edits") if _PAGE_DOC.get(k)]   # a separately approved decision's edits (if any) are reversed first
+
+
+def without_coverage_fixes(html):
+    """index.html with exactly the approved coverage edits reversed (Stock Detail status labels; Financial History newest basis and Total revenue row).
+    A page with none of them comes back unchanged; a page with only SOME of them, or with one twice, raises ValueError: nothing is removed on a guess."""
+    for edits in _PAGE_EDIT_SETS:
+        present = [html.count(e["new"]) for e in edits]
+        if not any(present):
+            continue
+        if any(n != 1 for n in present):
+            raise ValueError("coverage edits: each approved edit must occur exactly once, found %s" % present)
+        for e in edits:
+            html = html.replace(e["new"], e["old"], 1)
+    return html
+
+
 # ---------------------------------------------------------------- index.html: the one approved edit to the Stock Detail header (Market Cap replaces the Sector tile)
 def without_market_cap(html):
     """index.html with exactly the approved header edit reversed (the loader's fourth request, the marketCap() helper, the Market Cap tile, its variable and its note).
     A page that does not carry the edit comes back unchanged, so the guards can apply this to both the working file and HEAD and then compare them byte for byte:
     any OTHER difference in index.html is still a difference."""
+    html = without_coverage_fixes(html)                  # the later approved coverage edits are reversed first (they touch the same Stock Detail note)
     html = re.sub(r'<script type="module" id="stocklens-quarterly">[\s\S]*?</script>\n', "", html, count=1)      # the read-only Quarterly Results section module is an addition with its own tests (tests/test_quarterly_ui.js)
     s = re.sub(r"/\* Market capitalisation for the header = [\s\S]*?return out\}\n\n", "", html, count=1)
     s = s.replace('j("out/historical.json"),j("out/shareholding.json")]).then(function(a){return{val:a[0],fin:a[1],prices:a[2],sh:a[3]}});',

@@ -16,9 +16,14 @@ name: Update data and publish site
         description: "Upstox call budget for financial statements. Empty = 120. A big first fill of the wider universe can use up to about 1500 (50 min)."
         required: false
         default: ""
+      quarterly_calls:
+        description: "Upstox call budget for quarterly results. Empty = 100. At most 330 (the step has a 15-minute timeout); a larger value is lowered to 330."
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  actions: read                         # only to list the saved caches when no fundamentals state was restored (cache-miss recovery below)
 
 # One shared group for everything that reads or writes the financial-history ledger or the shareholding ledger (see also financial_history.yml and shareholding.yml). Never cancels a run.
 concurrency:
@@ -29,9 +34,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    env:
+      RUN_STATUS_DIR: run-status        # each updater writes a small run record here (counts only; run_status.py); never published
     outputs:
       ledger_ready: ${{ steps.ledgerout.outputs.ready }}
       shareholding_ready: ${{ steps.shpout.outputs.ready }}
+      coverage_ready: ${{ steps.coverage.outputs.ready }}
+      data_ok: ${{ steps.datastatus.outputs.data_ok }}
+      data_status: ${{ steps.datastatus.outputs.data_status }}
 
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +82,7 @@ jobs:
           fi
 
       - name: Restore saved data
+        id: restore
         uses: actions/cache@v4
         with:
           path: |
@@ -80,9 +91,95 @@ jobs:
           key: nse-data-${{ github.run_id }}
           restore-keys: nse-data-
 
+      # Cache-miss recovery for fundamentals. Without its saved state the fundamentals step would start from nothing and publish only the few stocks one
+      # run can fetch. The combined actions/cache step above only has a `cache-hit` output (an empty string for "nothing restored" and "false" for a
+      # prefix match look alike), so the cache it resolved to is read with a second, read-only lookup (actions/cache/restore, lookup-only: it downloads
+      # nothing and writes nothing; its `cache-matched-key` is the documented output). With no state in the workspace the run is exactly one of:
+      #   restored state            -> checked, never touched;
+      #   lookup unavailable        -> stop (a missing cache cannot be told apart from a failed restore);
+      #   a cache was resolved      -> stop: it was not restored, or it holds no fundamentals state (another workflow's cache can be the newest one);
+      #   no cache resolved, but the complete cache list (every cache of this ref AND the default branch, which is what a restore can read, filtered for the
+      #     prefix nse-data- here) shows caches, or cannot be
+      #     read completely                                          -> stop;
+      #   no cache resolved and the complete list is empty (a genuine miss) -> recover from the published site, validated before anything is written.
+      # Every stop leaves the site exactly as it is (the deploy job needs this job) and names the condition and a safe remedy. Nothing here deletes a cache.
+      - name: Look up which saved cache the restore resolved to (no download)
+        id: lookup
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            out
+          key: nse-data-${{ github.run_id }}
+          restore-keys: nse-data-
+          lookup-only: true
+
+      - name: Check the restored fundamentals state
+        id: fstate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+          RESTORE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          LOOKUP_OUTCOME: ${{ steps.lookup.outcome }}
+          LOOKUP_KEY: ${{ steps.lookup.outputs.cache-matched-key }}
+        run: |
+          if [ -f data/fundamentals_cache.json ]; then
+            python fundamentals_updater.py check-state || { echo "::error::The restored fundamentals state cannot be used (see above). A maintainer must decide: re-running restores the same state. Nothing was published and nothing was changed."; exit 1; }
+            echo "state=restored" >> "$GITHUB_OUTPUT"; echo "Saved fundamentals state restored."; exit 0
+          fi
+          stop() { echo "::error::$1"; shift; for l in "$@"; do echo "$l"; done; echo "Nothing was published and nothing was changed."; exit 1; }
+          if [ "$LOOKUP_OUTCOME" != "success" ]; then
+            stop "The saved caches could not be looked up (lookup step: ${LOOKUP_OUTCOME:-not run}), so a missing fundamentals state cannot be told apart from a failed restore." "Remedy: re-run this workflow once the GitHub cache service responds. No recovery is attempted while this is unknown."
+          fi
+          if [ -n "$LOOKUP_KEY" ]; then
+            if printf '%s\n' "$LOOKUP_KEY" | grep -qE '^nse-data-[0-9]+$'; then
+              stop "The restore resolved to the saved cache $LOOKUP_KEY but no fundamentals state is in the workspace." "Either the restore failed (the 'Restore saved data' step then logs a warning and not 'Cache restored from key: $LOOKUP_KEY'; its cache-hit output was '$RESTORE_HIT') or that cache holds no fundamentals state." "Remedy: re-run once if the restore step shows a failure. If it restored cleanly, a maintainer must decide (an approved manual recovery, or removing that cache): re-running cannot help. This workflow never recovers over an existing cache and never deletes one."
+            fi
+            stop "The newest saved cache this run can see is $LOOKUP_KEY, written by another workflow, and it holds no fundamentals state (it shadows the daily state cache; cache-hit output '$RESTORE_HIT')." "Remedy: a maintainer must decide (remove that cache, or approve a manual recovery). Re-running cannot help. This workflow never deletes a cache."
+          fi
+          # nothing resolved: confirm with the complete cache list of every scope a restore can read (this ref and the default branch)
+          refs="$REF"; [ "refs/heads/$DEFAULT_BRANCH" = "$REF" ] || refs="$REF refs/heads/$DEFAULT_BRANCH"
+          found=0
+          for ref in $refs; do
+            # every cache of the ref is read (no `key` filter: whether that parameter matches an exact key or a prefix is not documented) and filtered here
+            list=$(gh api --paginate "repos/$REPO/actions/caches?ref=$ref&per_page=100" --jq '"total=" + (.total_count | tostring), "read=" + (.actions_caches | length | tostring), (.actions_caches[] | select(.key | startswith("nse-data-")) | "key=" + .key)') || stop "The saved caches of $ref could not be listed, so a missing fundamentals state cannot be told apart from a failed restore." "Remedy: re-run this workflow once the GitHub API responds. No recovery is attempted while this is unknown."
+            totals=$(printf '%s\n' "$list" | sed -n 's/^total=//p' | sort -u)
+            read=$(printf '%s\n' "$list" | sed -n 's/^read=//p' | awk '{ s += $1 } END { print s + 0 }')
+            n=$(printf '%s\n' "$list" | grep -c '^key=' || true)
+            case "$totals" in ''|*[!0-9]*) stop "The cache list of $ref is unusable (no single total), so it cannot prove that no cache exists." "Remedy: re-run this workflow once the GitHub API responds. No recovery is attempted while this is unknown." ;; esac
+            if [ "$read" != "$totals" ]; then stop "The cache list of $ref is incomplete ($read of $totals caches read), so it cannot prove that no cache exists." "Remedy: re-run this workflow once the GitHub API responds. No recovery is attempted while this is unknown."; fi
+            found=$((found + n))
+          done
+          if [ "$found" != "0" ]; then
+            stop "$found saved cache(s) with the prefix nse-data- exist (checked: $refs) but the restore resolved none of them and no fundamentals state is in the workspace (cache-hit output '$RESTORE_HIT')." "Remedy: re-run once in case the restore failed. If it repeats, a maintainer must decide (an approved manual recovery, or removing the caches): this workflow never recovers over an existing cache and never deletes one."
+          fi
+          echo "state=miss" >> "$GITHUB_OUTPUT"
+          echo "::warning::No saved cache exists in $refs (a genuine cache miss): the fundamentals state is recovered from the published site."
+
+      - name: Recover the fundamentals state from the published site (cache miss only)
+        if: steps.fstate.outputs.state == 'miss'
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          owner="${REPO%%/*}"; name="${REPO#*/}"
+          url="https://${owner,,}.github.io/${name}/out/fundamentals.json"
+          curl -fsSL --retry 3 --max-time 120 "$url" -o recovery_fundamentals.json || { echo "::error::$url could not be downloaded. Remedy: re-run once the site responds; nothing is recovered from anything else. Nothing was published and nothing was changed."; exit 1; }
+          python fundamentals_updater.py seed recovery_fundamentals.json
+
+      # Provenance marker (see cache_provenance.py). A restored cache brings back the marker of an EARLIER run; it is deleted here, before any updater runs, so
+      # it can never be saved into this run's cache. Non-blocking: if this step fails, the stale marker still names another run id and is refused by the check.
+      - name: Remove any restored provenance marker
+        continue-on-error: true
+        run: python cache_provenance.py remove data
+
       - run: python nse_updater.py
+        id: nse
 
       - name: Update fundamentals
+        id: fundamentals
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -90,6 +187,7 @@ jobs:
         run: python fundamentals_updater.py
 
       - name: Update financial statements (Upstox)
+        id: financials
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -97,6 +195,7 @@ jobs:
         run: python financials_updater.py
 
       - name: Update financial history (Upstox)
+        id: financial_history
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -128,6 +227,7 @@ jobs:
       # It never initialises a ledger (no init flag is passed) and never creates the data branch. If it fails, nothing is saved and the
       # previously published out/shareholding.json (from the saved-data cache) is left as it was.
       - name: Update shareholding pattern (NSE/XBRL)
+        id: shareholding
         continue-on-error: true
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
@@ -165,6 +265,7 @@ jobs:
         env:
           UPSTOX_ANALYTICS_TOKEN: ${{ secrets.UPSTOX_ANALYTICS_TOKEN }}
           QUARTERLY_MAX_CALLS: "100"
+          QUARTERLY_MAX_CALLS_OVERRIDE: ${{ inputs.quarterly_calls }}      # empty unless set by hand; the updater caps it at 330 (the step's 15-minute timeout)
         run: |
           cp ledger-branch/stock_directory.json out/stock_directory.json
           python quarterly_results_updater.py
@@ -176,6 +277,7 @@ jobs:
         run: echo "::warning::The quarterly results update failed or timed out. The quarterly results published on the site are from the last successful run."
 
       - name: Validate outputs
+        id: validate
         continue-on-error: true
         run: python validate_outputs.py
 
@@ -183,6 +285,7 @@ jobs:
       # If either command fails, the four derived files are removed (so nothing old or unchecked is published) and the step fails; the site still publishes
       # (the page shows "not available" for those blocks).
       - name: Derive and validate market activity data
+        id: market
         continue-on-error: true
         run: |
           if python market_data_updater.py && python validate_market_outputs.py; then
@@ -219,6 +322,86 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+      # Durable coverage record. The updaters' progress (fundamentals, financial statements, quarterly results) lives only in the Actions cache, which
+      # GitHub can evict, so its coverage could not be measured from anything durable. This step runs the offline coverage report over this run's state
+      # (data/ = the restored-and-updated cache) and the data branch with this run's new ledgers laid over it. It reads only, writes only coverage-out/
+      # (counts and symbol lists; no value, error text, credential or record), and the save-coverage job commits the two report files to the data branch.
+      # Non-blocking: a failure here never changes the site, the cache or any ledger.
+      - name: Measure coverage (offline report, read-only)
+        id: coverage
+        continue-on-error: true
+        run: |
+          rm -rf coverage-in coverage-out
+          if [ ! -f ledger-branch/universe.json ]; then echo "ready=false" >> "$GITHUB_OUTPUT"; echo "No universe.json on the data branch: coverage not measured."; exit 0; fi
+          cp -r ledger-branch coverage-in && rm -rf coverage-in/.git
+          [ -s ledger-out/financial_history_ledger.json ] && cp ledger-out/financial_history_ledger.json coverage-in/
+          [ -s shareholding-ledger-out/shareholding_ledger.json ] && cp shareholding-ledger-out/shareholding_ledger.json coverage-in/
+          fund=""; [ -s out/fundamentals.json ] && fund="--fundamentals out/fundamentals.json"
+          python coverage_report.py --data-branch coverage-in --as-of "$(TZ=Asia/Kolkata date +%F)" --out coverage-out --scope both $fund --state-dir data
+          test -s coverage-out/coverage_report.json && test -s coverage-out/coverage_report.md
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Hand the coverage report to the save job
+        if: steps.coverage.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage-out/coverage_report.json
+            coverage-out/coverage_report.md
+          if-no-files-found: error
+          retention-days: 90
+
+      # continue-on-error hides a failed data step from the job's own result. This table (run summary) and the "data-status" job below report it.
+      - name: Report the data steps
+        id: datastatus
+        if: always()
+        env:
+          OUTCOME_NSE: ${{ steps.nse.outcome }}
+          OUTCOME_FUNDAMENTALS: ${{ steps.fundamentals.outcome }}
+          OUTCOME_FINANCIALS: ${{ steps.financials.outcome }}
+          OUTCOME_FINANCIAL_HISTORY: ${{ steps.financial_history.outcome }}
+          OUTCOME_SHAREHOLDING: ${{ steps.shareholding.outcome }}
+          OUTCOME_QUARTERLY: ${{ steps.quarterly.outcome }}
+          OUTCOME_VALIDATE: ${{ steps.validate.outcome }}
+          OUTCOME_MARKET: ${{ steps.market.outcome }}
+        run: python report_run_status.py
+
+      # Provenance marker: the LAST step of the job, after the last change to data/ and after the data-step report. It records this run's identity, the data
+      # status and the hashes of the three state files, atomically, in data/ (never in out/, which is what the site copies from). GitHub caches are immutable: the
+      # cache above is saved by its post step only on a miss of this run's own key and only if the job succeeded; after a re-run of the same run id the cache keeps
+      # the first attempt's content and marker. Non-blocking: a failure here never changes the site build; a missing or invalid marker makes the validation refuse.
+      - name: Write the provenance marker (last step)
+        id: provenance
+        continue-on-error: true
+        env:
+          CP_DATA_STATUS: ${{ steps.datastatus.outputs.data_status }}
+          CP_DATA_OK: ${{ steps.datastatus.outputs.data_ok }}
+          CP_OUTCOME_NSE: ${{ steps.nse.outcome }}
+          CP_OUTCOME_FUNDAMENTALS: ${{ steps.fundamentals.outcome }}
+          CP_OUTCOME_FINANCIALS: ${{ steps.financials.outcome }}
+          CP_OUTCOME_FINANCIAL_HISTORY: ${{ steps.financial_history.outcome }}
+          CP_OUTCOME_SHAREHOLDING: ${{ steps.shareholding.outcome }}
+          CP_OUTCOME_QUARTERLY: ${{ steps.quarterly.outcome }}
+          CP_OUTCOME_VALIDATE: ${{ steps.validate.outcome }}
+          CP_OUTCOME_MARKET: ${{ steps.market.outcome }}
+        run: python cache_provenance.py write data
+
+  # Fails the run (after the site was published) when a data step failed, so continue-on-error cannot make a failed update look successful.
+  data-status:
+    needs: build
+    if: ${{ always() && needs.build.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the data steps
+        run: |
+          echo "Data steps: ${{ needs.build.outputs.data_status || 'unknown' }}"
+          if [ "${{ needs.build.outputs.data_ok }}" != "true" ]; then
+            echo "::error::A data step failed (see the Data steps table in the build job's summary). The site was published with the previous data for that step."
+            exit 1
+          fi
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -241,6 +424,46 @@ jobs:
     uses: ./.github/workflows/save_ledger.yml
     with:
       create_branch: false
+
+  # Saves the coverage report (two derived files under coverage/) to the data branch, after both ledger saves so no two jobs push at once. It changes
+  # nothing else on the branch; a report is never a source of data, so there is no no-loss check, only a shape check. Never creates the branch.
+  save-coverage:
+    needs: [build, save-history, save-shareholding]
+    if: ${{ !cancelled() && needs.build.outputs.coverage_ready == 'true' && needs.save-history.result != 'failure' && needs.save-shareholding.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-new
+
+      - name: Check out the data branch
+        uses: actions/checkout@v4
+        with:
+          ref: stocklens-data
+          path: ledger-branch
+
+      - name: Commit the coverage report to the data branch
+        run: |
+          python3 -c "import json,sys; d=json.load(open('coverage-new/coverage_report.json')); sys.exit(0 if isinstance(d, dict) and d.get('kind') and d.get('scopes') else 'not a coverage report')"
+          cd ledger-branch
+          mkdir -p coverage
+          cp ../coverage-new/coverage_report.json ../coverage-new/coverage_report.md coverage/
+          git add coverage/coverage_report.json coverage/coverage_report.md
+          if git diff --cached --quiet; then echo "The coverage report did not change."; exit 0; fi
+          if [ -n "$(git diff --cached --name-only | grep -v '^coverage/coverage_report\.\(json\|md\)$')" ]; then echo "::error::Unexpected staged files."; exit 1; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update coverage report (run ${{ github.run_id }})"
+          for i in 1 2 3; do
+            git push origin HEAD:stocklens-data && exit 0
+            echo "Push refused (the branch moved); rebasing on it and retrying ($i of 3)."
+            git pull --rebase origin stocklens-data || { git rebase --abort; exit 1; }
+          done
+          echo "::error::The coverage report could not be saved after 3 attempts."; exit 1
 
   # Phase 5H.5. Saves the shareholding ledger to the data branch with the existing no-loss check (shareholding_ledger.py verify), and nothing else.
   # It waits for save-history so the two jobs never push to the data branch at the same time. It never creates the branch and never initialises the ledger.

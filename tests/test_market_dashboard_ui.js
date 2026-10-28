@@ -15,12 +15,15 @@ const main = (html.match(/<main id="market">[\s\S]*?<\/main>/) || [""])[0];
 ok(main.length > 500, "the dashboard <main id=\"market\"> exists");
 
 // ---------- 1. structure: every section, in order, with its heading ----------
-const SECTIONS = [["mk-today", "Market Today"], ["mk-breadth", "Market Breadth"], ["mk-happening", "What's Happening"], ["mk-sectors", "Sector Dashboard"], ["mk-movers", "Top Gainers / Top Losers"], ["mk-trending", "Trending Stocks"], ["mk-52w", "New 52-Week High / Low"], ["mk-ath", "All-Time High / Low"], ["mk-volume", "Volume Shockers"], ["mk-hvgain", "High Volume + High Gain"], ["mk-hvloss", "High Volume + Top Losers"], ["mk-relative", "Relative Outperformance / Underperformance"], ["mk-fiidii", "FII / DII Activity"], ["mk-sectorlead", "Sector Leaders / Laggards"], ["mk-swing", "Swing Market Watch"]];
+const SECTIONS = [["mk-today", "Market Today"], ["mk-breadth", "Market Breadth"], ["mk-happening", "What's Happening"], ["mk-sectors", "Sector Dashboard"], ["mk-movers", "Top Gainers / Top Losers"], ["mk-trending", "Trending Stocks"], ["mk-52w", "New 52-Week High / Low"], ["mk-volume", "Volume Shockers"], ["mk-hvgain", "High Volume + High Gain"], ["mk-hvloss", "High Volume + Top Losers"], ["mk-relative", "Relative Outperformance / Underperformance"], ["mk-fiidii", "FII / DII Activity"], ["mk-swing", "Swing Market Watch"]];
 { let at = -1;
   for (const [id, h] of SECTIONS) { const m = new RegExp('<section class="mk-sec" id="' + id + '"><h[12][^>]*>' + h.replace(/[/+']/g, "\\$&") + "</h[12]>").exec(main); ok(m, "section " + id + " with heading " + h); ok(m.index > at, id + " is in the specified order"); at = m.index; eq((main.match(new RegExp('id="' + id + '"', "g")) || []).length, 1, id + " exists once"); }
-  eq((main.match(/<section class="mk-sec"/g) || []).length, 15, "exactly the fifteen dashboard sections");
+  eq((main.match(/<section class="mk-sec"/g) || []).length, 13, "exactly the thirteen dashboard sections");
+  // responsive redesign: All-Time High / Low and Sector Leaders / Laggards are no longer on the home page (their renderers and data are kept and still tested below)
+  for (const id of ["mk-ath", "mk-sectorlead"]) no(html.slice(html.indexOf("<body>"), html.indexOf("<script")), new RegExp('id="' + id + '"'), id + " is not on the home page");
+  no(main, /All-Time High \/ Low|Sector Leaders \/ Laggards/, "neither heading is on the home page");
   re(main, /<h1 class="mk-h1">Market Today<\/h1>/, "the page's one h1 is Market Today"); eq((html.match(/<h1\b/g) || []).length, 1, "and there is only one h1 in the page");
-  eq((main.match(/<div data-mk>/g) || []).length, 15, "each section has its own content box that the module fills"); }
+  eq((main.match(/<div data-mk>/g) || []).length, 13, "each section has its own content box that the module fills"); }
 // the Fundamental screen is kept, after the dashboard
 ok(html.indexOf('id="screener-sec"') > html.indexOf("</main>"), "the existing Fundamental screen follows the dashboard"); re(html, /<h2 id="screener">Fundamental screen<\/h2>/, "with its heading and id (the Fundamentals nav target)"); re(html, /id="ftabs"/, "and its tabs (the Financials nav target)");
 
@@ -43,7 +46,10 @@ global.window = {}; global.document = { getElementById: () => null, addEventList
 (0, eval)(code);
 const M = window.SLMarket;
 eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "activityOf", "breadth", "cleanCandles", "events", "fiidii", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "perfOf", "relative", "sectionHtml", "sectorsOf", "shockers", "sig3", "stocksOf", "tracked", "vol"], "the public surface is small and fixed");
-eq(M.IDS, SECTIONS.map((s) => s[0]), "the module draws exactly the sections in the page");
+{ const OFF_HOME = ["mk-ath", "mk-sectorlead"];   // responsive redesign: removed from the home page; the module keeps their renderers, and paint() skips a section that has no box
+  eq(M.IDS.filter((id) => !OFF_HOME.includes(id)), SECTIONS.map((s) => s[0]), "the module draws exactly the sections in the page, in order");
+  eq(M.IDS.filter((id) => OFF_HOME.includes(id)), OFF_HOME, "the two removed sections are the only ids the page has no box for");
+  re(code, /function paint\(id\)\{var box=document\.querySelector&&document\.querySelector\('#'\+id\+' \[data-mk\]'\);if\(box\)box\.innerHTML=/, "paint() writes nothing when a section has no box on the page"); }
 eq(M.WINDOWS.map((w) => w.label), ["1D", "1W", "30D", "90D"], "the windows are 1D, 1W, 30D, 90D"); eq([M.LARGE_MOVE, M.VOL_MULT, M.HV_GAIN], [5, 2, 3], "the thresholds");
 no(code, /Upstox|api\.|access_token|Bearer|apikey|api_key|secret|localStorage|sessionStorage|XMLHttpRequest|WebSocket|eval\(|new Function/i, "no API, token, storage, socket or dynamic code in the module");
 eq([...code.matchAll(/getJson\("([^"]*)"\)/g)].map((m) => m[1]), ["out/market_sector_stocks.json", "out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json", "out/market_activity.json"], "it reads the three files the site already publishes, plus the two sector files that exist on the site only when sector display is approved (otherwise the fetch fails and the blocks say Sector data unavailable)");
@@ -267,7 +273,7 @@ const lazy = (async () => {
   for (const [href, s] of hrefs(h)) eq(href, "#stock=" + s, "stock link routes: " + s); eq(hrefs(draw("mk-movers", M.model({ gainers: Array.from({ length: 30 }, (_, i) => ({ symbol: "S" + i, price: 1, change_pct: 30 - i })) }, null, null))).length, 10, "at most ten rows per list");
   eq((draw("mk-movers", empty).match(/Data unavailable/g) || []).length, 2, "no scan: both cards unavailable"); }
 { const h = draw("mk-trending");
-  eq([...h.matchAll(/data-tab="([^"]*)"/g)].map((m) => m[1]), ["movers", "volume", "52w", "ath", "active"], "the five trending tabs"); for (const l of ["Price Movers", "Volume Shockers", "52W High / Low", "All-Time High / Low", "Most Active"]) ok(h.includes(">" + l + "<"), "tab " + l);
+  eq([...h.matchAll(/data-tab="([^"]*)"/g)].map((m) => m[1]), ["movers", "volume", "52w", "active"], "the four trending tabs (no All-Time High / Low tab on the home page)"); for (const l of ["Price Movers", "Volume Shockers", "52W High / Low", "Most Active"]) ok(h.includes(">" + l + "<"), "tab " + l); no(h, /All-Time High \/ Low/, "no All-Time tab button");
   re(h, /aria-selected="true">Price Movers/, "Price Movers is selected first");
   eq(hrefs(h).map((x) => x[1]).slice(0, 3), ["G3", "L1", "G1"], "movers are ordered by size of move, up or down");
   eq(hrefs(draw("mk-trending", model, { trend: "volume" })).map((x) => x[1]), ["V2", "V1"], "Volume Shockers tab"); const w = draw("mk-trending", model, { trend: "52w" }); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], "52W tab lists the highs"); re(w, /New 52-week low<\/h4><p class="mk-na">Data unavailable/, "and says the lows are unavailable");
@@ -377,7 +383,7 @@ const actLazy = (async () => {
   { const b = boot(code, FILES({ "out/market_activity.json": actDoc("2026-10-02") })); await wait(); re(lowPart(b.boxes["mk-52w"].innerHTML), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "a file from another day is reported, not drawn"); no(b.boxes["mk-52w"].innerHTML, /LW\d/, "with no values"); } })();
 
 // ---------- 6. responsive: the dashboard adapts to its own width (no media rules; the older tests pin those) ----------
-{ re(css, /\.mk-sec\{/, "section style"); no(css, /@media/, "no new media rules"); re(css, /@container \(max-width:330px\)\{\.mk-t \.c3\{display:none\}\}/, "narrow cards drop their optional column"); re(css, /@container \(max-width:240px\)/, "very narrow: the performance grid goes to two columns");
+{ re(css, /\.mk-sec\{/, "section style"); no(css, /@media/, "no new media rules"); re(css, /@container \(max-width:330px\)\{\.mk-t \.c3\{display:none\}\}/, "narrow cards drop their optional column"); re(css, /@container \(max-width:340px\)\{\.mk-perf\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/, "narrow index card (under 340px, i.e. phones up to about 390px): the performance grid goes to two columns, so a value like -0.71% never breaks before its %, even in a face 16% wider than the fallback");
   re(css, /\.mk-g\{[^}]*repeat\(auto-fit,minmax\(min\(/, "grids use auto-fit with a min() so a column is never wider than the screen"); re(css, /\.mk-2,\.mk-g\{[^}]*repeat\(auto-fit,minmax\(min\(/, "the two-card rows wrap");
   no(css, /(?<![-\w])(min-)?width\s*:\s*\d{3,}px/, "no fixed wide widths"); eq(css.match(/white-space\s*:\s*nowrap/g).length, 1, "nowrap is used once only, for short numeric table cells"); re(css, /\.mk-t th\.n,\.mk-t td\.n\{[^}]*white-space:nowrap/, "(the right-aligned number columns)");
   re(css, /\.mk-t\{[^}]*width:100%/, "tables fill their card"); re(css, /overflow-wrap:anywhere|word-break/, "long text wraps"); re(css, /\.mk-sec\{[^}]*container-type:inline-size|container-type:inline-size/, "sections are containers");
