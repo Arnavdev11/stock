@@ -84,6 +84,11 @@ def latest(history):
     return best[1] if best else (items[0] if items else None)
 
 
+# Upstox's instrument_type for NSE_EQ is the NSE series. The stock directory admits series EQ and BE (live/classifier.py: eligible_eq, eligible_be), so both
+# are equities the updaters must serve; before, only EQ was read and the 217 BE stocks of the directory were skipped by every Upstox updater.
+EQUITY_SERIES = ("EQ", "BE")
+
+
 def load_instruments():
     """symbol -> {isin, name} from the official Upstox NSE instrument JSON (no token needed)."""
     try:
@@ -97,9 +102,12 @@ def load_instruments():
         rows = json.loads(r.content)
     found = {}
     for x in rows:
-        if (x.get("segment") == "NSE_EQ" and x.get("instrument_type") == "EQ"
+        if (x.get("segment") == "NSE_EQ" and x.get("instrument_type") in EQUITY_SERIES
                 and x.get("trading_symbol") and x.get("isin")):
-            found[x["trading_symbol"].strip().upper()] = {"isin": x["isin"], "name": x.get("name")}
+            sym = x["trading_symbol"].strip().upper()
+            if sym in found and x.get("instrument_type") != "EQ":
+                continue                                    # an EQ row for the same symbol wins over a BE row
+            found[sym] = {"isin": x["isin"], "name": x.get("name")}
     return found
 
 

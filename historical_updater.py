@@ -71,9 +71,12 @@ def load_instrument_file():
         rows = json.loads(r.content)
     eq, idx = {}, []
     for x in rows:
-        if x.get("segment") == "NSE_EQ" and x.get("instrument_type") == "EQ" and x.get("trading_symbol") and x.get("isin"):
-            eq[x["trading_symbol"].strip().upper()] = {"isin": x["isin"], "name": x.get("name"),
-                                                       "instrument_key": x.get("instrument_key") or "NSE_EQ|" + x["isin"]}
+        if x.get("segment") == "NSE_EQ" and x.get("instrument_type") in ("EQ", "BE") and x.get("trading_symbol") and x.get("isin"):   # NSE series EQ and BE (stock directory)
+            sym = x["trading_symbol"].strip().upper()
+            if sym in eq and x.get("instrument_type") != "EQ":
+                continue                                    # an EQ row for the same symbol wins over a BE row
+            eq[sym] = {"isin": x["isin"], "name": x.get("name"),
+                       "instrument_key": x.get("instrument_key") or "NSE_EQ|" + x["isin"]}
         elif x.get("segment") == "NSE_INDEX" and x.get("instrument_key"):
             idx.append({"instrument_key": x["instrument_key"], "name": str(x.get("name") or x.get("trading_symbol") or "")})
     return eq, idx
