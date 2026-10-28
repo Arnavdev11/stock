@@ -264,7 +264,7 @@ class UpdateWorkflowSteps(unittest.TestCase):
         r = self.step("Restore saved data")
         self.assertEqual((r["uses"], r["with"]["key"], r["with"]["restore-keys"], [p for p in r["with"]["path"].split() if p]),
                          ("actions/cache@v4", "nse-data-${{ github.run_id }}", "nse-data-", ["data", "out"]))
-        self.assertEqual(len(self.steps), 28)                           # the 26 steps there were, plus these two
+        self.assertEqual(len(self.steps), 30)                           # the 26 steps there were, these two, and the two coverage-report steps
         self.assertEqual(self.doc["concurrency"], {"group": "stocklens-ledger", "cancel-in-progress": False})
 
     def test_the_site_build_never_copies_from_data_and_never_names_the_marker(self):
