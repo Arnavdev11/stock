@@ -193,13 +193,19 @@ def after_last(out_dir, sym):
 
 
 def record(report, out_dir, old_attempts, today):
-    """The new attempts document: a planned stock that gained no candle is added (or its count raised); one that did is removed; the rest is kept."""
+    """The new attempts document: a planned stock that gained no candle is added (or its count raised); one that did is removed; the rest is kept.
+    A stock that gained nothing because it already holds the newest candle the provider serves (the previous weekday's: Upstox publishes a day's
+    candle only the next morning) is up to date, not failed: it is removed like a success. Before this, every same-day refresh of a fresh stock
+    (TCS, the workflow's test stock, on 2026-10-28) was counted as a failure and, after three, parked as needs_review."""
     failed = {s: dict(v) for s, v in old_attempts.items()}
     lost = []
+    served = HU.expected_latest_day(today - dt.timedelta(days=1)).isoformat()
     for s in report["symbols"]:
         prior, after = report["prior"].get(s), after_last(out_dir, s)
         if after is not None and (prior is None or after > prior):
             failed.pop(s, None)
+        elif after is not None and prior is not None and after == prior and prior >= served:
+            failed.pop(s, None)                                             # already up to date: nothing newer could be fetched
         else:
             lost.append(s)
             failed[s] = {"last": today.isoformat(), "count": min(int(failed.get(s, {}).get("count", 0)) + 1, 1000)}

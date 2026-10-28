@@ -267,6 +267,20 @@ class Record(Tmp):
         self.assertEqual(doc["failed"]["ZZZ"], {"last": "2026-09-30", "count": 5})
         self.assertEqual(H.attempts_problems(doc, "x"), [])
 
+    def test_a_stock_already_holding_the_newest_served_candle_is_not_a_failure(self):
+        out, today = self.t / "out", dt.date(2026, 10, 28)                                   # a Wednesday: the newest served candle is Tuesday's
+        shards.write_shard(self.t, "historical", "TCS", META, entry("TCS", candles(5, start="2026-10-23")))      # ends 2026-10-27
+        shards.write_shard(self.t, "historical", "OLD", META, entry("OLD", candles(5, start="2026-10-16")))      # ends 2026-10-20: behind
+        last = lambda s: json.loads((out / "by_symbol" / "historical" / (s + ".json")).read_text())["stocks"][s]["candles"][-1]["date"]
+        self.assertEqual((last("TCS"), last("OLD")), ("2026-10-27", "2026-10-20"))
+        rep = {"symbols": ["TCS", "OLD"], "prior": {"TCS": "2026-10-27", "OLD": "2026-10-20"}}
+        doc, lost = B.record(rep, out, {"TCS": {"last": "2026-10-27", "count": 1}}, today)
+        self.assertEqual(lost, ["OLD"])
+        self.assertNotIn("TCS", doc["failed"])                                              # up to date: an earlier count is cleared too
+        self.assertEqual(doc["failed"]["OLD"], {"last": "2026-10-28", "count": 1})
+        doc, lost = B.record(rep, out, {}, dt.date(2026, 11, 2))                             # Monday: Friday's candle (10-30) was served, TCS did not get it
+        self.assertEqual(sorted(doc["failed"]), ["OLD", "TCS"])
+
     def test_the_count_is_capped_so_the_file_stays_valid(self):
         rep = {"symbols": ["CCC"], "prior": {"CCC": None}}
         doc, _ = B.record(rep, self.t / "out", {"CCC": {"last": "2026-10-01", "count": 1000}}, TODAY)
