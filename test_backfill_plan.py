@@ -253,6 +253,19 @@ class CostsAndRuns(unittest.TestCase):
         self.assertIn("-le %d" % d["fundamentals"]["ceiling_calls_per_run"], batch)
         self.assertIsInstance(daily, dict)
 
+    def test_seconds_per_call_follow_each_updaters_own_pacing(self):
+        import historical_batch as HB
+        self.assertEqual(B.DATASETS["historical_candles"]["seconds_per_call"], HB.SECONDS_PER_CALL)
+        for name, model in B.DATASETS.items():
+            self.assertGreater(model["seconds_per_call"], 0, name)
+            if name != "historical_candles":
+                self.assertEqual(model["seconds_per_call"], B.SECONDS_PER_CALL, name)
+
+    def test_hours_use_the_datasets_own_seconds_per_call(self):
+        m = {"measurability": "full", "counts": {"valid": 0, "stale": 0, "missing": 10, "invalid": 0, "unverified": 0, "not_applicable": None}}
+        self.assertEqual(B.batch_dataset("historical_candles", m, 10)["calls_nominal"], 60)
+        self.assertEqual(B.DATASETS["historical_candles"]["seconds_per_call"] * 60 / 3600.0, 60 * 2.0 / 3600.0)
+
     def test_per_stock_costs_match_the_updaters(self):
         import fundamentals_updater as FU
         stock = {"isin": "INE000000019"}
