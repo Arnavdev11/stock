@@ -45,5 +45,26 @@ jobs:
         if: hashFiles('test_first_500_priority.py') != ''
         run: python -m unittest test_first_500_priority
 
+      # Each failing or erroring test is also written as an annotation (test id and the last line of its traceback), so a failure can be read from the
+      # check run itself (the Checks API) without downloading the log. The exit status is the suite's own.
       - name: Full offline suite
-        run: python -m unittest discover -p 'test_*.py'
+        run: |
+          set +e
+          python -m unittest discover -p 'test_*.py' > unittest.log 2>&1
+          status=$?
+          cat unittest.log
+          python3 - <<'PY'
+          import re
+          text = open("unittest.log", encoding="utf-8", errors="replace").read()
+          blocks = re.split(r"(?m)^={70}\n", text)
+          for b in blocks:
+              m = re.match(r"(FAIL|ERROR): (\S+) \(([^)]*)\)", b)
+              if not m:
+                  continue
+              parts = b.split("-" * 70)
+              lines = [l for l in (parts[1] if len(parts) > 1 else "").splitlines() if l.strip()]
+              last = lines[-1].strip() if lines else ""
+              msg = ("%s %s: %s" % (m.group(1), m.group(3), last))[:900].replace("%", "%25").replace("\r", "").replace("\n", " ")
+              print("::error title=Failed test::" + msg)
+          PY
+          exit $status
