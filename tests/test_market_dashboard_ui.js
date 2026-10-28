@@ -15,15 +15,19 @@ const main = (html.match(/<main id="market">[\s\S]*?<\/main>/) || [""])[0];
 ok(main.length > 500, "the dashboard <main id=\"market\"> exists");
 
 // ---------- 1. structure: every section, in order, with its heading ----------
-const SECTIONS = [["mk-today", "Market Today"], ["mk-breadth", "Market Breadth"], ["mk-happening", "What's Happening"], ["mk-sectors", "Sector Dashboard"], ["mk-movers", "Top Gainers / Top Losers"], ["mk-trending", "Trending Stocks"], ["mk-52w", "New 52-Week High / Low"], ["mk-volume", "Volume Shockers"], ["mk-hvgain", "High Volume + High Gain"], ["mk-hvloss", "High Volume + Top Losers"], ["mk-relative", "Relative Outperformance / Underperformance"], ["mk-fiidii", "FII / DII Activity"], ["mk-swing", "Swing Market Watch"]];
+// Homepage restructure: Top Gainers / Top Losers, Trending Stocks, New 52-Week High / Low, Volume Shockers, High Volume + High Gain and High Volume + Top Losers are ONE
+// tabbed "Movers" section (every list kept: see section 4), and one "Not yet available" note replaces the empty placeholders.
+const SECTIONS = [["mk-today", "Market Today"], ["mk-breadth", "Market Breadth"], ["mk-happening", "What's Happening"], ["mk-sectors", "Sector Dashboard"], ["mk-movers", "Movers"], ["mk-relative", "Relative Outperformance / Underperformance"], ["mk-fiidii", "FII / DII Activity"], ["mk-swing", "Swing Market Watch"], ["mk-pending", "Not yet available"]];
+const GONE = ["mk-trending", "mk-52w", "mk-volume", "mk-hvgain", "mk-hvloss"];
 { let at = -1;
   for (const [id, h] of SECTIONS) { const m = new RegExp('<section class="mk-sec" id="' + id + '"><h[12][^>]*>' + h.replace(/[/+']/g, "\\$&") + "</h[12]>").exec(main); ok(m, "section " + id + " with heading " + h); ok(m.index > at, id + " is in the specified order"); at = m.index; eq((main.match(new RegExp('id="' + id + '"', "g")) || []).length, 1, id + " exists once"); }
-  eq((main.match(/<section class="mk-sec"/g) || []).length, 13, "exactly the thirteen dashboard sections");
+  eq((main.match(/<section class="mk-sec"/g) || []).length, 9, "exactly the nine dashboard sections");
+  for (const id of GONE) no(main, new RegExp('id="' + id + '"'), id + " is merged into Movers, not a separate section");
   // responsive redesign: All-Time High / Low and Sector Leaders / Laggards are no longer on the home page (their renderers and data are kept and still tested below)
   for (const id of ["mk-ath", "mk-sectorlead"]) no(html.slice(html.indexOf("<body>"), html.indexOf("<script")), new RegExp('id="' + id + '"'), id + " is not on the home page");
   no(main, /All-Time High \/ Low|Sector Leaders \/ Laggards/, "neither heading is on the home page");
   re(main, /<h1 class="mk-h1">Market Today<\/h1>/, "the page's one h1 is Market Today"); eq((html.match(/<h1\b/g) || []).length, 1, "and there is only one h1 in the page");
-  eq((main.match(/<div data-mk>/g) || []).length, 13, "each section has its own content box that the module fills"); }
+  eq((main.match(/<div data-mk>/g) || []).length, 9, "each section has its own content box that the module fills"); }
 // the Fundamental screen is kept, after the dashboard
 ok(html.indexOf('id="screener-sec"') > html.indexOf("</main>"), "the existing Fundamental screen follows the dashboard"); re(html, /<h2 id="screener">Fundamental screen<\/h2>/, "with its heading and id (the Fundamentals nav target)"); re(html, /id="ftabs"/, "and its tabs (the Financials nav target)");
 
@@ -45,11 +49,12 @@ no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /Strong Buy|Bearish|Bullish|Target pri
 global.window = {}; global.document = { getElementById: () => null, addEventListener() {} }; global.fetch = () => { throw new Error("no fetch in this test"); };
 (0, eval)(code);
 const M = window.SLMarket;
-eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "activityOf", "breadth", "cleanCandles", "events", "fiidii", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "perfOf", "relative", "sectionHtml", "sectorsOf", "shockers", "sig3", "stocksOf", "tracked", "vol"], "the public surface is small and fixed");
-{ const OFF_HOME = ["mk-ath", "mk-sectorlead"];   // responsive redesign: removed from the home page; the module keeps their renderers, and paint() skips a section that has no box
+eq(Object.keys(M).sort(), ["HV_GAIN", "IDS", "LARGE_MOVE", "VOL_MULT", "WINDOWS", "activityOf", "breadth", "cleanCandles", "dlab", "events", "fiidii", "fmt", "gainers", "highs", "hvGain", "hvLoss", "indices", "losers", "model", "num", "pct", "pendingOf", "perfOf", "pickFeed", "relative", "sectionHtml", "sectorsOf", "shockers", "sig3", "stocksOf", "tracked", "vol", "whyOf"], "the public test surface");
+{ const OFF_HOME = ["mk-trending", "mk-52w", "mk-ath", "mk-sectorlead"];   // homepage restructure: Trending and New 52-Week High / Low are Movers tabs now; their renderers are kept (the approved Stage 8C edit lives in them)   // responsive redesign: removed from the home page; the module keeps their renderers, and paint() skips a section that has no box
   eq(M.IDS.filter((id) => !OFF_HOME.includes(id)), SECTIONS.map((s) => s[0]), "the module draws exactly the sections in the page, in order");
   eq(M.IDS.filter((id) => OFF_HOME.includes(id)), OFF_HOME, "the two removed sections are the only ids the page has no box for");
-  re(code, /function paint\(id\)\{var box=document\.querySelector&&document\.querySelector\('#'\+id\+' \[data-mk\]'\);if\(box\)box\.innerHTML=/, "paint() writes nothing when a section has no box on the page"); }
+  re(code, /function paint\(id\)\{var box=document\.querySelector&&document\.querySelector\('#'\+id\+' \[data-mk\]'\);if\(!box\)return;/, "paint() writes nothing when a section has no box on the page");
+  re(code, /box\.innerHTML=h;var sec=box\.parentNode;if\(sec&&sec\.id===id\)sec\.hidden=h===""\}/, "and hides a section whose block has nothing to show (it is listed in the note instead)"); }
 eq(M.WINDOWS.map((w) => w.label), ["1D", "1W", "30D", "90D"], "the windows are 1D, 1W, 30D, 90D"); eq([M.LARGE_MOVE, M.VOL_MULT, M.HV_GAIN], [5, 2, 3], "the thresholds");
 no(code, /Upstox|api\.|access_token|Bearer|apikey|api_key|secret|localStorage|sessionStorage|XMLHttpRequest|WebSocket|eval\(|new Function/i, "no API, token, storage, socket or dynamic code in the module");
 eq([...code.matchAll(/getJson\("([^"]*)"\)/g)].map((m) => m[1]), ["out/market_sector_stocks.json", "out/scans.json", "out/historical.json", "out/fiidii_history.json", "out/market_sectors.json", "out/market_activity.json"], "it reads the three files the site already publishes, plus the two sector files that exist on the site only when sector display is approved (otherwise the fetch fails and the blocks say Sector data unavailable)");
@@ -93,7 +98,7 @@ const SCANS = { as_of: "2026-10-05",
   const edge = { volume_gainers: [{ symbol: "E1", change_pct: 3, volume: 10, volume_x_avg: 2 }, { symbol: "E2", change_pct: 2.99, volume: 10, volume_x_avg: 2 }, { symbol: "E3", change_pct: 3, volume: 10, volume_x_avg: 1.99 }], losers: [{ symbol: "E4", change_pct: -1, volume_x_avg: 2 }, { symbol: "E5", change_pct: -1, volume_x_avg: 1.99 }] };
   eq(M.hvGain(edge).map((r) => r.symbol), ["E1"], "thresholds are inclusive at exactly 3% and 2x and exclusive just below"); eq(M.hvLoss(edge).map((r) => r.symbol), ["E4"], "and 2x for losers");
   eq([M.gainers({}), M.losers(null), M.highs(undefined), M.shockers({ volume_gainers: "x" })], [[], [], [], []], "missing or malformed lists are empty, never an error");
-  eq(M.breadth(SCANS), { adv: 1200, dec: 800, unch: 100, highs: 33, a50: 55.5, a200: 61.2 }, "breadth is read as given"); eq(M.breadth({ breadth: { advancing: 1, declining: 2 } }), null, "incomplete breadth: null"); eq(M.breadth({}), null, "no breadth: null"); }
+  eq(M.breadth(SCANS), { adv: 1200, dec: 800, unch: 100, highs: 33, a50: 55.5, a200: 61.2, upper: null, lower: null }, "breadth is read as given (no circuit counts in the scan: null, never 0)"); eq(M.breadth({ breadth: { advancing: 1, declining: 2 } }), null, "incomplete breadth: null"); eq(M.breadth({}), null, "no breadth: null"); }
 
 // --- What's Happening: facts with rules ---
 { const ev = M.events(SCANS), types = (t) => ev.filter((e) => e.type === t).map((e) => e.symbol);
@@ -118,9 +123,9 @@ const model = M.model(SCANS, HIST, FII), empty = M.model(null, null, null);
 const draw = (id, m = model, st = {}) => M.sectionHtml(id, m, st);
 const hrefs = (h) => [...h.matchAll(/<a class="mk-sym" href="([^"]*)">([^<]*)<\/a>/g)].map((m) => [m[1], m[2]]);
 { const t = draw("mk-today");
-  re(t, /Latest available market data: <b>2026-10-05<\/b> · end of day, not live/, "the date of the data is shown and it is not called live"); no(t.replace("not live", ""), /\blive\b/i, "nothing says Live");
+  re(t, /Latest available market data: <b>05 Oct 2026<\/b> · end of day, not live/, "the date of the data is shown and it is not called live"); no(t.replace("not live", ""), /\blive\b/i, "nothing says Live");
   for (const l of ["1D", "1W", "30D", "90D"]) re(t, new RegExp("<small>" + l + "</small>"), "index performance column " + l);
-  re(t, /<b>NIFTY 50<\/b><span class="v">1,099\.00<\/span>/, "NIFTY 50 with its latest value from the data"); re(t, /As of 2026-04-10/, "and the date of that value");
+  re(t, /<b>NIFTY 50<\/b><span class="v">1,099\.00<\/span>/, "NIFTY 50 with its latest value from the data"); re(t, /As of 10 Apr 2026/, "and the date of that value");
   eq((t.match(/class="mk-idx"/g) || []).length, 1, "one index card"); re(draw("mk-today", empty), /Data unavailable/, "no data: an honest unavailable state"); re(draw("mk-today", empty), /Latest available market data: <b>unavailable<\/b>/, "with no invented date"); }
 // ---------- 4a. the NIFTY 50 / SENSEX tabs in Market Today ----------
 { const t = draw("mk-today"), s = draw("mk-today", model, { index: "SENSEX" }), tabs = (h) => [...h.matchAll(/<button type="button" role="tab" data-tab="([^"]*)" aria-selected="(true|false)">/g)].map((m) => [m[1], m[2]]);
@@ -160,17 +165,18 @@ const isLoading = (h) => h.includes(LOADING) && !/class="mk-idx"|Data unavailabl
 const NOTE = (t) => '<p class="mk-sub">' + t + "</p>";
 const N_LOAD = "The SENSEX end-of-day file could not be loaded.", N_BAD = "The SENSEX end-of-day data was not accepted for display.";
 const N_NOREF = "There is no market date on this page to check the SENSEX end-of-day data against.";
-const N_STALE = (d) => "The latest SENSEX end-of-day date (" + d + ") is more than 7 days behind the market data on this page.";
+const DL = (d) => M.dlab(d);   // the page's date format: "05 Oct 2026"
+const N_STALE = (d) => "The latest SENSEX end-of-day date (" + DL(d) + ") is more than 7 days behind the market data on this page.";
 const f2 = (v) => v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 { // approved and valid, same day as NIFTY
   const d = sxDoc(), h = todayO(modelO({ sensex: d }), "SENSEX"), last = d.candles[d.candles.length - 1].close, prev = d.candles[d.candles.length - 2].close;
-  re(h, new RegExp('<b>SENSEX</b><span class="v">' + f2(last).replace(/[.,]/g, "\\$&") + "</span>"), "the card shows SENSEX with ITS OWN last close"); re(h, /As of 2026-10-05/, "and its own latest trading date");
+  re(h, new RegExp('<b>SENSEX</b><span class="v">' + f2(last).replace(/[.,]/g, "\\$&") + "</span>"), "the card shows SENSEX with ITS OWN last close"); re(h, /As of 05 Oct 2026/, "and its own latest trading date");
   for (const l of ["1D", "1W", "30D", "90D"]) re(h, new RegExp("<small>" + l + "</small>"), "performance column " + l); re(h, new RegExp("\\+" + ((last / prev - 1) * 100).toFixed(2).replace(".", "\\.") + "%"), "1D change computed from SENSEX's own previous close");
   no(h, /not the same trading day/, "no date warning when the day matches NIFTY"); eq((h.match(/class="mk-idx"/g) || []).length, 1, "one card"); no(h, /<b>NIFTY 50<\/b>/, "no NIFTY card on the SENSEX tab when the days match"); no(h, /Data unavailable/, "and not the unavailable message");
   eq(MO.sectionHtml("mk-today", modelO({ sensex: d }), { index: "SENSEX" }).includes("end of day, not live"), true, "the status line still says end of day, not live"); }
 { // a date difference from NIFTY is flagged, in both directions, and NIFTY's own date is not borrowed
   for (const end of ["2026-10-02", "2026-10-06"]) { const h = todayO(modelO({ sensex: sxDoc(end) }), "SENSEX");
-    re(h, new RegExp("As of " + end), "SENSEX keeps its own date " + end); re(h, new RegExp("SENSEX is as of <b>" + end + "</b>; NIFTY 50 is as of <b>2026-10-05</b>\\. These are not the same trading day\\."), "and the difference from NIFTY is stated: " + end); } }
+    re(h, new RegExp("As of " + DL(end)), "SENSEX keeps its own date " + end); re(h, new RegExp("SENSEX is as of <b>" + DL(end) + "</b>; NIFTY 50 is as of <b>05 Oct 2026</b>\\. These are not the same trading day\\."), "and the difference from NIFTY is stated: " + end); } }
 { // never NIFTY values: invalid SENSEX data shows the plain message, with the NIFTY model fully loaded
   const m = modelO(), nlast = f2(m.indices[0].perf.last);
   ok(isLoading(todayO(m, "SENSEX")), "no sensex field yet (gate open): the loading line, nothing else"); no(todayO(m, "SENSEX"), new RegExp(nlast.replace(/[.,]/g, "\\$&")), "and no NIFTY value on the SENSEX tab");
@@ -256,47 +262,101 @@ const lazy = (async () => {
     const b = boot(code.replace(GATE_OFF, "var SENSEX_PAGE_APPROVED=true;"), FILES({ "out/sensex_history.json": sxDoc() })); await wait(); b.click("SENSEX", "trending"); await wait(); eq(b.fetched, FOUR, "a SENSEX-named tab in another group does nothing"); }
 })();
 
+const vis = (h) => h.replace(/<details[\s\S]*?<\/details>/g, "");
+const lowStatus = (m) => { const h = (draw("mk-movers", m, { mv: "52w" }).split("New 52-week low</h3>")[1] || ""), x = /<p class="mk-na">Data unavailable<small>([^<]*)<\/small><\/p>/.exec(h); return x ? x[1] : undefined; };          // what is on screen before any "About these figures" is opened
+const pend = (m) => M.pendingOf(m), pendNames = (m) => pend(m).map((x) => x.label), why = (m, l) => (pend(m).find((x) => x.label === l) || {}).why;
+// ---- Market Breadth: the bar states advances / unchanged / declines; the tiles carry only what the bar does not, and never an empty tile
 { const b = draw("mk-breadth");
-  for (const l of ["Advances", "Declines", "Unchanged", "52-week highs", "52-week lows", "Upper circuits", "Lower circuits"]) re(b, new RegExp("<span>" + l + "</span>"), "breadth tile " + l);
-  re(b, /1,200 advances/, "advances from the data"); re(b, /800 declines/, "declines"); re(b, /100 unchanged/, "unchanged"); re(b, /<b>33<\/b><span>52-week highs<\/span>/, "52-week highs from the data");
-  eq((b.match(/Data unavailable/g) || []).length, 3, "52-week lows and both circuits are honestly unavailable (no data for them), not zero");
-  re(b, /<i class="a" style="width:57\.14%"><\/i><i class="u" style="width:4\.76%"><\/i><i class="d" style="width:38\.10%"><\/i>/, "the bar widths are computed from the counts (1200, 100, 800 of 2100)"); re(b, /Above 50-day average<\/span>/, "50-day share"); }
-{ const h = draw("mk-happening");
-  ok(hrefs(h).length >= 8, "the feed has clickable stocks"); for (const [href, s] of hrefs(h)) eq(href, "#stock=" + encodeURIComponent(s), "feed link routes to the Stock Detail: " + s);
-  re(h, /Rules: new 52-week high; move of 5% or more; volume 2x the 20-day average or more/, "the rules are written on the feed"); re(draw("mk-happening", empty), /Data unavailable/, "no scan: unavailable"); }
+  re(b, /1,200 advances/, "advances from the data"); re(b, /800 declines/, "declines"); re(b, /100 unchanged/, "unchanged");
+  for (const l of ["Advances", "Declines", "Unchanged"]) no(b, new RegExp("<span>" + l + "</span>"), "no duplicate tile for " + l + " (it is on the bar)");
+  re(b, /<b>33<\/b><span>52-week highs<\/span>/, "52-week highs from the data"); re(b, /<b>55\.5%<\/b><span>Above 50-day average<\/span>/, "50-day share"); re(b, /<b>61\.2%<\/b><span>Above 200-day average<\/span>/, "200-day share");
+  for (const l of ["52-week lows", "Upper circuits", "Lower circuits"]) no(b, new RegExp(l), "no empty tile for " + l); no(b, /Data unavailable|mk-dash/, "no unavailable placeholder in the block");
+  for (const l of ["Upper circuits", "Lower circuits", "Upper and lower circuits", "circuit"]) { no(M.IDS.map((id) => draw(id)).join("") + draw("mk-pending"), new RegExp(l, "i"), "circuits appear nowhere on the home page while there is no data: " + l); no(draw("mk-pending", empty), new RegExp(l, "i"), "not even with nothing loaded: " + l); }
+  ok(!pendNames(model).some((l) => /circuit/i.test(l)), "and the Not yet available note does not list them");
+  ok(!pendNames(model).includes("52-week lows"), "the 52-week lows are not in the note: their status is shown in the New 52-week low card");
+  { // restorable: the tiles come back by themselves once the scan carries real counts, never as a dash or a placeholder
+    const withC = M.model(Object.assign({}, SCANS, { breadth: Object.assign({}, SCANS.breadth, { upper_circuits: 12, lower_circuits: 0 }) }), HIST, FII), bc = draw("mk-breadth", withC);
+    re(bc, /<b>12<\/b><span>Upper circuits<\/span>/, "upper circuits shown when the data has them"); re(bc, /<b>0<\/b><span>Lower circuits<\/span>/, "a real 0 is shown as 0");
+    for (const bad of [null, "", "n/a", undefined]) { const mb = M.model(Object.assign({}, SCANS, { breadth: Object.assign({}, SCANS.breadth, { upper_circuits: bad, lower_circuits: bad }) }), HIST, FII); no(draw("mk-breadth", mb), /circuit/i, "an unusable value draws nothing: " + JSON.stringify(bad)); } }
+  { // the tiles that remain fill the row: no empty grid cells
+    eq((b.match(/class="mk-tile"/g) || []).length, 3, "three tiles (52-week highs, above 50-day, above 200-day), no gap left by the removed ones"); re(css, /\.mk-tiles\{display:flex;flex-wrap:wrap;[^}]*\}\.mk-tiles>\.mk-tile\{flex:1 1 130px\}/, "tiles wrap and grow: a tile alone on a row fills it, so no empty cell at any width"); }
+  re(b, /<i class="a" style="width:57\.14%"><\/i><i class="u" style="width:4\.76%"><\/i><i class="d" style="width:38\.10%"><\/i>/, "the bar widths are computed from the counts (1200, 100, 800 of 2100)");
+  const nb = draw("mk-breadth", M.model(Object.assign({}, SCANS, { breadth: { advancing: 1, declining: 2, unchanged: 3 } }), HIST, FII)); no(nb, /mk-tile/, "breadth without the extra figures: the bar only, no empty tiles");
+  eq(draw("mk-breadth", empty), "", "no breadth: the block is hidden"); ok(pendNames(empty).includes("Market breadth"), "and named in the note"); }
+// ---- What's Happening: 8 representative events, direction marked, every event behind a working Show all
+{ const h = draw("mk-happening"), all = M.events(SCANS);
+  ok(all.length > 8, "the fixture has more than eight events (" + all.length + ")"); eq((h.match(/<li class="mk-ev/g) || []).length, 8, "eight cards are shown first");
+  const shown = hrefs(h.split('id="mkFeed"')[1].split("</ul>")[0]).map((x) => x[1]); eq(new Set(M.pickFeed(all, 8).map((e) => e.type)).size, new Set(all.map((e) => e.type)).size, "the first eight include every kind of event (representative, not just the first kind)");
+  for (const [href, s] of hrefs(h)) eq(href, "#stock=" + encodeURIComponent(s), "feed link routes to the Stock Detail: " + s); ok(shown.length === 8, "eight links");
+  re(h, /<button type="button" class="mk-more" data-mk-feed="1" aria-controls="mkFeed" aria-expanded="false">Show all \d+ events<\/button>/, "a real button says how many events there are, with aria-expanded");
+  const full = draw("mk-happening", model, { feed: true }); eq((full.match(/<li class="mk-ev/g) || []).length, all.length, "Show all lists every event"); re(full, /aria-expanded="true">Show fewer<\/button>/, "and the button then collapses the list");
+  eq(M.pickFeed(all, 8).map((e) => all.indexOf(e)).every((v, i, a) => !i || a[i - 1] < v), true, "the chosen events keep the scan's order");
+  for (const e of all) { const li = (full.match(new RegExp('<li class="mk-ev[^"]*"><span class="mk-k">(?:<span aria-hidden="true">[^<]*</span>)?' + e.type.replace(/[/+]/g, "\\$&") + '</span><a class="mk-sym" href="#stock=' + e.symbol + '"')) || [""])[0];
+    ok(li, "event drawn: " + e.type + " " + e.symbol); const want = e.type === "New 52-week high" || e.type === "50-day crossed above 200-day" || e.change > 0 ? "mk-ev-up" : e.type === "50-day crossed below 200-day" || e.change < 0 ? "mk-ev-dn" : null;
+    if (want) ok(li.includes(want) && li.includes(want === "mk-ev-up" ? "▲" : "▼"), e.symbol + " " + e.type + ": direction shown by colour AND an arrow (" + want + ")"); }
+  ok(!/Rules:/.test(vis(h)), "the rules are no longer printed under the feed"); re(h, /<details class="src-more mk-about"><summary>About these figures<\/summary><p class="mk-sub">Events: a new 52-week high; a move of 5% or more up or down; volume 2x the 20-day average or more/, "they are in the About these figures disclosure");
+  re(vis(h), /end of day, as of <b>05 Oct 2026<\/b>, not live/, "the data date stays visible");
+  const few = M.model({ gainers: [{ symbol: "G9", price: 1, change_pct: 9 }] }, null, null), fh = draw("mk-happening", few); no(fh, /data-mk-feed/, "eight or fewer events: no Show all button");
+  eq(draw("mk-happening", empty), "", "no scan: hidden"); ok(pendNames(empty).includes("What's Happening"), "and named in the note"); }
+// ---- All-Time High / Low and the sector blocks (sectors are not on the home page while no approved file exists)
 { for (const id of ["mk-ath"]) { const h = draw(id); re(h, /Data unavailable/, id + " says Data unavailable"); re(h, /needs the complete listing history of every stock/, id + " says what is missing: the complete listing history"); no(h, /<table|class="up"|class="dn"|[+-]\d+\.\d\d%/, id + " shows no invented numbers"); no(h, /year/i, id + " never calls a one-year or five-year history all-time"); }
-  for (const id of ["mk-sectors", "mk-sectorlead"]) { const h = draw(id); eq(h, '<p class="mk-na">Sector data unavailable</p>', id + " says exactly Sector data unavailable while no approved sector file is loaded"); } }
-{ const h = draw("mk-movers"), a = h.split("Top Losers")[0], b = h.split("Top Losers")[1];
-  eq(hrefs(a).map((x) => x[1]), ["G3", "G1", "G2"], "Top Gainers rows"); eq(hrefs(b).map((x) => x[1]), ["L1", "L3", "L2"], "Top Losers rows");
-  for (const l of ["Stock", "Price", "Change", "Vol vs avg"]) re(h, new RegExp("<th[^>]*>" + l + "</th>"), "column " + l);
-  re(a, /<td class="n"><span class="up">\+9\.20%<\/span>/, "G3 day change as given, green"); re(b, /<span class="dn">-7\.20%<\/span>/, "L1 as given, red"); re(a, /70\.00/, "LTP from the data");
-  for (const [href, s] of hrefs(h)) eq(href, "#stock=" + s, "stock link routes: " + s); eq(hrefs(draw("mk-movers", M.model({ gainers: Array.from({ length: 30 }, (_, i) => ({ symbol: "S" + i, price: 1, change_pct: 30 - i })) }, null, null))).length, 10, "at most ten rows per list");
-  eq((draw("mk-movers", empty).match(/Data unavailable/g) || []).length, 2, "no scan: both cards unavailable"); }
-{ const h = draw("mk-trending");
-  eq([...h.matchAll(/data-tab="([^"]*)"/g)].map((m) => m[1]), ["movers", "volume", "52w", "active"], "the four trending tabs (no All-Time High / Low tab on the home page)"); for (const l of ["Price Movers", "Volume Shockers", "52W High / Low", "Most Active"]) ok(h.includes(">" + l + "<"), "tab " + l); no(h, /All-Time High \/ Low/, "no All-Time tab button");
-  re(h, /aria-selected="true">Price Movers/, "Price Movers is selected first");
-  eq(hrefs(h).map((x) => x[1]).slice(0, 3), ["G3", "L1", "G1"], "movers are ordered by size of move, up or down");
-  eq(hrefs(draw("mk-trending", model, { trend: "volume" })).map((x) => x[1]), ["V2", "V1"], "Volume Shockers tab"); const w = draw("mk-trending", model, { trend: "52w" }); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], "52W tab lists the highs"); re(w, /New 52-week low<\/h4><p class="mk-na">Data unavailable/, "and says the lows are unavailable");
-  re(draw("mk-trending", model, { trend: "ath" }), /Data unavailable<small>needs the complete listing history of every stock/, "All-Time tab: unavailable, with the accurate reason"); re(draw("mk-trending", model, { trend: "active" }), /Data unavailable<small>the validated market-activity file is not available/, "Most Active tab: unavailable while the validated file is not loaded"); }
-{ const h = draw("mk-52w"); eq(hrefs(h).map((x) => x[1]), ["H2", "H1"], "New 52-Week High table"); re(h, /Prev 52W high/, "with the previous high"); re(h, /New 52-Week Low[\s\S]*Data unavailable/, "52-week low is unavailable, not empty"); }
-{ const v = draw("mk-volume"); eq(hrefs(v).map((x) => x[1]), ["V2", "V1"], "Volume Shockers rows"); re(v, /7\.50 L/, "V1: 3,000,000 / 4 = 7.50 L"); re(v, /1\.50 L/, "V2: 900,000 / 6 = 1.50 L"); re(v, /6\.0x/, "the multiple");
-  eq(hrefs(draw("mk-hvgain")).map((x) => x[1]), ["V1"], "High Volume + High Gain"); eq(hrefs(draw("mk-hvloss")).map((x) => x[1]), ["L1", "L2"], "High Volume + Top Losers");
-  for (const id of ["mk-volume", "mk-hvgain", "mk-hvloss"]) re(draw(id, empty), /Data unavailable/, id + " with no scan: unavailable");
-  eq(M.sig3(150000), 150000, "sig3 keeps three significant digits"); eq(M.sig3(123456), 123000, "and rounds the rest"); eq(M.sig3(0), null, "zero: none"); eq(M.vol(12345678), "1.23 Cr", "crore format"); eq(M.vol(250000), "2.50 L", "lakh format"); eq(M.vol(null), "-", "no volume: a dash"); }
+  eq(draw("mk-sectorlead"), '<p class="mk-na">Sector data unavailable</p>', "Sector Leaders (off the home page) still says exactly Sector data unavailable");
+  eq(draw("mk-sectors"), "", "the Sector Dashboard is hidden while no approved sector file is loaded"); re(why(model, "Sector dashboard"), /not published yet/, "and the note says why"); }
+// ---- Movers: one tabbed block; every former list, column and rule is still reachable
+const mv = (tab, m = model, extra = {}) => draw("mk-movers", m, Object.assign({ mv: tab }, extra));
+{ const h = draw("mk-movers"), tabs = [...h.matchAll(/data-mk-tabs="mv">([\s\S]*?)<\/div>/g)][0][1];
+  eq([...tabs.matchAll(/data-tab="([^"]*)" aria-selected="(true|false)">([^<]*)</g)].map((x) => [x[1], x[2], x[3]]), [["gainers", "true", "Gainers"], ["losers", "false", "Losers"], ["volume", "false", "Volume"], ["52w", "false", "52-week"]], "tabs Gainers, Losers, Volume, 52-week (Most active only when its validated data exists); Gainers first");
+  re(h, /role="tablist" aria-label="Movers" data-mk-tabs="mv"/, "a labelled tab list using the page's tab mechanism");
+  eq(hrefs(h).map((x) => x[1]), ["G3", "G1", "G2"], "Gainers = the former Top Gainers rows"); eq(hrefs(mv("losers")).map((x) => x[1]), ["L1", "L3", "L2"], "Losers = the former Top Losers rows");
+  for (const l of ["Stock", "Price", "Change", "Vol vs avg"]) { re(h, new RegExp("<th[^>]*>" + l + "</th>"), "Gainers column " + l); re(mv("losers"), new RegExp("<th[^>]*>" + l + "</th>"), "Losers column " + l); }
+  re(h, /<td class="n"><span class="up">\+9\.20%<\/span>/, "G3 day change as given, green"); re(mv("losers"), /<span class="dn">−7\.20%<\/span>/, "L1 as given, red, with a true minus sign"); re(h, /70\.00/, "LTP from the data");
+  for (const [href, s] of hrefs(h)) eq(href, "#stock=" + s, "stock link routes: " + s);
+  eq(hrefs(draw("mk-movers", M.model({ gainers: Array.from({ length: 30 }, (_, i) => ({ symbol: "S" + i, price: 1, change_pct: 30 - i })) }, null, null))).length, 10, "at most ten rows per list");
+  re(vis(h), /Latest close vs previous close, NSE scan · end of day, as of <b>05 Oct 2026<\/b>, not live\./, "source and data date are visible");
+  // Volume: the former Volume Shockers, High Volume + High Gain and High Volume + Top Losers, as three views of one tab
+  const vv = (v) => mv("volume", model, v ? { vol: v } : {});
+  eq([...vv().matchAll(/data-mk-tabs="vol">([\s\S]*?)<\/div>/g)][0][1].match(/>([^<]+)<\/button>/g).map((x) => x.slice(1, -9)), ["Price up", "Up 3% or more", "Price down"], "three volume views");
+  eq(hrefs(vv()).map((x) => x[1]), ["V2", "V1"], "Price up = the former Volume Shockers rows"); re(vv(), /7\.50 L/, "V1: 3,000,000 / 4 = 7.50 L"); re(vv(), /1\.50 L/, "V2: 900,000 / 6 = 1.50 L"); re(vv(), /6\.0x/, "the multiple");
+  for (const l of ["Volume", "20D avg", "Multiple", "Change"]) re(vv(), new RegExp("<th[^>]*>" + l + "</th>"), "volume column " + l);
+  eq(hrefs(vv("up3")).map((x) => x[1]), ["V1"], "Up 3% or more = the former High Volume + High Gain"); eq(hrefs(vv("down")).map((x) => x[1]), ["L1", "L2"], "Price down = the former High Volume + Top Losers");
+  re(vv(), /About these figures<\/summary><p class="mk-sub">Volume at least 2x the 20-day average and the price up, by volume multiple\. The 20-day average shown is the volume divided by the multiple, to 3 significant digits\./, "the volume rule is in the disclosure");
+  re(vv("up3"), /a gain of 3% or more, by volume multiple, from the 25 highest volume multiples/, "the high-gain rule"); re(vv("down"), /Among the 25 biggest losers: volume 2x the 20-day average or more/, "the high-volume-loser rule");
+  // 52-week: the former New 52-Week High / Low
+  const w = mv("52w"); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], "52-week = the New 52-Week High table"); re(w, /Prev 52W high/, "with the previous high"); re(w, /<h3>New 52-week low<\/h3><p class="mk-sub">Close below the previous 52-week low<\/p><p class="mk-na">Data unavailable<small>this data is not published yet<\/small><\/p>/, "the New 52-week low card stays visible, with its status, while the lows are not available");
+  eq(mv("bogus"), h, "an unknown tab falls back to Gainers"); eq(mv("active"), h, "Most active without its data is not offered: back to Gainers");
+  eq(draw("mk-movers", empty), "", "no scan: the Movers block is hidden"); ok(pendNames(empty).includes("Movers"), "and named in the note");
+  const onlyLos = M.model({ losers: [{ symbol: "LX", price: 1, change_pct: -3 }] }, null, null); eq([...draw("mk-movers", onlyLos).matchAll(/data-tab="([^"]*)"/g)].map((x) => x[1]), ["losers", "52w"], "a tab with no data is not drawn (52-week stays: it always carries the New 52-week low card and its status)");
+  eq(M.sig3(150000), 150000, "sig3 keeps three significant digits"); eq(M.sig3(123456), 123000, "and rounds the rest"); eq(M.sig3(0), null, "zero: none"); eq(M.vol(12345678), "1.23 Cr", "crore format"); eq(M.vol(250000), "2.50 L", "lakh format"); eq(M.vol(null), "—", "no volume: an em dash"); }
 { const r = draw("mk-relative"); eq([...r.matchAll(/data-tab="([^"]*)"/g)].map((m) => m[1]), ["d1", "w1", "d30", "d90"], "relative tabs 1D/1W/30D/90D"); re(r, /aria-selected="true">1W/, "1W is the default (prioritised)");
   const o = r.split("Relative Underperformance")[0], u = r.split("Relative Underperformance")[1]; eq(hrefs(o).map((x) => x[1]), ["AAA"], "outperformer"); eq(hrefs(u).map((x) => x[1]), ["BBB"], "underperformer");
-  re(r, /pts<\/span>/, "relative shown in percentage points"); re(r, /Covers the 2 tracked stocks, not the whole market/, "the coverage is stated"); re(r, /as of 2026-04-10/, "with the date");
-  re(draw("mk-relative", model, { rel: "d90" }), /aria-selected="true">90D/, "tab selection follows state"); re(draw("mk-relative", empty), /Data unavailable/, "no history: unavailable"); no(draw("mk-relative"), /Buy|Sell|Strong|Bullish|Bearish|Target/, "no advice words"); }
-{ const f = draw("mk-fiidii"); re(f, /NSE figures for <b>05-Oct-2026<\/b> · end of day, ₹ crore/, "the date is labelled"); re(f, /\+600/, "DII net"); re(f, /-400|−400/, "FII net"); re(f, /<span class="up">\+600<\/span>/, "positive green"); re(f, /<span class="dn">-400<\/span>/, "negative red"); re(draw("mk-fiidii", empty), /Data unavailable/, "no file: unavailable"); }
+  re(r, /pts<\/span>/, "relative shown in percentage points"); re(r, /Covers the 2 tracked stocks, not the whole market/, "the coverage is stated"); re(vis(r), /As of <b>10 Apr 2026<\/b>/, "with the date"); re(r, /About these figures[\s\S]*the stock's change minus NIFTY 50's change/, "the calculation is in the disclosure");
+  re(draw("mk-relative", model, { rel: "d90" }), /aria-selected="true">90D/, "tab selection follows state"); eq(draw("mk-relative", empty), "", "no history: hidden"); ok(pendNames(empty).includes("Relative performance against NIFTY 50"), "and named in the note"); no(draw("mk-relative"), /Buy|Sell|Strong|Bullish|Bearish|Target/, "no advice words"); }
+{ const f = draw("mk-fiidii"); re(f, /NSE figures for <b>05 Oct 2026<\/b> · end of day, ₹ crore/, "the date is labelled, as 05 Oct 2026"); re(f, /\+600/, "DII net"); re(f, /<span class="up">\+600<\/span>/, "positive green"); re(f, /<span class="dn">−400<\/span>/, "negative red, with a true minus sign"); eq(draw("mk-fiidii", empty), "", "no file: hidden"); ok(pendNames(empty).includes("FII / DII activity"), "and named in the note"); }
+// ---- Swing Market Watch: the tracked stocks over 1W / 30D / 90D; its 1D cards repeated Movers and are now only there
 { const w = (k) => draw("mk-swing", model, { swing: k });
-  eq([...w("d1").matchAll(/data-tab="([^"]*)"/g)].map((m) => m[1]), ["d1", "w1", "d30", "d90"], "swing tabs 1D/1W/30D/90D");
-  re(w("d1"), /Strongest performers[\s\S]*Weakest performers[\s\S]*New 52-week high[\s\S]*Near 52-week low[\s\S]*High-volume positive performers/, "1D swing cards"); re(w("d1"), /Near 52-week low<\/h3><div class="mk-na|Near 52-week low[\s\S]{0,80}Data unavailable/, "near 52-week low is unavailable, not invented");
-  const s30 = w("d30"); eq(hrefs(s30.split("Weakest performers")[0]).map((x) => x[1]), ["AAA", "BBB"], "30D strongest: tracked stocks, best first"); eq(hrefs(s30.split("Weakest performers")[1].split("Near 52-week high")[0]).map((x) => x[1]), ["BBB", "AAA"], "weakest: worst first"); re(s30, /Tracked stocks \(2\)/, "coverage stated");
-  re(w("d90"), /Highest 3-month returns|Data unavailable/, "90D has its own card or an honest state"); re(draw("mk-swing", empty, { swing: "w1" }), /Data unavailable/, "no history: unavailable"); }
-{ for (const id of M.IDS) { const h = draw(id, empty); ok(h.length > 10, id + " draws something with no data at all"); no(h, /undefined|NaN|\[object|null/, id + " leaks no undefined/NaN/null"); no(draw(id), /undefined|NaN|\[object|>null</, id + " with data: no undefined/NaN/null"); }
+  eq([...w("w1").matchAll(/data-tab="([^"]*)"/g)].map((m) => m[1]), ["w1", "d30", "d90"], "swing tabs 1W/30D/90D (one-day moves are in Movers)"); re(w(), /aria-selected="true">1W/, "1W first"); eq(w("d1"), w("w1"), "an old 1D selection falls back to 1W");
+  re(w("w1"), /One-day moves across the NSE market are under Movers/, "the page says where the 1D lists went");
+  const s30 = w("d30"); eq(hrefs(s30.split("Weakest performers")[0]).map((x) => x[1]), ["AAA", "BBB"], "30D strongest: tracked stocks, best first"); eq(hrefs(s30.split("Weakest performers")[1]).map((x) => x[1]), ["BBB", "AAA"], "weakest: worst first"); re(s30, /Tracked stocks \(2\)/, "coverage stated");
+  no(w("d30"), /Near 52-week|Relative outperformers|Data unavailable/, "no empty Near 52-week cards and no repeat of the Relative section"); ok(pendNames(model).includes("Stocks near their 52-week high or low"), "near-52-week lists are named in the note");
+  re(w("d30"), /<div class="mk-g mk-g2">/, "two cards: two columns, or one on a narrow screen");
+  const tr = M.model(Object.assign({}, SCANS, { relative_strength: [{ symbol: "RS1", return_3m_pct: 40, rs_rating: 99 }] }), HIST, FII); re(draw("mk-swing", tr, { swing: "d90" }), /Highest 3-month returns[\s\S]*RS1/, "90D keeps the scan's highest 3-month returns");
+  eq(draw("mk-swing", empty, { swing: "w1" }), "", "no history: hidden"); ok(pendNames(empty).includes("Swing Market Watch"), "and named in the note"); }
+// ---- the one note
+{ const n = draw("mk-pending"); re(n, /^<div class="mk-pend"><p><b>Not yet available:<\/b> /, "one concise note"); eq((n.match(/<details/g) || []).length, 1, "with its reasons behind one Why disclosure");
+  for (const l of pendNames(model)) ok(n.includes(l), "the note names " + l);
+  eq(pendNames(model), ["Sector dashboard", "Most active stocks", "Stocks near their 52-week high or low"], "with the fixture's data, exactly what has no data and no card of its own is listed (no circuits; the 52-week low card shows its own status)");
+  no(n, /market-activity|validated|\.json|metric_status|Upstox/, "no file names or internal terms in the note");
+  const all = pendNames(empty); for (const l of ["Market breadth", "What's Happening", "Movers", "Relative performance against NIFTY 50", "FII / DII activity", "Swing Market Watch"]) ok(all.includes(l), "with nothing loaded the note names " + l); }
+{ for (const id of M.IDS) { const h = draw(id, empty); ok(typeof h === "string", id + " returns markup or nothing"); no(h, /undefined|NaN|\[object|null/, id + " leaks no undefined/NaN/null"); no(draw(id), /undefined|NaN|\[object|>null</, id + " with data: no undefined/NaN/null"); }
+  ok(draw("mk-today", empty).length > 10, "Market Today always draws its header and an honest state");
   eq(M.sectionHtml("mk-today", { indices: [{ name: "X", perf: null }] }, {}).includes("could not be drawn"), true, "a block that throws shows a plain unavailable note, not a crash"); eq(M.sectionHtml("nope", model, {}).includes("could not be drawn"), true, "an unknown block too");
   const xi = M.model(null, { benchmark: { symbol: "<img src=x>", candles: series(10, (i) => 5 + i) } }, null); no(draw("mk-today", xi), /<img/, "an index name from the data is escaped"); re(draw("mk-today", xi), /&lt;img src=x&gt;/, "(shown as text)");
   const evil = M.model({ gainers: [{ symbol: "A<img>", price: 1, change_pct: 1 }, { symbol: "OK", price: "<b>", change_pct: 1 }] }, null, null); const eh = draw("mk-movers", evil); no(eh, /<img|<b>[^<]*<\/b>>/, "symbols and values are escaped or rejected"); eq(hrefs(eh).map((x) => x[1]), ["OK"], "a symbol with markup is dropped, a valid one stays"); }
+// ---- formatting: one look across the home page
+{ eq([M.dlab("2026-10-27"), M.dlab("05-Oct-2026"), M.dlab("5-Oct-2026"), M.dlab("soon"), M.dlab(null)], ["27 Oct 2026", "05 Oct 2026", "05 Oct 2026", "soon", "—"], "dates read 27 Oct 2026; unreadable text is shown as given; missing is a dash");
+  eq([M.pct(-1.234), M.pct(2), M.pct(0), M.pct(-0.001), M.pct(null)], ["−1.23%", "+2.00%", "0.00%", "0.00%", "—"], "percentages: a true minus sign, a plus for gains, no sign on a value that rounds to zero, a dash when missing");
+  eq([M.fmt(-4240, 0), M.fmt(1234.5), M.fmt(null)], ["−4,240", "1,234.50", "—"], "numbers likewise");
+  const body = M.IDS.map((id) => draw(id)).join(""); no(body.replace(/<[^>]+>/g, " "), /(^|[\s(])-\d/, "no hyphen used as a minus sign anywhere on the home page"); no(body, /\b\d{4}-\d{2}-\d{2}\b/, "no ISO date is shown"); }
 
 // ---------- 5. nothing hardcoded ----------
 { const body = main + css; no(body, /\d{1,3},\d{3}\.\d\d|\b\d{2,}\.\d{2}%/, "no market value or percentage is written in the page's markup or styles");
@@ -317,33 +377,43 @@ const actDoc = (date = ACT_DATE) => ({ schema_version: 1, kind: "market_activity
   high_low_52w: { new_high: { count: 0, rows: [] }, near_high: { count: 0, rows: [] }, new_low: { count: 3, rows: [lowRow(0), lowRow(1), lowRow(2)] }, near_low: { count: 0, rows: [] }, window: "previous 252 trading days; the latest day is not in its own window", low_column_available: true } });
 const mut = (f, date) => { const d = actDoc(date); f(d); return d; };
 const mA = (doc, scans = SCANS) => M.model(scans, HIST, FII, null, null, doc);
-const lowPart = (h) => h.split("New 52-Week Low")[1] || "";
-const actTab = (m) => draw("mk-trending", m, { trend: "active" });
+const w52 = (m) => draw("mk-movers", m, { mv: "52w" }), lowPart = (h) => h.split("New 52-week low")[1] || "";
+const actTab = (m) => draw("mk-movers", m, { mv: "active" }), mvTabs = (m) => [...draw("mk-movers", m).matchAll(/data-mk-tabs="mv">([\s\S]*?)<\/div>/g)][0][1].match(/data-tab="([^"]*)"/g).map((x) => x.slice(10, -1));
+const INTERNAL = /market-activity|validated|\.json|metric_status|freshness|schema/;
 { // a good file draws the lows and Most Active, with the data date and clear ranking labels
   const m = mA(actDoc()); eq(m.act.state, "ok", "a good file is accepted"); eq(M.activityOf(actDoc(), ACT_DATE).state, "ok", "the public checker agrees");
-  const w = draw("mk-52w", m); eq(hrefs(w).map((x) => x[1]), ["H2", "H1", "LW0", "LW1", "LW2"], "New 52-Week High (from the scan, unchanged) then the validated lows");
-  re(w, /Prev 52W low/, "with the previous low"); re(lowPart(w), /<span class="dn">-10\.00%<\/span>/, "and the distance below it, as in the file"); re(lowPart(w), /as of <b>2026-10-05<\/b>, not live/, "the data date is shown and it is not called live");
-  no(lowPart(w), /Data unavailable/, "no unavailable message once the data is accepted"); re(lowPart(w), /252 trading days/, "the rule is written on the card"); re(lowPart(w), /left out, not estimated/, "and the exclusions are stated, not hidden");
-  eq(hrefs(draw("mk-trending", m, { trend: "52w" })).map((x) => x[1]), ["H2", "H1", "LW0", "LW1", "LW2"], "the 52W High / Low tab shows the same lows");
+  eq(mvTabs(m), ["gainers", "losers", "volume", "52w", "active"], "Movers gains its Most active tab once the data exists");
+  const w = w52(m); eq(hrefs(w).map((x) => x[1]), ["H2", "H1", "LW0", "LW1", "LW2"], "52-week tab: New 52-week high (from the scan, unchanged) then the validated lows");
+  re(w, /Prev 52W low/, "with the previous low"); re(lowPart(w), /<span class="dn">−10\.00%<\/span>/, "and the distance below it, as in the file"); re(vis(lowPart(w)), /as of <b>05 Oct 2026<\/b>, not live/, "the data date is shown and it is not called live");
+  no(lowPart(w), /Data unavailable/, "no unavailable message once the data is accepted"); re(lowPart(w), /About these figures[\s\S]*252 trading days/, "the rule is in the disclosure"); re(lowPart(w), /left out, not estimated/, "and the exclusions are stated, not hidden");
+  re(draw("mk-breadth", m), /<b>3<\/b><span>52-week lows<\/span>/, "breadth shows the 52-week low count once it exists"); no(pendNames(m).join(), /52-week lows|Most active/, "and the note no longer lists them");
   const t = actTab(m); eq(hrefs(t).length, 20, "ten rows in each of the two rankings"); eq(hrefs(t).slice(0, 10).map((x) => x[1]), Array.from({ length: 10 }, (_, i) => "A" + i), "by traded value, in the file's order"); eq(hrefs(t).slice(10).map((x) => x[1]), Array.from({ length: 10 }, (_, i) => "Q" + i), "by traded quantity, in the file's order");
   re(t, /By traded value \(turnover, ₹ lakh\)[\s\S]*By traded quantity \(shares\)/, "two clearly labelled rankings"); re(t, /<th class="n">Turnover<\/th>/, "the value column is Turnover"); re(t, /<th class="n">Volume<\/th>/, "the quantity column is Volume"); re(t, /50,000\.00/, "the first turnover as in the file"); re(t, /10\.00 L/, "the first volume as in the file (1,000,000 shares)");
-  re(t, /all 2,100 NSE EQ-series stocks[\s\S]*as of <b>2026-10-05<\/b>, not live/, "the universe size and the data date are on the card"); no(t, /Data unavailable/, "nothing unavailable"); no(t.replace(/not live/g, ""), /\blive\b/i, "never called live");
-  { const low12 = mA(mut((d) => { d.high_low_52w.new_low = { count: 12, rows: Array.from({ length: 12 }, (_, i) => lowRow(i)) }; })); const h = lowPart(draw("mk-52w", low12)); eq(hrefs(h).length, 10, "at most ten lows are listed"); re(h, /Showing 10 of 12\./, "and the card says it is showing part of the list"); }
-  { const none = mA(mut((d) => { d.high_low_52w.new_low = { count: 0, rows: [] }; })); const h = lowPart(draw("mk-52w", none)); re(h, /No new 52-week lows in the latest scan\./, "a good file with no lows says so"); no(h, /Data unavailable|<table/, "and is not shown as unavailable"); } }
-{ // missing, stale, other-day or unusable files: the plain unavailable state with the reason, and no value of any kind
-  const WHY_MISSING = /Data unavailable<small>the validated market-activity file is not available/;
-  for (const [name, m] of [["not loaded", M.model(SCANS, HIST, FII)], ["null (404)", mA(null)], ["false", mA(false)], ["undefined", mA(undefined)]]) { re(lowPart(draw("mk-52w", m)), WHY_MISSING, name + ": lows unavailable"); re(actTab(m), WHY_MISSING, name + ": Most Active unavailable"); no(draw("mk-52w", m) + actTab(m), /LW\d|A0|Q0/, name + ": no value"); }
-  { const m = mA(actDoc("2026-10-02")); eq(m.act.state, "date", "a file from another day is not used"); re(lowPart(draw("mk-52w", m)), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "and the card says both dates"); re(actTab(m), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "Most Active says the same"); no(draw("mk-52w", m) + actTab(m), /LW\d|A0|Q0/, "no value from the other day"); }
-  { const m = M.model(null, HIST, FII, null, null, actDoc()); eq(m.act.state, "date", "no page date to check against: not used"); re(actTab(m), /no market date to check the validated file \(2026-10-05\) against/, "and it says why"); }
-  { const m = mA(mut((d) => { d.freshness_detail.source_is_latest_trading_day = false; })); eq(m.act.state, "stale", "not from the latest trading day: not used"); re(actTab(m), /is not from the latest trading day/, "with the reason"); no(draw("mk-52w", m), /LW\d/, "and no lows"); }
-  { const m = mA(mut((d) => { d.freshness_detail.market_session_open_at_generation = true; })); eq(m.act.state, "stale", "generated while the session was open: not used"); }
-  { const sun = "2026-10-04", m = M.model(Object.assign({}, SCANS, { as_of: sun }), HIST, FII, null, null, actDoc(sun)); eq(m.act.state, "invalid", "a weekend date is refused even when it matches the page"); } }
+  re(t, /all 2,100 NSE EQ-series stocks[\s\S]*as of <b>05 Oct 2026<\/b>, not live/, "the universe size and the data date are on the card"); no(t, /Data unavailable/, "nothing unavailable"); no(t.replace(/not live/g, ""), /\blive\b/i, "never called live");
+  { const low12 = mA(mut((d) => { d.high_low_52w.new_low = { count: 12, rows: Array.from({ length: 12 }, (_, i) => lowRow(i)) }; })); const h = lowPart(w52(low12)); eq(hrefs(h).length, 10, "at most ten lows are listed"); re(h, /Showing 10 of 12\./, "and the card says it is showing part of the list"); }
+  { const none = mA(mut((d) => { d.high_low_52w.new_low = { count: 0, rows: [] }; })); const h = lowPart(w52(none)); re(h, /No new 52-week lows in the latest scan\./, "a good file with no lows says so"); no(h, /Data unavailable|<table/, "and is not shown as unavailable"); } }
+{ // BUG FIX: a file built while the session is open still holds the previous day's complete close (market_data_updater, validate_market_outputs): it is used, never called stale
+  const m = mA(mut((d) => { d.freshness_detail.market_session_open_at_generation = true; d.freshness_detail.generated_at = d.generated_at = "2026-10-06T11:00:00+05:30"; }));
+  eq(m.act.state, "ok", "generated while the session was open: accepted"); eq(hrefs(w52(m)).map((x) => x[1]), ["H2", "H1", "LW0", "LW1", "LW2"], "and the lows are drawn");
+  no(draw("mk-pending", m), /52-week lows|earlier trading day|not from the latest trading day/, "with no stale claim anywhere");
+  re(code, /var activityOfFile=activityOf;\nactivityOf=function\(D,ref\)\{\n  if\(isPlain\(D\)&&isPlain\(D\.freshness_detail\)&&D\.freshness_detail\.market_session_open_at_generation===true\)\{/, "the fix neutralises only the build-time flag, before the approved check (which stays byte-identical)");
+  eq(M.activityOf(mut((d) => { d.freshness_detail.market_session_open_at_generation = true; d.freshness_detail.source_is_latest_trading_day = false; }), ACT_DATE).state, "stale", "a source that is NOT the latest trading day is still stale, whenever it was built");
+  const orig = mut((d) => { d.freshness_detail.market_session_open_at_generation = true; }); M.activityOf(orig, ACT_DATE); eq(orig.freshness_detail.market_session_open_at_generation, true, "the file's own data is never modified (the check uses a copy)"); }
+{ // missing, stale, other-day or unusable files: nothing from the file is drawn; the note says why, in plain words
+  for (const [name, m] of [["not loaded", M.model(SCANS, HIST, FII)], ["null (404)", mA(null)], ["false", mA(false)], ["undefined", mA(undefined)]]) {
+    eq(lowStatus(m), "this data is not published yet", name + ": lows not available, said plainly"); eq(why(m, "Most active stocks"), "this data is not published yet", name + ": Most active too");
+    ok(!mvTabs(m).includes("active"), name + ": no Most active tab"); no(M.IDS.map((id) => draw(id, m)).join(""), /LW\d|>A0<|>Q0</, name + ": no value from the file"); }
+  { const m = mA(actDoc("2026-10-02")); eq(m.act.state, "date", "a file from another day is not used"); eq(lowStatus(m), "this data is dated 02 Oct 2026, but the rest of the page is dated 05 Oct 2026", "the note says both dates"); eq(why(m, "Most active stocks"), lowStatus(m), "Most active says the same"); no(w52(m) + draw("mk-breadth", m), /LW\d|52-week lows/, "no value from another day"); }
+  { const m = M.model(null, HIST, FII, null, null, actDoc()); eq(m.act.state, "date", "no page date to check against: not used"); eq(why(m, "Most active stocks"), "there is no market date on this page to check this data (05 Oct 2026) against", "and it says why"); }
+  { const m = mA(mut((d) => { d.freshness_detail.source_is_latest_trading_day = false; })); eq(m.act.state, "stale", "not from the latest trading day: not used"); eq(lowStatus(m), "the latest data is from an earlier trading day (05 Oct 2026)", "with the reason, in plain words"); no(w52(m), /LW\d/, "and no lows"); }
+  { const sun = "2026-10-04", m = M.model(Object.assign({}, SCANS, { as_of: sun }), HIST, FII, null, null, actDoc(sun)); eq(m.act.state, "invalid", "a weekend date is refused even when it matches the page"); }
+  for (const m of [mA(null), mA(actDoc("2026-10-02")), mA(mut((d) => { d.kind = "x"; })), mA(mut((d) => { d.freshness_detail.source_is_latest_trading_day = false; }))]) no(draw("mk-pending", m), INTERNAL, "no file name or internal term reaches a visitor"); }
 { // every top-level defect refuses the whole file
   const TOP = { "wrong kind": (d) => { d.kind = "market_breadth"; }, "schema 2": (d) => { d.schema_version = 2; }, "schema as text": (d) => { d.schema_version = "1"; }, "freshness LIVE": (d) => { d.freshness = "LIVE"; }, "as_of not a date": (d) => { d.as_of = "05-10-2026"; },
     "label differs": (d) => { d.freshness_detail.label = "EOD as of 2026-10-01"; }, "source_date differs": (d) => { d.freshness_detail.source_date = "2026-10-01"; }, "latest flag as text": (d) => { d.freshness_detail.source_is_latest_trading_day = "true"; }, "no freshness_detail": (d) => { delete d.freshness_detail; },
     "quality failed": (d) => { d.data_quality.status = "fail"; }, "quality has errors": (d) => { d.data_quality.errors = ["x"]; }, "no quality block": (d) => { delete d.data_quality; }, "universe 999": (d) => { d.universe_count = 999; }, "universe as text": (d) => { d.universe_count = "2100"; }, "universe fractional": (d) => { d.universe_count = 2100.5; },
     "no metric_status": (d) => { delete d.metric_status; } };
-  for (const [name, f] of Object.entries(TOP)) { const m = mA(mut(f)); eq(m.act.state, "invalid", name + ": the file is refused"); re(lowPart(draw("mk-52w", m)), /Data unavailable<small>the validated market-activity file was not accepted/, name + ": lows say it was not accepted"); re(actTab(m), /Data unavailable<small>the validated market-activity file was not accepted/, name + ": Most Active says it too"); no(draw("mk-52w", m) + actTab(m), /LW\d|A0|Q0|<table[^>]*>(?:(?!H[12]).)*A0/, name + ": no value drawn"); }
+  for (const [name, f] of Object.entries(TOP)) { const m = mA(mut(f)); eq(m.act.state, "invalid", name + ": the file is refused"); eq(lowStatus(m), "the latest data did not pass its quality checks", name + ": the note says so"); eq(why(m, "Most active stocks"), "the latest data did not pass its quality checks", name + ": for Most active too"); no(w52(m) + draw("mk-breadth", m), /LW\d|52-week lows/, name + ": no value"); }
   for (const bad of [[], "x", 7, true]) eq(mA(bad).act.state, "invalid", "a non-object document is refused: " + JSON.stringify(bad)); }
 { // each block is checked on its own: a bad Most Active list does not take the lows down, and the reverse
   const AC = { "rank gap": (d) => { d.most_active.by_value.rows[1].rank = 3; }, "not sorted": (d) => { d.most_active.by_volume.rows[1].volume = 5e9; }, "duplicate symbol": (d) => { d.most_active.by_value.rows[2].symbol = "A0"; }, "symbol with markup": (d) => { d.most_active.by_value.rows[0].symbol = "A<img src=x>"; },
@@ -351,41 +421,46 @@ const actTab = (m) => draw("mk-trending", m, { trend: "active" });
     "change as text": (d) => { d.most_active.by_value.rows[0].change_pct = "1"; }, "empty list": (d) => { d.most_active.by_volume.rows = []; }, "rows not a list": (d) => { d.most_active.by_value.rows = {}; }, "wrong ranking label": (d) => { d.most_active.by_value.ranked_by = "name"; }, "no by_volume": (d) => { delete d.most_active.by_volume; },
     "no most_active": (d) => { delete d.most_active; }, "status unavailable": (d) => { d.metric_status.most_active = "unavailable"; }, "status missing": (d) => { delete d.metric_status.most_active; } };
   for (const [name, f] of Object.entries(AC)) { const m = mA(mut(f)); eq(m.act.state, "ok", name + ": the file itself is fine"); eq(m.act.active, null, name + ": Most Active is refused"); ok(m.act.low !== null, name + ": the lows are still accepted");
-    const t = actTab(m); re(t, /Data unavailable<small>the (file does not mark the most-active lists as safe to use|most-active lists in the file were not accepted)/, name + ": the card says why"); no(t, /<table|A0|Q0/, name + ": and shows no partial list"); re(draw("mk-52w", m), /LW0/, name + ": the lows are still drawn"); }
+    re(why(m, "Most active stocks"), /^the most-active lists (are not marked safe to use|did not pass their checks)$/, name + ": the note says why"); ok(!mvTabs(m).includes("active"), name + ": no Most active tab, so no partial list"); re(w52(m), /LW0/, name + ": the lows are still drawn"); }
   const LO = { "close not below prior": (d) => { d.high_low_52w.new_low.rows[0].close = 100; d.high_low_52w.new_low.rows[0].distance_pct = 0; }, "close above prior": (d) => { d.high_low_52w.new_low.rows[0].close = 101; }, "state near_low": (d) => { d.high_low_52w.new_low.rows[0].state = "near_low"; },
     "distance positive": (d) => { d.high_low_52w.new_low.rows[0].distance_pct = 5; }, "distance inconsistent": (d) => { d.high_low_52w.new_low.rows[0].distance_pct = -9; }, "count below rows": (d) => { d.high_low_52w.new_low.count = 2; }, "rows without count": (d) => { d.high_low_52w.new_low.rows = []; d.high_low_52w.new_low.count = 5; },
     "rank gap": (d) => { d.high_low_52w.new_low.rows[1].rank = 5; }, "duplicate symbol": (d) => { d.high_low_52w.new_low.rows[1].symbol = "LW0"; }, "symbol with markup": (d) => { d.high_low_52w.new_low.rows[0].symbol = "<img src=x>"; }, "prior date bad": (d) => { d.high_low_52w.new_low.rows[0].prior_low_date = "soon"; },
     "prior as text": (d) => { d.high_low_52w.new_low.rows[0].prior_low_52w = "100"; }, "no prior": (d) => { delete d.high_low_52w.new_low.rows[0].prior_low_52w; }, "count as text": (d) => { d.high_low_52w.new_low.count = "3"; }, "no new_low block": (d) => { delete d.high_low_52w.new_low; }, "no high_low block": (d) => { delete d.high_low_52w; },
     "low column missing": (d) => { d.high_low_52w.low_column_available = false; }, "status missing": (d) => { delete d.metric_status.new_52w_low; }, "status unknown": (d) => { d.metric_status.new_52w_low = "maybe"; } };
   for (const [name, f] of Object.entries(LO)) { const m = mA(mut(f)); eq(m.act.state, "ok", name + ": the file itself is fine"); eq(m.act.low, null, name + ": the lows are refused"); ok(m.act.active !== null, name + ": Most Active is still accepted");
-    const w = draw("mk-52w", m); re(lowPart(w), /Data unavailable<small>/, name + ": the low card says unavailable"); no(lowPart(w), /LW\d|<table|-10\.00%/, name + ": and shows no partial list"); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], name + ": the high card (from the scan) is untouched"); re(actTab(m), /A0/, name + ": Most Active is still drawn"); }
-  for (const [st, why] of [["insufficient_history", /not enough price history to find 52-week lows/], ["requires_adjustment", /suspected corporate action are left out/], ["unavailable", /do not carry the daily low prices/]]) { const m = mA(mut((d) => { d.metric_status.new_52w_low = st; })); re(lowPart(draw("mk-52w", m)), why, "status " + st + " keeps its own plain reason"); no(lowPart(draw("mk-52w", m)), /LW\d/, "and no low is drawn for " + st); } }
-{ // nothing else on the page moves: every other block is byte-identical with or without the file, and the 52-week high card is the scan's
+    const w = w52(m); ok(typeof lowStatus(m) === "string" && lowStatus(m).length > 10, name + ": the note says why the lows are missing"); no(lowPart(w), /LW\d|<table|−10\.00%/, name + ": and no partial list is shown"); eq(hrefs(w).map((x) => x[1]), ["H2", "H1"], name + ": the 52-week high table (from the scan) is untouched"); re(actTab(m), /A0/, name + ": Most Active is still drawn"); }
+  for (const [st, w] of [["insufficient_history", "there is not enough price history yet"], ["requires_adjustment", "stocks with a suspected split, bonus or rights issue are left out, and none can be ranked safely"], ["unavailable", "the daily low prices needed are not in the source data yet"]]) { const m = mA(mut((d) => { d.metric_status.new_52w_low = st; })); eq(lowStatus(m), w, "status " + st + " keeps its own plain reason"); no(w52(m), /LW\d/, "and draws no lows: " + st); } }
+{ // nothing else on the page moves: blocks that do not use the file are byte-identical with or without it, and the 52-week high table is the scan's
   const w0 = M.model(SCANS, HIST, FII), w1 = mA(actDoc());
-  for (const id of M.IDS.filter((x) => x !== "mk-52w")) eq(draw(id, w1), draw(id, w0), id + ": unchanged by the validated file"); for (const tab of ["movers", "volume", "ath"]) eq(draw("mk-trending", w1, { trend: tab }), draw("mk-trending", w0, { trend: tab }), "trending tab " + tab + ": unchanged");
-  eq(draw("mk-52w", w1).split("New 52-Week Low")[0], draw("mk-52w", w0).split("New 52-Week Low")[0], "the New 52-Week High card is the scan's, unchanged");
+  for (const id of M.IDS.filter((x) => !["mk-movers", "mk-breadth", "mk-pending", "mk-trending", "mk-52w"].includes(x))) eq(draw(id, w1), draw(id, w0), id + ": unchanged by the validated file");
+  for (const tab of ["gainers", "losers", "volume"]) eq(draw("mk-movers", w1, { mv: tab }).replace(/<div class="tabs[\s\S]*?<\/div>/, ""), draw("mk-movers", w0, { mv: tab }).replace(/<div class="tabs[\s\S]*?<\/div>/, ""), "Movers " + tab + ": unchanged (only the tab list gains Most active)");
+  const hiCard = (h) => (/<div class="mk-card"><h3>New 52-week high<\/h3>[\s\S]*?<\/div>/.exec(h) || [""])[0]; ok(hiCard(w52(w0)).length > 200, "the high card is found");
+  eq(hiCard(w52(w1)), hiCard(w52(w0)), "the New 52-week high table is the scan's, unchanged");
   eq(w1.highs, w0.highs, "highs come from scans.json only"); eq([w1.gainers, w1.losers, w1.shockers], [w0.gainers, w0.losers, w0.shockers], "movers and shockers come from scans.json only"); }
-{ // All-Time High / Low: accurate wording, never unlocked by any file, never a calculation
+{ // All-Time High / Low: accurate wording, never unlocked by any file, never a calculation (off the home page; the renderer is kept)
   const ATH = /Data unavailable<small>needs the complete listing history of every stock; the saved price history is partial \(a limited period, for only some stocks\), so no all-time high or low is shown<\/small>/;
-  for (const m of [model, empty, mA(actDoc()), mA(null)]) { const h = draw("mk-ath", m); eq((h.match(new RegExp(ATH.source, "g")) || []).length, 2, "both All-Time cards carry the accurate wording"); re(draw("mk-trending", m, { trend: "ath" }), ATH, "and so does the All-Time tab"); no(h, /<table|class="up"|class="dn"|\d{2,}\.\d\d/, "no all-time figure is invented"); }
+  for (const m of [model, empty, mA(actDoc()), mA(null)]) { const h = draw("mk-ath", m); eq((h.match(new RegExp(ATH.source, "g")) || []).length, 2, "both All-Time cards carry the accurate wording"); no(h, /<table|class="up"|class="dn"|\d{2,}\.\d\d/, "no all-time figure is invented"); }
   no(code, /current data holds about one year|needs the full price history of every stock/, "the misleading messages are gone from the module"); no(code.replace(/\/\*[\s\S]*?\*\//g, ""), /all-time[^"']{0,40}(five|5|one|1)[- ]year|(five|5|one|1)[- ]year[^"']{0,40}all-time/i, "no one-year or five-year history is called all-time"); }
 { // the module reads the new file only through getJson, and nothing else was added
   eq((code.match(/getJson\("out\/market_activity\.json"\)/g) || []).length, 1, "exactly one read of out/market_activity.json"); eq((code.match(/\bfetch\(/g) || []).length, 1, "still a single fetch call (inside getJson)");
-  eq(code.replace(/\/\*[\s\S]*?\*\//g, "").match(/["']out\/[^"']*["']/g).filter((x, i, a) => a.indexOf(x) === i).sort(), ['"out/fiidii_history.json"', '"out/historical.json"', '"out/market_activity.json"', '"out/market_sector_stocks.json"', '"out/market_sectors.json"', '"out/scans.json"', '"out/sensex_history.json"'].sort(), "the module names exactly these files: the five it reads at load, the sector-stocks file it reads on a click, and the SENSEX file that only its own closed gate may request; no other");
+  eq(code.replace(/\/\*[\s\S]*?\*\//g, "").match(/["']out\/[^"']*["']/g).filter((x, i, a) => a.indexOf(x) === i).sort(), ['"out/fiidii_history.json"', '"out/historical.json"', '"out/market_activity.json"', '"out/market_sector_stocks.json"', '"out/market_sectors.json"', '"out/scans.json"', '"out/sensex_history.json"'].sort(), "the module names exactly these files");
   re(html, /var SENSEX_PAGE_APPROVED=false;/, "the SENSEX page gate is still closed"); }
 const actLazy = (async () => {
   const wait = async () => { for (let i = 0; i < 8; i++) await settle(); };
   { const b = boot(code, FILES({ "out/market_activity.json": actDoc() })); await wait(); eq(b.fetched.filter((u) => u === "out/market_activity.json").length, 1, "the page requests the validated file once");
-    re(b.boxes["mk-52w"].innerHTML, /LW0[\s\S]*LW1[\s\S]*LW2/, "and draws the lows from it"); const a = b.boxes["mk-trending"].innerHTML; no(a, /A0/, "the trending box still opens on Price Movers"); re(b.boxes["mk-movers"].innerHTML, /G3/, "other blocks are drawn as before"); }
+    re(b.boxes["mk-breadth"].innerHTML, /<b>3<\/b><span>52-week lows<\/span>/, "and uses it (the 52-week low count)"); re(b.boxes["mk-movers"].innerHTML, /data-tab="active"/, "Movers offers Most active"); re(b.boxes["mk-movers"].innerHTML, /G3/, "while opening on Gainers, as before"); no(b.boxes["mk-pending"].innerHTML, /52-week lows/, "and the note no longer lists the lows"); }
   { const b = boot(code, FILES({})); await wait(); eq(b.fetched.filter((u) => u === "out/market_activity.json").length, 1, "a missing file is requested once");
-    re(lowPart(b.boxes["mk-52w"].innerHTML), /the validated market-activity file is not available/, "and the lows say it is not available"); re(b.boxes["mk-movers"].innerHTML, /G3/, "while every other block still draws"); re(b.boxes["mk-52w"].innerHTML, /H2[\s\S]*H1/, "including the New 52-Week High card"); }
-  { const b = boot(code, FILES({ "out/market_activity.json": { kind: "market_activity", bogus: true } })); await wait(); re(lowPart(b.boxes["mk-52w"].innerHTML), /was not accepted/, "an unusable file is reported as not accepted"); no(b.boxes["mk-52w"].innerHTML, /LW\d/, "and nothing from it is drawn"); }
-  { const b = boot(code, FILES({ "out/market_activity.json": actDoc("2026-10-02") })); await wait(); re(lowPart(b.boxes["mk-52w"].innerHTML), /dated 2026-10-02, but the market data on this page is dated 2026-10-05/, "a file from another day is reported, not drawn"); no(b.boxes["mk-52w"].innerHTML, /LW\d/, "with no values"); } })();
+    re(b.boxes["mk-pending"].innerHTML, /<b>Most active stocks<\/b>: this data is not published yet\./, "and the note says Most active is not published yet"); no(b.boxes["mk-pending"].innerHTML, /52-week lows|circuit/i, "with no circuits and no repeat of the 52-week low status"); re(b.boxes["mk-movers"].innerHTML, /G3/, "while every other block still draws"); no(b.boxes["mk-movers"].innerHTML, /data-tab="active"/, "with no Most active tab"); }
+  { const b = boot(code, FILES({ "out/market_activity.json": { kind: "market_activity", bogus: true } })); await wait(); re(b.boxes["mk-pending"].innerHTML, /did not pass its quality checks/, "an unusable file is reported as failing its checks"); no(Object.values(b.boxes).map((x) => x.innerHTML).join(""), /LW\d/, "and nothing from it is drawn"); }
+  { const b = boot(code, FILES({ "out/market_activity.json": actDoc("2026-10-02") })); await wait(); re(b.boxes["mk-pending"].innerHTML, /dated 02 Oct 2026, but the rest of the page is dated 05 Oct 2026/, "a file from another day is reported, not drawn"); no(Object.values(b.boxes).map((x) => x.innerHTML).join(""), /LW\d/, "with no values"); } })();
 
 // ---------- 6. responsive: the dashboard adapts to its own width (no media rules; the older tests pin those) ----------
 { re(css, /\.mk-sec\{/, "section style"); no(css, /@media/, "no new media rules"); re(css, /@container \(max-width:330px\)\{\.mk-t \.c3\{display:none\}\}/, "narrow cards drop their optional column"); re(css, /@container \(max-width:340px\)\{\.mk-perf\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/, "narrow index card (under 340px, i.e. phones up to about 390px): the performance grid goes to two columns, so a value like -0.71% never breaks before its %, even in a face 16% wider than the fallback");
   re(css, /\.mk-g\{[^}]*repeat\(auto-fit,minmax\(min\(/, "grids use auto-fit with a min() so a column is never wider than the screen"); re(css, /\.mk-2,\.mk-g\{[^}]*repeat\(auto-fit,minmax\(min\(/, "the two-card rows wrap");
-  no(css, /(?<![-\w])(min-)?width\s*:\s*\d{3,}px/, "no fixed wide widths"); eq(css.match(/white-space\s*:\s*nowrap/g).length, 1, "nowrap is used once only, for short numeric table cells"); re(css, /\.mk-t th\.n,\.mk-t td\.n\{[^}]*white-space:nowrap/, "(the right-aligned number columns)");
+  no(css, /(?<![-\w])(min-)?width\s*:\s*\d{3,}px/, "no fixed wide widths"); eq(css.match(/white-space\s*:\s*nowrap/g).length, 3, "nowrap is used three times only: short numeric cells, stock symbols in tables, and the visually hidden heading"); re(css, /\.mk-t th\.n,\.mk-t td\.n\{[^}]*white-space:nowrap/, "(the right-aligned number columns)");
+  re(css, /\.mk-t td\.s\{overflow-wrap:normal\}\.mk-t \.mk-sym\{white-space:nowrap\}/, "BUG FIX: a stock symbol is never broken across lines (it was: ONESOURC / E)"); re(css, /\.mk-card\{overflow-x:auto\}/, "a table wider than a very narrow card scrolls inside its card instead");
+  re(css, /\.mk-g\{grid-template-columns:repeat\(auto-fit,minmax\(min\(340px,100%\),1fr\)\)\}/, "Swing cards are at least 340px wide: two columns on a tablet, one on a phone, three only where three fit");
+  re(css, /\.mk-vh\{position:absolute!important;width:1px;height:1px;[^}]*clip:rect\(0 0 0 0\)/, "the note's heading is for screen readers only");
   re(css, /\.mk-t\{[^}]*width:100%/, "tables fill their card"); re(css, /overflow-wrap:anywhere|word-break/, "long text wraps"); re(css, /\.mk-sec\{[^}]*container-type:inline-size|container-type:inline-size/, "sections are containers");
   eq(css.match(/\.mk-[a-z0-9-]+/g).filter((c, i, a) => a.indexOf(c) === i).length > 20, true, "the dashboard has its own namespaced classes (mk-*)"); }
 
@@ -401,11 +476,11 @@ const actLazy = (async () => {
   const view = (end, scans = SCANS, tab) => MC.sectionHtml("mk-today", MC.model(scans, HN(end), FII), tab ? { index: tab } : {});
   const money = (v) => Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fresh = view("2026-10-05");
-  no(fresh, /mk-stale|Stale:/, "NIFTY on the same day as the scans: no stale notice"); re(fresh, /<p class="mk-sub">As of 2026-10-05<\/p>/, "and its own date is shown");
+  no(fresh, /mk-stale|Stale:/, "NIFTY on the same day as the scans: no stale notice"); re(fresh, /<p class="mk-sub">As of 05 Oct 2026<\/p>/, "and its own date is shown");
   no(view("2026-10-06"), /mk-stale|Stale:/, "NIFTY newer than the scans: no stale notice");
   const old = view("2026-10-02");
-  re(old, /<p class="mk-sub">As of 2026-10-02<\/p>/, "an older NIFTY keeps showing its own real date");
-  re(old, /<p class="mk-sub mk-stale">Stale: this NIFTY 50 value is from <b>2026-10-02<\/b>, older than the market data dated <b>2026-10-05<\/b>\. It is the last value available and is not current\.<\/p>/, "and a stale notice naming both dates");
+  re(old, /<p class="mk-sub">As of 02 Oct 2026<\/p>/, "an older NIFTY keeps showing its own real date");
+  re(old, /<p class="mk-sub mk-stale">Stale: this NIFTY 50 value is from <b>02 Oct 2026<\/b>, older than the market data dated <b>05 Oct 2026<\/b>\. It is the last value available and is not current\.<\/p>/, "and a stale notice naming both dates");
   const lastClose = sxCandles("2026-10-02", 120, 22000).slice(-1)[0].close;
   ok(old.includes(money(lastClose)), "the value shown is still that day's close (nothing is replaced, estimated or relabelled)"); eq((old.match(/Stale:/g) || []).length, 1, "one notice only");
   no(old, /\bLIVE\b|Live\b/, "nothing is called live"); re(old, /end of day, not live/, "the status line still says end of day, not live");
@@ -416,8 +491,8 @@ const actLazy = (async () => {
   no(MC.sectionHtml("mk-today", MC.model(SCANS, HN("2026-10-02"), FII), { index: "SENSEX" }), /Stale: this NIFTY 50/, "the SENSEX tab never carries the NIFTY notice");
   // the 9 -> 12 October incident: history stuck on Friday while the scans are Monday's; once the history advances the notice goes and the shown date is the last candle's
   { const sc = Object.assign({}, SCANS, { as_of: "2026-10-12" }), stuck = view("2026-10-09", sc), moved = view("2026-10-12", sc);
-    re(stuck, /Stale: this NIFTY 50 value is from <b>2026-10-09<\/b>, older than the market data dated <b>2026-10-12<\/b>/, "stuck on 9 Oct against 12 Oct scans: labelled stale with both dates");
-    no(moved, /mk-stale|Stale:/, "advanced to 12 Oct: no stale notice"); re(moved, /<p class="mk-sub">As of 2026-10-12<\/p>/, "and 12 Oct, the last candle, is the date shown");
+    re(stuck, /Stale: this NIFTY 50 value is from <b>09 Oct 2026<\/b>, older than the market data dated <b>12 Oct 2026<\/b>/, "stuck on 9 Oct against 12 Oct scans: labelled stale with both dates");
+    no(moved, /mk-stale|Stale:/, "advanced to 12 Oct: no stale notice"); re(moved, /<p class="mk-sub">As of 12 Oct 2026<\/p>/, "and 12 Oct, the last candle, is the date shown");
     eq(MC.indices(HN("2026-10-12"))[0].perf.date, "2026-10-12", "the benchmark series ends on the displayed date"); }
   // the shown value and date come from the same candle as the benchmark's last entry
   const ix = MC.indices(HN("2026-10-02")); eq([ix.length, ix[0].perf.date, ix[0].perf.last], [1, "2026-10-02", lastClose], "indices(): last candle date and close agree with what is displayed"); }

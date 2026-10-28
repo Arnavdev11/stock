@@ -1,6 +1,7 @@
 // Run: node tests/test_sector_ui.js   (no network, no browser)
 // Sector Architecture Phase 1: the Sector Dashboard blocks draw ONLY an approved, available, valid sector document.
-// Anything else (no file, not approved, not available, damaged, non-finite) must show exactly "Sector data unavailable".
+// Anything else (no file, not approved, not available, damaged, non-finite) must show exactly "Sector data unavailable" (Sector Leaders / Laggards), or, for the home page's
+// Sector Dashboard, nothing at all: the section is hidden and "Sector dashboard" is listed once in the "Not yet available" note (no empty box, no figure).
 const fs = require("fs"), assert = require("assert");
 const html = fs.readFileSync(__dirname + "/../index.html", "utf8");
 let checks = 0;
@@ -19,28 +20,32 @@ const good = () => ({ kind: "sectors", public_display_approved: true, available:
   laggards: [{ key: "a", label: "Alpha", median_1d_pct: -0.8, stock_count: 8 }] });
 const m0 = M.model(null, null, null), ms = (d, y) => M.model(null, null, null, d, y);
 
-// 1. nothing loaded / not approved / not available / damaged -> exactly the unavailable text
+// 1. nothing loaded / not approved / not available / damaged -> exactly the unavailable text (Leaders / Laggards), or hidden and named in the note (Sector Dashboard)
+const pendingNames = (m) => M.pendingOf(m).map((x) => x.label);
 for (const id of ["mk-sectors", "mk-sectorlead"]) {
-  eq(M.sectionHtml(id, m0, {}), UNAV, id + ": no file");
-  eq(M.sectionHtml(id, ms(null), {}), UNAV, id + ": null file");
+  const UN = id === "mk-sectors" ? "" : UNAV;
+  const NA = (m, what) => { eq(M.sectionHtml(id, m, {}), UN, id + ": " + what); if (id === "mk-sectors") ok(pendingNames(m).includes("Sector dashboard"), "the note lists the Sector dashboard: " + what); };
+  NA(m0, "no file");
+  NA(ms(null), "null file");
   for (const [name, mut] of [["not approved", (d) => { d.public_display_approved = false; }], ["approval missing", (d) => { delete d.public_display_approved; }], ["approval is the text true", (d) => { d.public_display_approved = "true"; }],
     ["not available", (d) => { d.available = false; }], ["available is a string", (d) => { d.available = "true"; }], ["wrong kind", (d) => { d.kind = "sector_stocks"; }], ["bad date", (d) => { d.as_of = "soon"; }],
     ["no sectors list", (d) => { d.sectors = null; }], ["a median is missing", (d) => { d.sectors[0].median_1d_pct = null; }], ["a count is text", (d) => { d.sectors[1].advances = "many"; }],
     ["infinite median", (d) => { d.sectors[0].median_1d_pct = Infinity; }], ["NaN count", (d) => { d.sectors[2].stock_count = NaN; }], ["a sector without a label", (d) => { delete d.sectors[0].label; }],
     ["no eligible sector", (d) => { d.sectors.forEach((s) => { s.eligible = false; }); }]]) {
-    const d = good(); mut(d); eq(M.sectionHtml(id, ms(d), {}), UNAV, id + ": " + name);
+    const d = good(); mut(d); NA(ms(d), name);
   }
 }
+ok(!pendingNames(ms(good())).includes("Sector dashboard"), "with an approved document the note does not list the Sector dashboard");
 eq(M.sectorsOf(undefined), null, "undefined"); eq(M.sectorsOf("x"), null, "a string"); eq(M.sectorsOf([]), null, "an array");
 
 // 2. an approved, available document draws the table, counts, performance, advances/declines, Top 5 / Bottom 5
 const m = ms(good()), t = M.sectionHtml("mk-sectors", m, {});
-re(t, /Sector performance, end of day, <b>2026-10-05<\/b>/, "labelled end of day, with its date");
+re(t, /Sector performance, end of day, <b>05 Oct 2026<\/b>/, "labelled end of day, with its date");
 re(t, /equal-weight median/, "the method is stated");
 ok(t.indexOf("Alpha") < t.indexOf("Bravo") && t.indexOf("Bravo") < t.indexOf("Charlie"), "rows sorted by label, deterministic");
 no(t, /Delta/, "an ineligible sector is not shown with a headline");
 re(t, /data-mk-sector="b"/, "each row can open its stocks (drill-down hook)");
-re(t, /<span class="up">\+1\.50%<\/span>/, "positive median is green"); re(t, /<span class="dn">-0\.80%<\/span>/, "negative median is red");
+re(t, /<span class="up">\+1\.50%<\/span>/, "positive median is green"); re(t, /<span class="dn">−0\.80%<\/span>/, "negative median is red, with a true minus sign");
 for (const h of ["Sector", "Stocks", "Median 1D", "Advances", "Declines", "Breadth"]) re(t, new RegExp("<th[^>]*>" + h + "</th>"), "column " + h);
 const l = M.sectionHtml("mk-sectorlead", m, {});
 re(l, /Sector Leaders[\s\S]*Bravo[\s\S]*Charlie[\s\S]*Sector Laggards[\s\S]*Alpha/, "leaders then laggards");

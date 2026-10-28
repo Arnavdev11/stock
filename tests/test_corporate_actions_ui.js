@@ -48,7 +48,7 @@ re(un(h), /close of 27 Oct 2026 \(₹250\.00\), the last close on file, not a li
 eq((h.match(/<tr data-ca-type/g) || []).length, 5, "every event listed");
 re(un(h), /14 Aug 2026 Dividend ₹5\.50 \(Final\) 14 Aug 2026/, "dividend row");
 re(un(h), /28 Oct 2024 Bonus 1:1 —/, "bonus row: ratio, unknown record date is a dash");
-re(un(h), /2 Jan 2023 Split 10 : 2/, "split row");
+re(un(h), /02 Jan 2023 Split 10 : 2/, "split row");
 re(un(h), /Fetched 28 Oct 2026/, "fetch date shown");
 
 // yield withheld, each with its reason, never 0
@@ -60,7 +60,7 @@ split.stocks.AAA.events.unshift({ type: "split", name: "Stock Split", ex_date: "
 re(un(C.sectionHtml("AAA", split, prices("AAA", 250))), /a split or bonus went ex in the same 12 months/, "mixed per-share bases");
 const c = un(C.sectionHtml("CCC", DOCS.CCC, prices("CCC", 100)));
 re(c, /a dividend in the last 12 months has no amount in the source/, "missing amount: no sum");
-re(c, /1 Oct 2026 Dividend — /, "missing amount shows a dash");
+re(c, /01 Oct 2026 Dividend — /, "missing amount shows a dash");
 no(C.sectionHtml("CCC", DOCS.CCC, prices("CCC", 100)), /₹0\.00/, "never zero");
 
 // BBB: a valid empty answer is said as such
