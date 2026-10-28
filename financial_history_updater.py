@@ -174,6 +174,32 @@ def period_values(history):
     return vals, infos
 
 
+def _month_index(info):
+    return info["fy"] * 12 + info["month"]
+
+
+def year_end_change(infos):   # infos: period_info of every period in the response (None for unparsable labels)
+    """The fiscal years to keep when a company CHANGED its fiscal year-end once, else None (the response stays rejected as mixed_month_ends).
+    Accepted only for this exact shape, oldest to newest: a run of periods ending in month A, each 12 months after the one before, then a run
+    ending in month B, also 12 months apart. The first B period is the transition period (not 12 months long: e.g. 9 or 15 months), so it is
+    dropped, and so is every A period (a ledger holds one fiscal year-end month). What is kept are the B periods from the second one on: full
+    years under the current year-end. Anything else (three or more month-ends, interleaving, gaps, quarterly-looking spacing) stays rejected.
+    Nothing is estimated or re-based."""
+    seq = sorted({_month_index(i): i for i in infos if i}.values(), key=_month_index)       # every distinct period end of the response
+    if len({i["month"] for i in seq}) != 2:
+        return None
+    cut = next(k for k in range(len(seq)) if seq[k]["month"] != seq[0]["month"])
+    old, new = seq[:cut], seq[cut:]
+    if any(i["month"] != new[0]["month"] for i in new):
+        return None                                                 # the months interleave: not one change of year-end
+    for block in (old, new):
+        if any(_month_index(b) - _month_index(a) != 12 for a, b in zip(block, block[1:])):
+            return None
+    if len(new) < 2:
+        return None                                                 # only the transition period under the new year-end: no full year yet
+    return {i["fy"] for i in new[1:]}
+
+
 def _rejected(problem):
     return {"years": {}, "problem": problem, "month": None}
 
@@ -191,9 +217,14 @@ def parse_income(body, layout="standard"):
         if label in found:
             per[field], i = period_values(found[label][1])
             infos.update(i)
-    months = {i["month"] for i in infos.values()}
+    raw = [period_info(h.get("period")) for label in INCOME_MAP if label in found for h in found[label][1]]
+    months = {i["month"] for i in raw if i}                     # every period of the response: two month-ends in one calendar year collapse in infos
     if len(months) > 1:
-        return _rejected("mixed_month_ends")
+        keep = year_end_change(raw)
+        if not keep:
+            return _rejected("mixed_month_ends")
+        infos = {fy: i for fy, i in infos.items() if fy in keep}
+        months = {i["month"] for i in infos.values()}
     summ = {}
     for c in d.get("income_statement") or []:
         if isinstance(c, dict):

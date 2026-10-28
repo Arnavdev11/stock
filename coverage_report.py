@@ -644,9 +644,10 @@ def _fh_entry(sym, e, isin):
     for y in ys:
         if not isinstance(y, dict) or not isinstance(y.get("fy"), int) or isinstance(y.get("fy"), bool) or not isinstance(y.get("values"), dict):
             return None, "bad_year_record"
-        if y["fy"] in seen:
+        key = (y["fy"], y.get("basis"))              # the ledger keys a year by (fiscal year, basis): one company can hold FY2025 consolidated
+        if key in seen:                              # for income and FY2025 standalone for cash flow; the same pair twice is a real duplicate
             return None, "duplicate_fiscal_year"
-        seen.add(y["fy"])
+        seen.add(key)
         if y.get("period_end") is not None and _date(y.get("period_end")) is None:
             return None, "bad_period_end_date"
         if any(v is not None and not _isnum(v) for v in y["values"].values()):
@@ -687,7 +688,8 @@ def mod_financial_history(d, syms, scope):
             vals = [y["values"].get(f) for y in ys]
             any_year += any(v is not None for v in vals)
             any_zero += any(_isnum(v) and v == 0 for v in vals)
-            lv = max(ys, key=lambda y: y["fy"])["values"].get(f)
+            top = max(y["fy"] for y in ys)
+            lv = next((y["values"].get(f) for y in ys if y["fy"] == top and y["values"].get(f) is not None), None)   # either basis of the newest year
             latest_present += lv is not None
             latest_zero += _isnum(lv) and lv == 0
         k = len(entries)
@@ -697,7 +699,7 @@ def mod_financial_history(d, syms, scope):
     yrs, newest, ver, basis, layout, fetched, sect_err = {}, {}, {}, {}, {}, [], {}
     gaps = 0
     for s, e, ys in entries:
-        _tally(yrs, len(ys))
+        _tally(yrs, len({y["fy"] for y in ys}))      # distinct fiscal years, not (year, basis) records
         _tally(newest, max(y["fy"] for y in ys))
         _tally(layout, e.get("statement_layout") if isinstance(e.get("statement_layout"), str) else "unknown")
         gaps += bool(e.get("gaps"))
