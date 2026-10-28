@@ -162,9 +162,12 @@ def load_instruments():
         rows = json.loads(r.content)
     found = {}
     for x in rows:
-        if (x.get("segment") == "NSE_EQ" and x.get("instrument_type") == "EQ"
+        if (x.get("segment") == "NSE_EQ" and x.get("instrument_type") in ("EQ", "BE")      # NSE series EQ and BE: both are in the stock directory
                 and x.get("trading_symbol") and x.get("isin")):
-            found[x["trading_symbol"].strip().upper()] = {"isin": x["isin"], "name": x.get("name")}
+            sym = x["trading_symbol"].strip().upper()
+            if sym in found and x.get("instrument_type") != "EQ":
+                continue                                    # an EQ row for the same symbol wins over a BE row
+            found[sym] = {"isin": x["isin"], "name": x.get("name")}
     return found
 
 
