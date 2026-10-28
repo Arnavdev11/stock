@@ -50,8 +50,8 @@ const IDS = ["t2a", "t2b", "t2", "t3a", "t3b"];
   // --- tabs and status
   eq(e.ftabs.children.map((b) => b.textContent), ["Valuation & Returns", "Financial Health", "Cash Flow & Growth"]);
   ok(e.ftab1.hidden === false && e.ftab2.hidden === true && e.ftab3.hidden === true, "Valuation tab is the default");
-  re(r.status[0].textContent, /^Financial data: Upstox · ₹ crore · Updated: 2026-10-01$/);
-  re(e.vstat.textContent, /Fundamentals data: Upstox · Updated: 2026-10-01/);
+  re(r.status[0].textContent, /^Financial data: Upstox · ₹ crore · Updated: 01 Oct 2026$/);
+  re(e.vstat.textContent, /Fundamentals data: Upstox · Updated: 01 Oct 2026/);
   // --- columns: the current UI, and nothing from the old one
   eq(heads(e.t2a.innerHTML), ["Stock", "Period", "Revenue (₹ cr)", "Total revenue (₹ cr)", "Profit before tax (₹ cr)", "Profit after tax (₹ cr)", "EPS basic (₹)", "EPS diluted (₹)"]);
   eq(heads(e.t2b.innerHTML), ["Stock", "ROE %", "ROCE %", "ROA %", "P/E", "P/B", "EV/EBITDA"]);
@@ -68,7 +68,7 @@ const IDS = ["t2a", "t2b", "t2", "t3a", "t3b"];
   re(row(e.t2a.innerHTML, "AAA"), /AAA Mar 2025 1,000 1,010 200 150 1\.50 1\.40$/);       // revenue, total_revenue, PBT, PAT, EPS b/d
   re(row(e.t2b.innerHTML, "AAA"), /AAA 22\.00 15\.00 5\.00 12\.00 2\.00 8\.00$/);          // ROE ROCE ROA P/E P/B EV/EBITDA
   re(row(e.t2.innerHTML, "CCC"), /CCC CCC LTD Mar 2025 15,000 9,000 6,000 11\.20 N\/A$/);  // Liabilities / Equity from liabilities_to_equity
-  re(row(e.t3b.innerHTML, "AAA"), /AAA Mar 2025 1,010 \| \+6\.00% 200 \| -2\.50% 150 \| \+3\.00%$/);
+  re(row(e.t3b.innerHTML, "AAA"), /AAA Mar 2025 1,010 \| \+6\.00% 200 \| −2\.50% 150 \| \+3\.00%$/);
   // --- Debt / Equity is N/A everywhere; never filled from liabilities / equity
   for (const s of ["AAA", "BBB", "CCC"]) re(row(e.t2.innerHTML, s), /N\/A$/, "Debt / Equity N/A for " + s);
   no(row(e.t2.innerHTML, "AAA"), /1\.50 1\.50/, "Liabilities / Equity is not repeated as Debt / Equity");
@@ -77,12 +77,12 @@ const IDS = ["t2a", "t2b", "t2", "t3a", "t3b"];
   no(row(e.t3a.innerHTML, "AAA"), /\b100\b/, "AAA: 400 + -300 is not shown as FCF");
   eq(e.fcfnote.textContent, "Free Cash Flow is unavailable because Upstox did not provide an unambiguous capital-expenditure line for these stocks.");
   re(e.n2.textContent, /not Debt \/ Equity/); re(e.n2.textContent, /customer deposits/); re(e.n2.textContent, /Debt \/ Equity is N\/A/);
-  // --- missing values are "-"
-  re(row(e.t2a.innerHTML, "BBB"), /BBB Mar 2025 - 2,020 400 300 3\.00 -$/);               // revenue and EPS diluted missing
-  re(row(e.t2b.innerHTML, "BBB"), /BBB 9\.00 - 3\.00 - 1\.00 -$/);                         // ROCE, P/E, EV/EBITDA missing
-  re(row(e.t2.innerHTML, "BBB"), /BBB BBB LTD Mar 2025 - - - - N\/A$/);                    // balance sheet missing; D/E still N/A
-  re(row(e.t3a.innerHTML, "CCC"), /CCC Mar 2025 1,200 -900 - N\/A$/);                      // financing missing
-  re(row(e.t3b.innerHTML, "BBB"), /BBB Mar 2025 2,020 \| \+7\.00% 400 \| - 300 \| \+3\.00%$/);  // PBT growth missing
+  // --- missing values are an em dash "—" (never 0); negative numbers carry a true minus sign "−"
+  re(row(e.t2a.innerHTML, "BBB"), /BBB Mar 2025 — 2,020 400 300 3\.00 —$/);               // revenue and EPS diluted missing
+  re(row(e.t2b.innerHTML, "BBB"), /BBB 9\.00 — 3\.00 — 1\.00 —$/);                         // ROCE, P/E, EV/EBITDA missing
+  re(row(e.t2.innerHTML, "BBB"), /BBB BBB LTD Mar 2025 — — — — N\/A$/);                    // balance sheet missing; D/E still N/A
+  re(row(e.t3a.innerHTML, "CCC"), /CCC Mar 2025 1,200 −900 — N\/A$/);                      // financing missing
+  re(row(e.t3b.innerHTML, "BBB"), /BBB Mar 2025 2,020 \| \+7\.00% 400 \| — 300 \| \+3\.00%$/);  // PBT growth missing
   // --- ROE filter applies to every table
   setRoe(r, "15");  for (const i of IDS) eq(order(e[i].innerHTML), "AAA,CCC", "ROE>=15 in " + i);
   setRoe(r, "25");  for (const i of IDS) eq(order(e[i].innerHTML), "CCC", "ROE>=25 in " + i);
@@ -99,7 +99,7 @@ const IDS = ["t2a", "t2b", "t2", "t3a", "t3b"];
   const withFcf = JSON.parse(JSON.stringify(FIN)); withFcf.stocks[0].cash_flow.free_cash_flow = 90;
   r = await run({ "financials.json": withFcf, "fundamentals.json": VAL }, "0");
   re(r.els.fcfnote.textContent, /shown only where Upstox provided an unambiguous capital-expenditure line/);
-  re(row(r.els.t3a.innerHTML, "AAA"), /AAA Mar 2025 400 -300 -50 90$/); re(row(r.els.t3a.innerHTML, "BBB"), /N\/A$/);
+  re(row(r.els.t3a.innerHTML, "AAA"), /AAA Mar 2025 400 −300 −50 90$/); re(row(r.els.t3a.innerHTML, "BBB"), /N\/A$/);
   // --- each file fails independently
   r = await run({ "fundamentals.json": VAL }, "15");
   eq(r.status[0].textContent, "Financial statements not loaded yet.");

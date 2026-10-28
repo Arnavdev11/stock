@@ -60,9 +60,9 @@ function boot(doc) {
   let t = boot(DATA()); await t.ready();
   // --- loading, coverage and the default (the existing ROE >= 15 default is kept)
   eq(t.ctx.fetched, ["out/fundamentals.json"], "reads only out/fundamentals.json");
-  re(t.els.fstat.textContent, /^Fundamentals data: Fixture · Updated: 2026-10-01$/, "status line unchanged");
-  eq(t.rows(), ["AAA", "GGG", "BBB", "FFF", "HHH", "JJJ"], "default: ROE at least 15, strict numbers (EEE's text \"40\" does not pass), sorted by ROE, highest first; equal ROE keeps file order");
-  re(t.els.fsCount.textContent, /^6 of 10 stocks match the filters\.$/, "the count says how many of all stocks match");
+  re(t.els.fstat.textContent, /^Fundamentals data: Fixture · Updated: 01 Oct 2026$/, "status line unchanged");
+  eq(t.rows(), ["AAA", "BBB", "FFF", "HHH", "JJJ"], "default: ROE at least 15, strict numbers (EEE's text \"40\" does not pass), sorted by ROE, highest first; equal ROE keeps file order; GGG's ROE of 22 sits on negative book value (P/B -1), so it is not comparable and does not pass");
+  re(t.els.fsCount.textContent, /^5 of 10 stocks match the filters\.$/, "the count says how many of all stocks match (GGG is out: ROE not comparable)");
   t.set("roe", "0");
   eq(t.rows().length, 10, "no filter: every published stock is listed (coverage unchanged)");
   re(t.els.fsCount.textContent, /^All 10 stocks \(no filter applied\)\.$/);
@@ -123,9 +123,9 @@ function boot(doc) {
   // --- sorting: text A-Z first, numbers high-low first; missing and text values last in both directions; P/E losses after positive P/E
   t.sort("symbol"); eq(t.rows(), ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III", "JJJ"], "Stock: A-Z on first click");
   t.sort("symbol"); eq(t.rows()[0], "JJJ", "second click reverses");
-  t.sort("pe"); eq(t.rows(), ["GGG", "BBB", "HHH", "AAA", "JJJ", "FFF", "III", "CCC", "DDD", "EEE"], "P/E high to low: positive first, then zero and negative, then missing and text");
+  t.sort("pe"); eq(t.rows(), ["GGG", "BBB", "HHH", "AAA", "JJJ", "III", "CCC", "DDD", "EEE", "FFF"], "P/E high to low: positive first, then negative, then missing, text and FFF's P/E of exactly 0 (not a real ratio: shown as a dash, sorted as missing, in file order)");
   eq(t.ths[3].getAttribute("aria-sort"), "descending", "the sorted column says so (aria-sort)"); eq(t.ths[0].getAttribute("aria-sort"), null, "other columns do not");
-  t.sort("pe"); eq(t.rows(), ["AAA", "JJJ", "HHH", "BBB", "GGG", "CCC", "III", "FFF", "DDD", "EEE"], "P/E low to high: the lowest POSITIVE P/E first; a loss never sorts as the cheapest; equal P/E keeps file order");
+  t.sort("pe"); eq(t.rows(), ["AAA", "JJJ", "HHH", "BBB", "GGG", "CCC", "III", "DDD", "EEE", "FFF"], "P/E low to high: the lowest POSITIVE P/E first; a loss never sorts as the cheapest; equal P/E keeps file order; a P/E of 0 sorts with the missing values");
   eq(t.ths[3].getAttribute("aria-sort"), "ascending");
   t.sort("pb"); eq(t.rows().slice(-3), ["GGG", "DDD", "EEE"], "P/B high to low: negative P/B (GGG) after every positive P/B, then missing and text");
   t.sort("pb"); eq(t.rows().slice(0, 2), ["CCC", "AAA"], "P/B low to high: the lowest POSITIVE P/B first (0.8, then 1 in file order)"); eq(t.rows().slice(-3), ["GGG", "DDD", "EEE"], "and negative P/B is never first");
@@ -136,7 +136,7 @@ function boot(doc) {
   const hhh = (t.els.fund.innerHTML.match(/<tr><td>HHH<\/td>.*?<\/tr>/) || [""])[0];
   re(hhh, /<td>&lt;b&gt;H&amp;H&lt;\/b&gt;<\/td>/, "company names are escaped, never markup"); re(hhh, /<td class="n">20<\/td><td class="n">2<\/td><td class="n">15<\/td>/, "numbers are shown as published");
   const eee = (t.els.fund.innerHTML.match(/<tr><td>EEE<\/td>.*?<\/tr>/) || [""])[0];
-  re(eee, /<td class="n">-<\/td><td class="n">-<\/td><td class="n">-<\/td>/, "a value that is not a number is shown as a dash, like a missing one");
+  re(eee, /<td class="n">—<\/td><td class="n">—<\/td><td class="n">—<\/td>/, "a value that is not a number is shown as a dash (—), like a missing one");
 
   // --- the source rows are never changed
   { const d = DATA(); const t2 = boot(d); await t2.ready(); t2.set("fsPeMax", "20"); t2.sort("pe"); eq(d, DATA(), "the fetched data is not modified"); }
