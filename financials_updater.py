@@ -299,6 +299,12 @@ def staleness_key(entry):
     return min(dates)
 
 
+def order_symbols(symbols, stocks, core_count=500):
+    """Protect the first core_count universe symbols, then retain oldest-first order within each cohort."""
+    core = set(symbols[:core_count])
+    return sorted(symbols, key=lambda s: (s not in core, staleness_key(stocks.get(s)), s))
+
+
 def main():
     token = get_token()
     cache = json.loads(CACHE_FILE.read_text(encoding="utf-8")) if CACHE_FILE.exists() else {}
@@ -310,8 +316,9 @@ def main():
         symbols = research_test_batch.extend(universe.load())      # + the five-stock test batch (see research_test_batch.py); nothing else changes
     except universe.UniverseError as err:
         fail(str(err))
-    # stalest first (oldest statement fetch), so a run that stops at its call budget carries on with the rest next time; a failing section backs off (staleness_key)
-    symbols = universe.order_stalest(symbols, {x: staleness_key(stocks.get(x)) for x in symbols})
+    # Protect the first 500 symbols in universe file order; retain oldest-first ordering within the core and remainder cohorts.
+    # A failing section still backs off via staleness_key, and the call budget is unchanged.
+    symbols = order_symbols(symbols, stocks)
     log("Universe:", len(symbols), "stocks | call budget:", MAX_CALLS_PER_RUN)
     pending = 0
     tally = {"processed": 0, "succeeded": 0, "failed": 0, "up_to_date": 0, "in_backoff": 0, "not_in_upstox": 0, "not_reached": 0}
