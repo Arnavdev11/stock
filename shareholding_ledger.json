@@ -3,7 +3,7 @@
  "stocks": {
   "RELIANCE": {
    "symbol": "RELIANCE",
-   "isin": null,
+   "isin": "INE002A01018",
    "name": "Reliance Industries Limited",
    "quarters": [
     {
@@ -71450,20 +71450,20 @@
      "source": {
       "provider": "NSE",
       "record_id": "169735",
-      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/-",
+      "xbrl_url": "https://nsearchives.nseindia.in/corporate/xbrl/-",
       "broadcast_date": "2022-07-19",
       "submission_date": "2022-07-19",
       "revised": false,
       "revision_date": null,
       "revision_remark": null
      },
-     "fetched": "2026-10-10",
+     "fetched": "2026-11-14",
      "revisions": [],
      "named_holders": {
       "version": 2,
       "status": "unavailable",
       "reason": "the XBRL file could not be obtained (HTTP 404)",
-      "fetched": "2026-10-10",
+      "fetched": "2026-11-14",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
       "excluded": {},
@@ -71499,20 +71499,20 @@
      "source": {
       "provider": "NSE",
       "record_id": "166117",
-      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/-",
+      "xbrl_url": "https://nsearchives.nseindia.in/corporate/xbrl/-",
       "broadcast_date": "2022-04-11",
       "submission_date": "2022-04-11",
       "revised": false,
       "revision_date": null,
       "revision_remark": null
      },
-     "fetched": "2026-10-10",
+     "fetched": "2026-11-14",
      "revisions": [],
      "named_holders": {
       "version": 2,
       "status": "unavailable",
       "reason": "the XBRL file could not be obtained (HTTP 404)",
-      "fetched": "2026-10-10",
+      "fetched": "2026-11-14",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
       "excluded": {},
@@ -71548,20 +71548,20 @@
      "source": {
       "provider": "NSE",
       "record_id": "164472",
-      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/-",
+      "xbrl_url": "https://nsearchives.nseindia.in/corporate/xbrl/-",
       "broadcast_date": "2022-01-18",
       "submission_date": "2022-01-18",
       "revised": false,
       "revision_date": null,
       "revision_remark": null
      },
-     "fetched": "2026-10-10",
+     "fetched": "2026-11-14",
      "revisions": [],
      "named_holders": {
       "version": 2,
       "status": "unavailable",
       "reason": "the XBRL file could not be obtained (HTTP 404)",
-      "fetched": "2026-10-10",
+      "fetched": "2026-11-14",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
       "excluded": {},
@@ -71597,20 +71597,20 @@
      "source": {
       "provider": "NSE",
       "record_id": "161151",
-      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/-",
+      "xbrl_url": "https://nsearchives.nseindia.in/corporate/xbrl/-",
       "broadcast_date": "2022-01-06",
       "submission_date": "2021-10-12",
       "revised": false,
       "revision_date": null,
       "revision_remark": null
      },
-     "fetched": "2026-10-10",
+     "fetched": "2026-11-14",
      "revisions": [],
      "named_holders": {
       "version": 2,
       "status": "unavailable",
       "reason": "the XBRL file could not be obtained (HTTP 404)",
-      "fetched": "2026-10-10",
+      "fetched": "2026-11-14",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
       "excluded": {},
@@ -79480,7 +79480,7 @@
     {
      "quarter_end": "2022-03-31",
      "status": "unavailable",
-     "reason": "the XBRL file could not be obtained (HTTP 404)",
+     "reason": "the XBRL file could not be parsed (ParseError)",
      "values": {
       "promoters": null,
       "fii": null,
@@ -79495,8 +79495,8 @@
       "status": "flagged",
       "flags": [
        {
-        "code": "xbrl-unavailable",
-        "detail": "the XBRL file could not be obtained (HTTP 404)"
+        "code": "xbrl-unparsable",
+        "detail": "the XBRL file could not be parsed (ParseError)"
        }
       ]
      },
@@ -79504,20 +79504,21 @@
      "source": {
       "provider": "NSE",
       "record_id": "168238",
-      "xbrl_url": "https://nsearchives.nseindia.com/corporate/xbrl/SHP_168238_646177_21042022050619_WEB.xml",
+      "xbrl_url": "https://www.nseindia.com/corporate/xbrl/SHP_168238_646177_21042022050619_WEB.xml",
       "broadcast_date": "2022-04-21",
       "submission_date": "2022-04-21",
       "revised": false,
       "revision_date": null,
-      "revision_remark": null
+      "revision_remark": null,
+      "xbrl_url_listed": "https://nsearchives.nseindia.com/corporate/xbrl/SHP_168238_646177_21042022050619_WEB.xml"
      },
-     "fetched": "2026-10-10",
+     "fetched": "2026-11-14",
      "revisions": [],
      "named_holders": {
       "version": 2,
       "status": "unavailable",
-      "reason": "the XBRL file could not be obtained (HTTP 404)",
-      "fetched": "2026-10-10",
+      "reason": "the XBRL file could not be parsed (ParseError)",
+      "fetched": "2026-11-14",
       "basis": "Individually disclosed holders only. For institutions the filing lists holders of 1% or more; promoter-group entities are listed individually. The aggregate ownership categories are reported separately and are not the sum of these rows.",
       "holders": [],
       "excluded": {},
