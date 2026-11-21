@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-20",
+ "updated": "2026-11-21",
  "source": "Upstox",
  "interval": "1day",
  "notes": {
@@ -10192,6 +10192,14 @@
     "high": 25514.3,
     "low": 25104.8,
     "close": 25514.3,
+    "volume": 0
+   },
+   {
+    "date": "2026-11-20",
+    "open": 25368.0,
+    "high": 25808.8,
+    "low": 25345.2,
+    "close": 25800.6,
     "volume": 0
    }
   ]
