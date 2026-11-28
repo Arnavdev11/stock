@@ -465,7 +465,7 @@
       ]
      },
      "first_seen": "2026-10-04",
-     "last_confirmed": "2026-11-27",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "notes": [
       "EPS is reported as ONE combined basic-and-diluted line; it is stored in eps_basic and eps_diluted is left null (no separate diluted figure exists in the statement).",
@@ -1691,7 +1691,7 @@
       ]
      },
      "first_seen": "2026-10-04",
-     "last_confirmed": "2026-11-27",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "notes": [
       "PRESENTATION DIFFERENCE, NOT A CHANGE TO THE UNDERLYING FIGURES: the FY2022 Annual Report (consolidated Statement of Profit and Loss) adds the share of profit of associates and joint ventures (line V, 17.48 crore) BEFORE profit before tax, so 'Profit before tax (VI + VII)' = 20,740.47 and 'Profit for the year' = 15,503.13 both include that share.",
@@ -80276,15 +80276,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80320,15 +80320,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80364,15 +80364,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80408,29 +80408,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
-     "error": "no_data (consolidated); call limit for this run reached (standalone)"
+     "error": null,
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
-     "error": "call limit for this run reached"
+     "error": null,
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -80475,15 +80477,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80519,15 +80521,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80563,15 +80565,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80607,27 +80609,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -80676,15 +80678,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80720,15 +80722,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80764,15 +80766,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80808,31 +80810,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -80879,15 +80881,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80925,15 +80927,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -80972,15 +80974,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -81016,27 +81018,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -81083,15 +81085,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -81127,15 +81129,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -81171,15 +81173,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -81215,31 +81217,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -81284,15 +81286,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81335,15 +81337,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81386,15 +81388,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81437,15 +81439,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81459,12 +81461,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -81515,15 +81517,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81568,15 +81570,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81621,15 +81623,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81674,15 +81676,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81696,12 +81698,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -81750,15 +81752,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81803,15 +81805,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81856,15 +81858,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81909,15 +81911,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -81931,16 +81933,16 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -82197,15 +82199,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82241,15 +82243,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82285,15 +82287,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82329,31 +82331,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -82398,15 +82400,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82442,15 +82444,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82486,15 +82488,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82530,27 +82532,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -82597,15 +82599,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82643,15 +82645,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82689,15 +82691,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -82736,27 +82738,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -82805,15 +82807,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -82858,15 +82860,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -82911,15 +82913,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -82964,15 +82966,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -82986,16 +82988,16 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -83040,15 +83042,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83084,15 +83086,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83128,15 +83130,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83172,27 +83174,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -83239,15 +83241,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83283,15 +83285,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83327,15 +83329,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83373,27 +83375,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -83440,15 +83442,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83484,15 +83486,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83528,15 +83530,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83572,27 +83574,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -83639,15 +83641,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83683,15 +83685,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83727,15 +83729,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83771,27 +83773,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -83838,15 +83840,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83882,15 +83884,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83928,15 +83930,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -83972,27 +83974,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -84039,15 +84041,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84083,15 +84085,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84127,15 +84129,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84171,27 +84173,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -84238,15 +84240,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84282,15 +84284,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84326,15 +84328,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84370,31 +84372,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -84439,15 +84441,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84483,15 +84485,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84527,15 +84529,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84571,27 +84573,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -84605,6 +84607,53 @@
    "statement_layout": "standard",
    "fiscal_year_end_month": 3,
    "years": [
+    {
+     "fy": 2026,
+     "period": "Mar 2026",
+     "period_end": "2026-03-31",
+     "basis": "consolidated",
+     "values": {
+      "revenue": 294.71,
+      "total_revenue": 324.18,
+      "profit_before_tax": 63.4,
+      "profit_after_tax": 63.54,
+      "eps_basic": 1.77,
+      "eps_diluted": 1.77,
+      "operating_cash_flow": null,
+      "investing_cash_flow": null,
+      "financing_cash_flow": null,
+      "capex": null,
+      "free_cash_flow": null
+     },
+     "missing": [
+      "operating_cash_flow",
+      "investing_cash_flow",
+      "financing_cash_flow"
+     ],
+     "verification": {
+      "status": "verified",
+      "reconciliation": "mismatch",
+      "warnings": [
+       "summary_net_profit_equals_pat"
+      ],
+      "checks": {
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": false
+      }
+     },
+     "source": {
+      "provider": "Upstox",
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-11-28"
+      },
+      "cash_flow": null
+     },
+     "first_seen": "2026-11-28",
+     "last_confirmed": "2026-11-28",
+     "revisions": []
+    },
     {
      "fy": 2025,
      "period": "Mar 2025",
@@ -84638,15 +84687,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84682,15 +84731,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84726,15 +84775,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84774,23 +84823,23 @@
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -84837,15 +84886,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84881,15 +84930,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84925,15 +84974,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -84969,27 +85018,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -85036,15 +85085,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85080,15 +85129,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85124,15 +85173,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85170,27 +85219,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -85237,15 +85286,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -85288,15 +85337,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -85339,15 +85388,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -85390,15 +85439,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -85412,12 +85461,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -85468,15 +85517,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85515,15 +85564,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85562,15 +85611,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85609,27 +85658,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -85649,45 +85698,42 @@
      "period_end": "2026-03-31",
      "basis": "consolidated",
      "values": {
-      "revenue": null,
-      "total_revenue": null,
-      "profit_before_tax": null,
-      "profit_after_tax": null,
-      "eps_basic": null,
-      "eps_diluted": null,
+      "revenue": 4022.4,
+      "total_revenue": 4076.66,
+      "profit_before_tax": 417.63,
+      "profit_after_tax": 308.92,
+      "eps_basic": 17.73,
+      "eps_diluted": 17.73,
       "operating_cash_flow": -91.28,
       "investing_cash_flow": -43.92,
       "financing_cash_flow": 8.15,
       "capex": null,
       "free_cash_flow": null
      },
-     "missing": [
-      "revenue",
-      "total_revenue",
-      "profit_before_tax",
-      "profit_after_tax",
-      "eps_basic"
-     ],
+     "missing": [],
      "verification": {
       "status": "verified",
-      "reconciliation": "not_checked",
+      "reconciliation": "matched",
       "warnings": [],
       "checks": {
-       "summary_revenue_equals_total_revenue": null,
-       "summary_operating_profit_equals_pbt": null,
-       "summary_net_profit_equals_pat": null
+       "summary_revenue_equals_total_revenue": true,
+       "summary_operating_profit_equals_pbt": true,
+       "summary_net_profit_equals_pat": true
       }
      },
      "source": {
       "provider": "Upstox",
-      "income": null,
+      "income": {
+       "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
+       "fetched": "2026-11-28"
+      },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85723,15 +85769,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85767,15 +85813,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85811,15 +85857,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85871,12 +85917,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -85923,15 +85969,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -85967,15 +86013,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86011,15 +86057,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86055,27 +86101,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -86122,15 +86168,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86166,15 +86212,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86210,15 +86256,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86254,31 +86300,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -86323,15 +86369,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86367,15 +86413,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86411,15 +86457,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86455,27 +86501,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -86524,15 +86570,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86570,15 +86616,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86614,15 +86660,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86658,27 +86704,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -86725,15 +86771,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86769,15 +86815,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86813,15 +86859,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86857,27 +86903,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -86924,15 +86970,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -86968,15 +87014,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87012,15 +87058,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87056,31 +87102,31 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=standalone&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=standalone&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "standalone",
      "error": null,
-     "standalone_checked": "2026-10-20"
+     "standalone_checked": "2026-11-28"
     }
    }
   },
@@ -87129,15 +87175,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87184,15 +87230,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87239,15 +87285,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87294,15 +87340,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87316,12 +87362,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -87370,15 +87416,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87423,15 +87469,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87476,15 +87522,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87529,15 +87575,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -87551,12 +87597,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -87609,12 +87655,12 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": null
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87652,15 +87698,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87696,15 +87742,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87740,15 +87786,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87791,23 +87837,23 @@
       "income": null,
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -87854,15 +87900,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87898,15 +87944,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87942,15 +87988,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -87988,27 +88034,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -88055,15 +88101,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88099,15 +88145,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88145,15 +88191,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88189,27 +88235,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -88260,15 +88306,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88308,15 +88354,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88356,15 +88402,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88404,27 +88450,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -88473,15 +88519,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88519,15 +88565,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88565,15 +88611,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88609,27 +88655,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -88678,15 +88724,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -88731,15 +88777,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -88784,15 +88830,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -88837,15 +88883,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": [],
      "other_lines": {
       "income": {
@@ -88859,12 +88905,12 @@
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -88913,15 +88959,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -88957,15 +89003,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -89003,15 +89049,15 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     },
     {
@@ -89049,27 +89095,27 @@
       "provider": "Upstox",
       "income": {
        "endpoint": "income-statement?type=consolidated&time_period=yearly&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       },
       "cash_flow": {
        "endpoint": "cash-flow?type=consolidated&fs=true",
-       "fetched": "2026-10-20"
+       "fetched": "2026-11-28"
       }
      },
      "first_seen": "2026-10-20",
-     "last_confirmed": "2026-10-20",
+     "last_confirmed": "2026-11-28",
      "revisions": []
     }
    ],
    "gaps": {},
    "fetch_state": {
     "income": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     },
     "cash_flow": {
-     "fetched": "2026-10-20",
+     "fetched": "2026-11-28",
      "basis": "consolidated",
      "error": null
     }
@@ -517929,5 +517975,5 @@
    }
   }
  },
- "updated": "2026-11-27"
+ "updated": "2026-11-28"
 }
